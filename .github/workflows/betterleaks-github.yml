@@ -1,0 +1,20 @@
+# Secret scanning of the pull requests, issues and comments, findings in
+# code scanning.
+name: betterleaks-github
+
+on:
+  schedule:
+    - cron: "42 8 * * *"
+      timezone: Europe/Paris
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  betterleaks-github:
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+      security-events: write
+    uses: spnngl/.github/.github/workflows/betterleaks-github.yml@main
