@@ -1,7 +1,7 @@
 # Build the firewalld ipsets for geo-blocking (blocked countries) and the
 # threat-feed blocklists, from the raw data the Containerfile fetches at
 # build time. IPv4 only: IPv6 is disabled on the hosts
-# (images/fedora/sysroot/etc/sysctl.d/990-disable-ipv6.conf).
+# (images/fedora/sysroot/common/etc/sysctl.d/990-disable-ipv6.conf).
 #
 # Usage: use geoblock.nu; geoblock <zones> <feeds> <bogons> <out> ...<country>
 #        (or: nu geoblock.nu <zones> <feeds> <bogons> <out> ...<country>)

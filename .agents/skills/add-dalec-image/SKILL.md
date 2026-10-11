@@ -67,9 +67,10 @@ Done when every item has a home on both platforms.
   `workdir`; the field is `working_dir`): the schema wins.
 - **Target**: `<Debian stable>/container`, today `trixie/container`, the
   one `build-dalec.yml` builds. Dependencies are trixie package names.
-- **Header comment**: what the image is, the build command, the bump
-  checklist (every file and checksum to touch), and the runtime contract:
-  UID/GID, volumes, port, required env or secrets.
+- **Header comment**: what the image is, the build command, what a
+  version bump needs beyond Renovate's PR (a lock to regenerate, a patch
+  to check), and the runtime contract: UID/GID, volumes, port, required
+  env or secrets.
 - **Versions** in `args`: `BASE_VERSION` is the upstream release, also the
   image tag. Every other pinned version is an arg too, each with its
   releases URL in a comment.
@@ -137,12 +138,17 @@ itself finds first.
 
 Done when every exec'd tool and the app itself have a step.
 
-### 6. Add it to CI
+### 6. Track its versions
 
-Add `name` and `version` to the `image: &images` matrix of `.github/workflows/build-dalec.yml`. The push
-job reuses that list.
+`build-dalec.yml` finds every `images/*/spec.yml` itself: nothing to add
+to CI. Renovate doesn't read specs: add a `renovate.json5` custom manager
+for each pinned version, modeled on sabnzbd's (a git source's version and
+`checksum` in one match, so both change together), and a `packageRules`
+entry saying whether it automerges, with `prBodyNotes` for what its PR
+needs by hand.
 
-Done when the matrix entry's `version` equals the spec's `BASE_VERSION`.
+Done when `renovate-config-validator --strict` passes (AGENTS.md) and
+every pinned version of the spec has a manager.
 
 ### 7. Verify
 

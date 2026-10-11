@@ -21,10 +21,10 @@ For a bootc image there are two stages:
 ```
 .
 ├── .github/
-│   ├── dependabot.yml          # Saturday updates of the workflow's actions
 │   └── workflows/
 │       ├── build.yml           # CI: lint, build, push every Containerfile image
-│       └── build-dalec.yml     # CI: build, push every Dalec image (spec.yml)
+│       ├── build-dalec.yml     # CI: build, push every Dalec image (spec.yml)
+│       └── renovate.yml        # CI: validate renovate.json5
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── images/                     # shared build context for every image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
@@ -35,12 +35,14 @@ For a bootc image there are two stages:
 │       │                       # image: cs-firewall-bouncer)
 │       ├── Containerfile       # or spec.yml, for a Dalec image: sabnzbd
 │       └── sysroot/...         # files copied as is into the image root
+│                               # (bootc: common/, then <BASE_VERSION>/)
 ├── scripts/
 │   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
 │   ├── sabnzbd-lock.sh         # regenerate images/sabnzbd/requirements.lock
 │   └── run.sh [name]           # boot the qcow2 in QEMU (macOS Apple Silicon)
 ├── config.example.toml         # template for config.toml (git-ignored)
 ├── K3S.md                      # setting up k3s hosts (kubeenv images)
+├── renovate.json5              # Saturday updates of every pinned version
 └── output/                     # build results (git-ignored)
 ```
 
@@ -56,17 +58,20 @@ Docker or k3s. Stages:
 - `dockerenv` (`FROM base`, the last stage, so the default target and
   what `build.sh` builds): adds Docker. Tag `<name>:<version>`.
 - `kubeenv` (`FROM base`, `podman build --target kubeenv`): adds k3s, no
-  Docker. Tag `<name>:<version>-v<KUBERNETES_VERSION>k3s`
-  (`fedora:44-v1.36.5k3s`). Every image's `kubeenv` runs the
+  Docker. Tag `<name>:<version>-v<Kubernetes minor release>k3s`. Every
+  image's `kubeenv` runs the
   same `images/k3s/install.sh`, bind-mounted rather than copied (buildah
-  still keys its cache on the script's content). k3s is pinned there
-  (`INSTALL_K3S_VERSION`), in `/usr`, with a unit per role, both
-  disabled: each host picks its role by hand. The Kubernetes release is
-  the stage's `ARG KUBERNETES_VERSION`, set by CI like `BASE_VERSION`.
-  The tag carries it, so a host sees the Kubernetes release it tracks:
-  bump `KUBERNETES_VERSION` in both Containerfiles and the workflow, and
-  the workflow's kubeenv `suffix`, in one commit. `bootc upgrade` stays
-  on the same tag, so moving to another release is a `bootc switch`.
+  still keys its cache on the script's content). It installs k3s in
+  `/usr`, with a unit per role, both disabled: each host picks its role
+  by hand. The k3s release (its tag, `v<Kubernetes release>+k3s<build>`)
+  is the stage's `ARG INSTALL_K3S_VERSION`, set by CI from the matrix's
+  `k3s`, like `BASE_VERSION`. The tag carries the Kubernetes minor
+  release only: a patch release or a new k3s build reaches hosts with
+  `bootc upgrade` (k3s upgrades in place within a minor release), and
+  only a minor release, a new tag, needs a `bootc switch`, which is also
+  when to follow Kubernetes' upgrade notes. Renovate bumps the matrix's
+  `k3s` and `suffix` in one replacement, and the Containerfiles' default,
+  in one PR (see "Updates").
   The container runtime is CRI-O (same minor release, with crun),
   configured by `images/k3s/sysroot/`, copied after the script, which
   also puts k3s and CRI-O in `kube.slice`, out of `system.slice`, and
@@ -103,7 +108,7 @@ Both images end with `bootc container lint`. The host system:
 
 ### `images/almalinux`
 
-An image derived from `quay.io/almalinuxorg/almalinux-bootc:10.2`,
+An image derived from `quay.io/almalinuxorg/almalinux-bootc:10`,
 close to `images/fedora` (Docker, firewalld, the same TZ and chrony setup),
 plus country geo-blocking and threat-feed blocklists on the public
 zone. Same stages, `dockerenv` and `kubeenv`, as `images/fedora`.
@@ -119,7 +124,7 @@ Geo-blocking and blocklists:
   that isn't dropped still goes through the existing `public` zone rules
   unchanged.
 - IPv4 only, like the rest of both images: IPv6 is disabled by
-  `images/fedora/sysroot/etc/sysctl.d/990-disable-ipv6.conf`. IPv6
+  `images/fedora/sysroot/common/etc/sysctl.d/990-disable-ipv6.conf`. IPv6
   entries in the threat feeds are skipped.
 - The country and blocklist data is baked in at build time, not fetched
   at runtime. A build-only stage, `geoblock`, downloads the ipdeny zones
@@ -204,10 +209,10 @@ engine that decides the bans) is not part of this repository.
   netlink, no capability). That `RUN` leaves empty `/dev`, `/proc` and
   `/sys` folders in the image: harmless, the runtime mounts over them.
   `scripts/build.sh` refuses it: there is no disk image to build.
-- **`BASE_VERSION` is the bouncer release (`0.0.38`)**, also the tag.
-  The name is kept because `build.sh` and CI pass that build arg to every
-  image. Bump it in the Containerfile and in the workflow matrix, in one
-  commit, and diff upstream's `config/crowdsec-firewall-bouncer.yaml`
+- **`BASE_VERSION` is the bouncer release**, also the tag. The name is
+  kept because `build.sh` and CI pass that build arg to every image.
+  Renovate bumps it in the Containerfile and in the workflow matrix;
+  before merging, diff upstream's `config/crowdsec-firewall-bouncer.yaml`
   between tags.
 - **The sources come from `ADD <git url>#v<BASE_VERSION>`.** The commit
   is not pinned: a tag can move, and this binary runs as root with
@@ -303,20 +308,25 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
   `nice`/`ionice`: post-processing scripts must be Python, executable,
   with `#!/usr/bin/python3` or no shebang (SABnzbd then runs them with
   its own Python); upstream's `Sample-PostProc.sh` can't run.
-- **`BASE_VERSION` is the SABnzbd release**, also the tag. Bump it in the
-  spec (with the sabnzbd checksum) and in `build-dalec.yml`'s matrix, in
-  one commit, with the regenerated lock.
+- **`BASE_VERSION` is the SABnzbd release**, also the tag. Renovate
+  bumps it in the spec (with the sabnzbd checksum), where
+  `build-dalec.yml` reads it; push the regenerated lock to its PR.
 
 ## Design decisions
 
 - **The build context is the shared `images/` folder, not each image's
   own folder.** `scripts/build.sh` passes `-f images/<name>/Containerfile`
   with context `images/`. This is what lets
-  `images/almalinux/Containerfile` do `COPY --link ./fedora/sysroot/ /`
+  `images/almalinux/Containerfile` do `COPY --link ./fedora/sysroot/common/ /`
   to reuse fedora's base configuration instead of duplicating it. Each
   image's own files live in `images/<name>/sysroot/`, which mirrors the
-  root filesystem. One `.containerignore` at `images/` (buildah only
-  reads it from the context root, or through `--ignorefile`) keeps every
+  root filesystem. A bootc image's `sysroot/` has a `common/` folder,
+  then a folder per base release (`sysroot/<BASE_VERSION>/`), copied
+  after it, for the files that differ (`policy.json`): almalinux builds
+  9 and 10 from one Containerfile, and a base upgrade adds a folder
+  instead of editing the one the running release uses. One
+  `.containerignore` at `images/` (buildah only reads it from the
+  context root, or through `--ignorefile`) keeps every
   `Containerfile` out of `COPY . /`; there is no need for a copy per
   image folder.
 - **`COPY` rather than `ADD`.** `ADD` also downloads URLs and unpacks
@@ -331,11 +341,11 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
   config must be machine-local, and nothing in `/var`.
 - **`COPY` comes after the package install.** Editing config files doesn't
   force dnf to run again on rebuild.
-- **The base image is pinned to a major release, `ARG BASE_VERSION`
-  (`44`).** `latest` would jump to the next Fedora release without
-  warning. The same value is the image's own tag, so a host tracking
-  `images/fedora:44` gets every rebuild through `bootc upgrade`, and only
-  moves to the next release with `bootc switch`. The Containerfile default
+- **The base image is pinned to a major release, `ARG BASE_VERSION`.**
+  `latest` would jump to the next Fedora release without warning. The
+  same value is the image's own tag, so a host tracking
+  `images/fedora:<version>` gets every rebuild through `bootc upgrade`,
+  and only moves to the next release with `bootc switch`. The Containerfile default
   is for local builds; CI passes it from its matrix.
 - **`bootc container lint` without `--fatal-warnings`.** Errors fail the
   build, warnings are only printed.
@@ -349,8 +359,8 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
 
 ## Disk images: image-builder
 
-`scripts/build.sh` runs `ghcr.io/osbuild/image-builder-cli:latest` (which
-includes the former bootc-image-builder) with:
+`scripts/build.sh` runs a pinned `ghcr.io/osbuild/image-builder-cli`
+(which includes the former bootc-image-builder) with:
 
 - **`--privileged` and `--security-opt label=type:unconfined_t`:**
   image-builder relabels files for SELinux and sets up loop devices. A
@@ -380,12 +390,11 @@ from CI's images. `build.sh` only builds the default target
 ## CI: `.github/workflows/build.yml`
 
 Runs hadolint on each Containerfile (findings uploaded to code scanning as
-SARIF), then builds each image of its matrix (`name`, `version`,
-and for a multi-stage Containerfile `target` and tag `suffix`) for every
-platform, and pushes it to
+SARIF), then builds each image of its matrix (`name`, `version`, and
+for a multi-stage Containerfile `target`, tag `suffix` and, for
+kubeenv, `k3s`) for every platform, and pushes it to
 `ghcr.io/spnngl/images/<name>:<version><suffix>`, one manifest list
-for all platforms,
-authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
+for all platforms, authenticated with the job's `GITHUB_TOKEN` (`packages: write`).
 Container images only: disk images need `config.toml`.
 
 - **Triggers:** push to `main`, every Sunday 07:00 Europe/Paris (base
@@ -393,8 +402,8 @@ Container images only: disk images need `config.toml`.
   manual dispatch all push. Pull requests only lint and build.
 - **The matrix is the list of images**, each with its base version,
   passed as `--build-arg BASE_VERSION` (for cs-firewall-bouncer, the
-  upstream release). A new image or a version bump goes there too. The
-  `push` job reuses it through a YAML anchor.
+  upstream release). A new image goes there too; Renovate bumps the
+  versions. The `push` job reuses it through a YAML anchor.
 - **Jobs run on `ubuntu-26.04` and `ubuntu-26.04-arm`, not
   `ubuntu-latest`.** They ship Podman
   5.7 / Buildah 1.42; `ubuntu-latest` (24.04) has buildah 1.33, and the
@@ -450,6 +459,52 @@ The same for Dalec images: same triggers, runners and tags as
   `cosign verify`.
 - **No lint job**: hadolint is for Containerfiles.
 
+## Updates: `renovate.json5`
+
+[Renovate](https://docs.renovatebot.com/) opens PRs every Saturday, the
+day before the weekly rebuild, for every pinned version: base images,
+k3s, application and build-tool releases, the scripts' and docs'
+images, GitHub Actions. `.github/workflows/renovate.yml` validates the
+config.
+
+- **One PR per dependency, every file at once:** a version pinned in
+  several places (Containerfile `ARG`, workflow matrix, spec args with
+  their source checksum) has a custom regex manager per place, under the
+  same dependency name, so they land in one PR. A new pin needs one too,
+  or it goes stale silently. Values derived from a version are rewritten
+  with it, in the same replacement (`autoReplaceStringTemplate`): the
+  kubeenv `suffix` from the matrix's `k3s` on the next line.
+- **Major base releases:** `BASE_VERSION` is the base image's major tag
+  (`44`, `10`), which the weekly rebuild follows through point releases.
+  Renovate only proposes the next major release.
+- **3 days before a GitHub release or tag is proposed** (actions, k3s,
+  upstream sources, `minimumReleaseAge`): time for a broken or malicious
+  release to be pulled, and for CRI-O to publish a new Kubernetes minor
+  release. Not for images: Renovate only gets their release dates from
+  Docker Hub, and holds an update without one.
+- **Release tags, no digests**, except for actions (pinned to a commit,
+  automatically). A digest on `FROM` would freeze the base image between
+  weekly rebuilds, and Renovate would write it into `ARG BASE_VERSION`,
+  which is also the image's tag.
+- **Fedora releases come from endoflife.date**, not from the image's tags:
+  `quay.io/fedora/fedora-bootc` tags the branched release and rawhide with
+  their number before they are released. AlmaLinux 9 is never moved to
+  10 (kept for x86-64-v2 hosts).
+- **Automerged once CI passes:** actions (one grouped PR), k3s builds
+  and Kubernetes patch and minor releases, and minor and patch releases
+  of the build tools CI exercises (golang, nushell, Dalec frontend,
+  par2cmdline-turbo) or the docs only use (hadolint, Renovate's
+  validator). A Kubernetes minor release fails CI until CRI-O publishes its
+  repository for it (`images/k3s/install.sh`): re-run the PR's checks then.
+- **Reviewed by hand**, each PR saying what to check: base images (CI
+  fail until their `sysroot/<BASE_VERSION>/` is added, see "Signing"),
+  SABnzbd and uv (regenerate the lock), cs-firewall-bouncer (port
+  upstream's config changes), image-builder-cli, and every major
+  release.
+- **A new base major or Kubernetes minor release changes the image
+  tag**: hosts stay on the old one, which is no longer rebuilt, until
+  `bootc switch`.
+
 ## Signing
 
 CI signs every image it pushes with a cosign key pair; hosts refuse
@@ -460,7 +515,7 @@ a local build upgrades from CI's signed images.
 - **Keys:** the private key is the `COSIGN_PRIVATE_KEY` repository secret,
   never in git. It has no passphrase (CI passes an empty one).
   With one, add a secret and write it to the `--sign-passphrase-file`. The public key is
-  `images/fedora/sysroot/usr/share/pki/containers/spnngl-images.pub`,
+  `images/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub`,
   in `/usr` so that it updates with the image.
 - **`podman push --sign-by-sigstore-private-key`, not `cosign sign`.**
   bootc verifies through containers/image (skopeo), which reads sigstore
@@ -482,11 +537,17 @@ a local build upgrades from CI's signed images.
 - **`etc/containers/registries.d/spnngl-images.yaml`** turns on
   `use-sigstore-attachments` for our namespace: needed to read the
   signatures on hosts, and to write them in CI.
-- **`etc/containers/policy.json`, one per image** (almalinux's overrides
-  fedora's): the base image's file, plus a `sigstoreSigned` requirement
+- **`etc/containers/policy.json`, one per image and base release**
+  (`sysroot/<BASE_VERSION>/`; AlmaLinux 9's differs from 10's: GPG keys
+  for Red Hat's registries, 10 uses sigstore): the base image's file,
+  plus `"default": reject` (below) and a `sigstoreSigned` requirement
   for `ghcr.io/spnngl/images`. It replaces the file shipped by
   `containers-common`, since `policy.json` has no drop-in directory.
-  When a base image changes its `policy.json`, port the change.
+  When a base image changes its `policy.json`, port the change: before
+  replacing it, the Containerfiles check with `images/fedora/policy.jq`
+  that ours is still the base's plus those changes, and fail the build
+  otherwise. A new base release fails it until its folder is added; so
+  does a change within a release, at the weekly rebuild.
 - **`"default": reject`** is what `enforce-container-sigpolicy = true`
   (`usr/lib/bootc/install/50-rootfs.toml`) requires: bootc refuses to pull
   when the default is `insecureAcceptAnything`. Every transport, and every
@@ -540,3 +601,4 @@ It only supports macOS on Apple Silicon, and says so when run anywhere else.
 - image-builder: <https://github.com/osbuild/image-builder>
   (bootc-image-builder now lives in `bootc-image-builder/` there)
 - Build config: <https://github.com/osbuild/image-builder/blob/main/bootc-image-builder/README.md#-build-config>
+- Renovate: <https://docs.renovatebot.com/> (source: `renovatebot/renovate`)

@@ -1,6 +1,6 @@
 # k3s
 
-The `<name>:<version>-v<KUBERNETES_VERSION>k3s` images (`kubeenv` stage,
+The `<name>:<version>-v<Kubernetes minor release>k3s` images (`kubeenv` stage,
 which runs `images/k3s/install.sh`) ship k3s for both roles, with the
 same binary:
 
@@ -14,6 +14,12 @@ Both are disabled in the image: each host picks its role once, by hand.
 uninstall script: switch to
 another image (`bootc switch`), then remove k3s' state: `/etc/rancher`,
 `/var/lib/rancher`, `/var/lib/kubelet`, `/var/lib/crio`, `/var/opt/cni`.
+
+Upgrades: `bootc upgrade` brings Kubernetes patch releases and new k3s
+builds (same tag). A minor release is a new tag: `bootc switch` to it,
+the server first, then the agents, one minor release at a time, as
+Kubernetes' version skew policy requires:
+<https://docs.k3s.io/upgrades/manual>.
 
 The container runtime is CRI-O (`crio.service`, enabled), with crun, not
 k3s' containerd: no `ctr`, no `k3s-killall.sh`. Stopping k3s leaves the
@@ -30,7 +36,7 @@ resource limits. The kubelet puts pods in `kubepods.slice`, next to it,
 and CRI-O each container's conmon in its pod's cgroup.
 
 Short image names (`coredns/coredns`) resolve to docker.io only, as with
-containerd (`images/fedora/sysroot/etc/containers/registries.conf.d/99-myregistries.conf`):
+containerd (`images/fedora/sysroot/common/etc/containers/registries.conf.d/99-myregistries.conf`):
 images from other registries need full names. CRI-O pulls with the host's pull secret, `/etc/ostree/auth.json`, and its
 own signature policy, `/etc/crio/policy.json` (accepts anything), not
 `/etc/containers/policy.json`. Its default capabilities have no
@@ -133,7 +139,7 @@ local-storage and its RBAC rolebindings. Deploy the others yourself:
 - DNS: CoreDNS, its Service on `10.43.0.10` (k3s' `--cluster-dns`),
   domain `cluster.local`, and NodeLocal DNSCache on every node, listening
   on `169.254.25.10`: the kubelets point pods to it, not to CoreDNS
-  (`images/fedora/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-cluster-dns.conf`).
+  (`images/fedora/sysroot/common/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-cluster-dns.conf`).
   Until it runs, pods have no DNS.
 - metrics-server, an ingress controller, runtime classes: as needed.
 - LoadBalancer Services: k3s' ServiceLB is disabled, use e.g. Cilium's
