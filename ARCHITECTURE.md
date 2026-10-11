@@ -24,7 +24,11 @@ For a bootc image there are two stages:
 │   └── workflows/
 │       ├── build.yml           # CI: lint, build, push every Containerfile image
 │       ├── build-dalec.yml     # CI: build, push every Dalec image (spec.yml)
-│       └── renovate.yml        # CI: validate renovate.json5
+│       │                       # the next four call spnngl/.github's:
+│       ├── renovate.yml        # CI: validate renovate.json5
+│       ├── conventional-commits.yml  # CI: commit messages of a PR
+│       ├── betterleaks.yml     # CI: secrets in the git history
+│       └── betterleaks-github.yml    # daily: secrets in PRs, issues
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── images/                     # shared build context for every image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
@@ -517,7 +521,10 @@ The same for Dalec images: same triggers, runners and tags as
 day before the weekly rebuild, for every pinned version: base images,
 k3s, application and build-tool releases, the scripts' and docs'
 images, GitHub Actions. `.github/workflows/renovate.yml` validates the
-config.
+config with the shared workflow of
+[spnngl/.github](https://github.com/spnngl/.github), which also holds
+the Renovate preset this config extends (timezone, labels, semantic
+commits, action digests, automerge under `.github/`).
 
 - **One PR per dependency, every file at once:** a version pinned in
   several places (Containerfile `ARG`, workflow matrix, spec args with
