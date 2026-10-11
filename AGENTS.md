@@ -22,13 +22,16 @@ Check the source rather than blog posts or memory:
 - Base image tags:
   <https://quay.io/repository/fedora/fedora-bootc?tab=tags>,
   <https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags>
+- Renovate (`renovate.json5`): `github.com/renovatebot/renovate`
+  (`docs/usage`, managers in `lib/modules/manager`, presets in
+  `lib/config/presets/internal`)
 
 ## Rules for images
 
 - One folder per image: `images/<name>/`, with its own `Containerfile`.
   The build context is the shared `images/` folder (see
   `scripts/build.sh`), not the image's own folder: a `Containerfile` can
-  `COPY`/`ADD` another image's files, e.g. `COPY ./fedora/sysroot/ /`.
+  `COPY`/`ADD` another image's files, e.g. `COPY ./fedora/sysroot/common/ /`.
   One `.containerignore` at `images/` covers every image; don't add a
   per-folder copy. `images/k3s/` is not an image: it holds the k3s
   install every `kubeenv` stage runs, and its `sysroot/`, which every
@@ -36,6 +39,9 @@ Check the source rather than blog posts or memory:
 - Put files in `images/<name>/sysroot/`, at the path they get in the
   image (for example `images/<name>/sysroot/usr/lib/...`), copied with
   `COPY --link ./<name>/sysroot/ /`. Don't write files inline from `RUN`.
+  bootc images split it: `sysroot/common/`, then `sysroot/<BASE_VERSION>/`
+  for the files that differ between base releases (`policy.json`),
+  copied after it.
 - Prefer `/usr` for content and config. Use `/etc` only for config that
   must be machine-local. Never leave files in `/var`: clean up package
   manager logs, caches and state in the same `RUN`.
@@ -45,10 +51,15 @@ Check the source rather than blog posts or memory:
   credentials go in `config.toml` (git-ignored). See `config.example.toml`.
 - Pin the base image to a major release with `ARG BASE_VERSION=<version>`
   before `FROM`. It is also the image's tag. CI passes it from the
-  `.github/workflows/build.yml` matrix: bump both, as their own change.
-  Also compare the new base's `/etc/containers/policy.json` with
-  `images/<name>/sysroot/etc/containers/policy.json` (see ARCHITECTURE.md,
-  "Signing").
+  `.github/workflows/build.yml` matrix: Renovate bumps both in one PR.
+  The build fails until `sysroot/<BASE_VERSION>/` exists, with the new
+  base's `/etc/containers/policy.json` plus our changes (see
+  ARCHITECTURE.md, "Signing").
+- Every pinned version (image tag, release, checksum) must be tracked by
+  `renovate.json5`: the dockerfile manager reads `FROM` and `# syntax=`;
+  anything else needs a custom manager matching every place it is
+  written, under one dependency name. Write versions only where Renovate
+  updates them: use placeholders (`<BASE_VERSION>`) in comments and docs.
 - New image: add it to both workflow matrices too (`hadolint` and `build`).
 - Must pass `hadolint` (config: `.hadolint.yaml`). Fix findings; ignore
   one only with a comment saying why.
@@ -84,6 +95,7 @@ scripts/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localh
 shellcheck scripts/*.sh
 podman run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint images/*/Containerfile
 docker buildx build -f images/<name>/spec.yml --target trixie/container images/   # Dalec images
+docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.145.2 renovate-config-validator --strict
 ```
 
 If you can't run a build (for example no podman), say so explicitly

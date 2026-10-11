@@ -3,18 +3,18 @@
 # Base image major release, also the tag of this image. CI sets it with
 # --build-arg (.github/workflows/build.yml); keep this default in sync.
 # Available tags: https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags
-ARG BASE_VERSION=10.2
+ARG BASE_VERSION=10
 
 # Derived AlmaLinux bootc image, in stages:
 #   - base: the host system (firewalld with geo-blocking, sshd, chrony,
 #     systemd-networkd...). Not an image on its own.
 #   - kubeenv (FROM base): adds k3s, no Docker. Tag suffix
-#     -v<KUBERNETES_VERSION>k3s.
+#     -v<Kubernetes minor release>k3s.
 #   - dockerenv (FROM base, the default target): adds Docker.
 #
 # Build commands, same tags as CI (.github/workflows/build.yml):
-#   podman build --format=docker -f images/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:10.2 images/
-#   podman build --format=docker --target kubeenv -f images/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:10.2-v1.36.5k3s images/
+#   podman build --format=docker -f images/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:<BASE_VERSION> images/
+#   podman build --format=docker --target kubeenv -f images/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:<BASE_VERSION>-v<Kubernetes minor release>k3s images/
 #
 # scripts/build.sh does the first one (default target only) and also builds a
 # qcow2 disk image; scripts/run.sh boots it in QEMU.
@@ -48,7 +48,7 @@ SHELL ["/usr/bin/nu", "--no-history", "--no-config-file", "-c"]
 # country: the blocked ones are picked in the RUN below. Not aggregated
 # (US: 70 K networks), geoblock.nu compacts them. Stays an archive: ADD
 # only unpacks local ones. IPv4 only, like everything here: IPv6 is
-# disabled (fedora/sysroot/etc/sysctl.d/990-disable-ipv6.conf).
+# disabled (fedora/sysroot/common/etc/sysctl.d/990-disable-ipv6.conf).
 ADD --chmod=0644 \
     https://www.ipdeny.com/ipblocks/data/countries/all-zones.tar.gz /geoblock/
 # AbuseIPDB 100 % confidence score, last 24 h (~67 K)
@@ -84,7 +84,7 @@ ADD --chmod=0644 \
 COPY almalinux/geoblock.nu almalinux/test_geoblock.nu /geoblock/
 # The static bogon ipset: geoblock.nu fails on a country network that
 # overlaps it.
-COPY almalinux/sysroot/usr/lib/firewalld/ipsets/geoblock-bogons.xml /geoblock/bogons/
+COPY almalinux/sysroot/common/usr/lib/firewalld/ipsets/geoblock-bogons.xml /geoblock/bogons/
 
 # firewall-offline-cmd --check-config does not validate ipset entries;
 # geoblock.nu is the only thing that does, so its tests run here, before it
@@ -152,18 +152,31 @@ ENV TZ=UTC
 
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
+# Our policy.json, about to replace the base's, must still be the base's
+# plus our changes (fedora/policy.jq). AlmaLinux 9's differs from 10's, so
+# ours is per release (sysroot/<BASE_VERSION>/); a new release has none yet
+# and fails here.
+ARG BASE_VERSION
+RUN --mount=type=bind,source=fedora/policy.jq,target=/tmp/policy.jq \
+    --mount=type=bind,source=almalinux/sysroot,target=/tmp/sysroot \
+    jq -e --slurpfile ours "/tmp/sysroot/${BASE_VERSION}/etc/containers/policy.json" \
+        -f /tmp/policy.jq /etc/containers/policy.json
+
 # Copy static configuration files, keeping the modes of the build context
 # (0755 directories, 0644 files). No --chmod: buildah applies it to
 # directories too, and 0644 on /usr, /etc... breaks every non-root service
-# (systemd-resolved included).
-COPY --link ./fedora/sysroot/ /
+# (systemd-resolved included). Not fedora's release-specific files.
+COPY --link ./fedora/sysroot/common/ /
 
 # Geo-blocking and blocklist ipsets built in the "geoblock" stage above.
 # This must come before the policies below: a policy that references a
 # missing ipset makes every firewall-offline-cmd call fail.
 COPY --link --from=geoblock /out/ /
-# Geo-blocking policies and the static bogon ipsets they use.
-COPY --link ./almalinux/sysroot/ /
+# Geo-blocking policies and the static bogon ipsets they use, shared by
+# every release.
+COPY --link ./almalinux/sysroot/common/ /
+# Release-specific files (policy.json).
+COPY --link ./almalinux/sysroot/${BASE_VERSION}/ /
 
 RUN <<EORUN
 # Install base stuff + repos
@@ -215,9 +228,9 @@ EORUN
 # images/k3s/install.sh, shared by every image; setup in K3S.md.
 FROM base AS kubeenv
 
-# Kubernetes release of k3s and CRI-O. CI sets it with --build-arg
-# (.github/workflows/build.yml); keep this default in sync.
-ARG KUBERNETES_VERSION=1.36.5
+# k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
+# with --build-arg (.github/workflows/build.yml); keep this default in sync.
+ARG INSTALL_K3S_VERSION=v1.36.5+k3s1
 
 # Bind-mounted, not copied: the script stays out of the image.
 RUN --mount=type=bind,source=k3s,target=/k3s \
@@ -233,7 +246,7 @@ RUN bootc container lint
 
 # Docker environment. Last stage, so the default target: it is the plain
 # almalinux:<version> image, kubeenv being
-# almalinux:<version>-v<KUBERNETES_VERSION>k3s.
+# almalinux:<version>-v<Kubernetes minor release>k3s.
 FROM base AS dockerenv
 
 RUN <<EORUN

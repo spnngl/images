@@ -4,12 +4,12 @@
 #   - base: the host system (firewalld, sshd, chrony, systemd-networkd...).
 #     Not an image on its own.
 #   - kubeenv (FROM base): adds k3s, no Docker. Tag suffix
-#     -v<KUBERNETES_VERSION>k3s.
+#     -v<Kubernetes minor release>k3s.
 #   - dockerenv (FROM base, the default target): adds Docker.
 #
 # Build commands, same tags as CI (.github/workflows/build.yml):
-#   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:44 images/
-#   podman build --format=docker --target kubeenv -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:44-v1.36.5k3s images/
+#   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:<BASE_VERSION> images/
+#   podman build --format=docker --target kubeenv -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:<BASE_VERSION>-v<Kubernetes minor release>k3s images/
 #
 # scripts/build.sh does the first one (default target only) and also builds a
 # qcow2 disk image; scripts/run.sh boots it in QEMU.
@@ -75,17 +75,28 @@ dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
 EORUN
 
-# Copy static configuration files
-COPY --link ./fedora/sysroot/ /
+# Our policy.json, about to replace the base's, must still be the base's
+# plus our changes (policy.jq). It is per release
+# (sysroot/<BASE_VERSION>/): a new release has none yet and fails here.
+# After the packages, so that editing sysroot/ keeps their layer cached.
+ARG BASE_VERSION
+RUN --mount=type=bind,source=fedora,target=/tmp/fedora \
+    jq -e --slurpfile ours "/tmp/fedora/sysroot/${BASE_VERSION}/etc/containers/policy.json" \
+        -f /tmp/fedora/policy.jq /etc/containers/policy.json
+
+# Copy static configuration files: shared ones, then the release's
+# (policy.json).
+COPY --link ./fedora/sysroot/common/ /
+COPY --link ./fedora/sysroot/${BASE_VERSION}/ /
 
 
 # Kubernetes environment: k3s, without Docker. Steps and reasons in
 # images/k3s/install.sh, shared by every image; setup in K3S.md.
 FROM base AS kubeenv
 
-# Kubernetes release of k3s and CRI-O. CI sets it with --build-arg
-# (.github/workflows/build.yml); keep this default in sync.
-ARG KUBERNETES_VERSION=1.36.5
+# k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
+# with --build-arg (.github/workflows/build.yml); keep this default in sync.
+ARG INSTALL_K3S_VERSION=v1.36.5+k3s1
 
 # Bind-mounted, not copied: the script stays out of the image.
 RUN --mount=type=bind,source=k3s,target=/k3s \
@@ -101,7 +112,7 @@ RUN bootc container lint
 
 # Docker environment. Last stage, so the default target: it is the plain
 # fedora:<version> image, kubeenv being
-# fedora:<version>-v<KUBERNETES_VERSION>k3s.
+# fedora:<version>-v<Kubernetes minor release>k3s.
 FROM base AS dockerenv
 
 RUN <<EORUN

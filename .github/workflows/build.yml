@@ -86,10 +86,12 @@ jobs:
         # Building almalinux:9.x to get v2 binaries without issues, EOL is 2032.
         #
         # Optional keys, for multi-stage Containerfiles: target, the stage to
-        # build (default: the last one), and suffix, appended to the tag.
+        # build (default: the last one), suffix, appended to the tag, and
+        # k3s, the k3s release (the Containerfiles' ARG INSTALL_K3S_VERSION).
         # fedora and almalinux: dockerenv is <version>, kubeenv
-        # <version>-v<Kubernetes release>k3s (the suffix, an anchor: write the
-        # release once, in sync with KUBERNETES_VERSION below).
+        # <version>-v<Kubernetes minor release>k3s. Anchors: suffix and k3s
+        # are written once. The tag has no patch release: a patch reaches
+        # hosts with `bootc upgrade`, only a minor needs `bootc switch`.
         # cs-firewall-bouncer: one stage, no target; the version is the
         # bouncer release, keep it in sync with the Containerfile's BASE_VERSION.
         # The push job reuses this list (YAML anchor).
@@ -100,21 +102,26 @@ jobs:
           - name: fedora
             version: "44"
             target: kubeenv
-            suffix: &k3s -v1.36.5k3s
+            # Renovate updates both in one replacement (renovate.json5):
+            # keep them on consecutive lines, in this order.
+            suffix: &kubeenv -v1.36k3s
+            k3s: &k3s v1.36.5+k3s1
           - name: almalinux
-            version: "9.8"
+            version: "9"
             target: dockerenv
           - name: almalinux
-            version: "9.8"
+            version: "9"
             target: kubeenv
-            suffix: *k3s
+            suffix: *kubeenv
+            k3s: *k3s
           - name: almalinux
-            version: "10.2"
+            version: "10"
             target: dockerenv
           - name: almalinux
-            version: "10.2"
+            version: "10"
             target: kubeenv
-            suffix: *k3s
+            suffix: *kubeenv
+            k3s: *k3s
           - name: cs-firewall-bouncer
             version: "0.0.38"
         # Every image is built for every platform. Keep the push job's
@@ -125,17 +132,14 @@ jobs:
           - arch: arm64
             runner: ubuntu-26.04-arm
     env:
-      # kubeenv's k3s and CRI-O release: the Containerfiles' ARG
-      # KUBERNETES_VERSION, keep their default in sync, and the kubeenv
-      # suffix above (-v<release>k3s).
-      KUBERNETES_VERSION: 1.36.5
+      K3S: ${{ matrix.image.k3s }}
       NAME: ${{ matrix.image.name }}
       VERSION: ${{ matrix.image.version }}
       TARGET: ${{ matrix.image.target }}
       ARCH: ${{ matrix.platform.arch }}
       TAG: ghcr.io/spnngl/images/${{ matrix.image.name }}:${{ matrix.image.version }}${{ matrix.image.suffix }}
       # Same as the push job's: <image>_<arch>. "_" can't appear in a tag
-      # suffix, so fedora_44_* doesn't match fedora_44-v1.36.5k3s_*.
+      # suffix, so fedora_<version>_* doesn't match fedora_<version>-v<minor>k3s_*.
       ARTIFACT: ${{ matrix.image.name }}_${{ matrix.image.version }}${{ matrix.image.suffix }}_${{ matrix.platform.arch }}
     steps:
       - uses: actions/checkout@v7
@@ -145,12 +149,12 @@ jobs:
       # the runner's own: without QEMU, a runner of another platform fails
       # instead of building the wrong one. The source label links the
       # ghcr.io package to this repository. --target only when the matrix
-      # sets one.
+      # sets one, INSTALL_K3S_VERSION only when it sets k3s.
       # SOURCE_DATE_EPOCH, the last commit's time, for reproducible builds.
       # See: https://oneuptime.com/blog/post/2026-03-18-use-podman-reproducible-builds/view
       - run: |-
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" --build-arg "KUBERNETES_VERSION=${KUBERNETES_VERSION}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
+          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
       # Hand the image to the push job as a dir: transport folder.
       # docker-dir keeps the v2s2 manifest (OCI would drop SHELL), and
       # --compress gzips the layers here, both platforms in parallel: the
@@ -193,6 +197,7 @@ jobs:
         image: *images
     env:
       NAME: ${{ matrix.image.name }}
+      VERSION: ${{ matrix.image.version }}
       # The build job's platform list.
       ARCHES: amd64 arm64
       TAG: ghcr.io/spnngl/images/${{ matrix.image.name }}:${{ matrix.image.version }}${{ matrix.image.suffix }}
@@ -218,8 +223,8 @@ jobs:
       # push only writes sigstore signatures where registries.d enables them,
       # and the check below reads the key from the path policy.json names.
       - run: |-
-          sudo install -D -m 0644 -t /etc/containers/registries.d/ images/fedora/sysroot/etc/containers/registries.d/spnngl-images.yaml
-          sudo install -D -m 0644 -t /usr/share/pki/containers/ images/fedora/sysroot/usr/share/pki/containers/spnngl-images.pub
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ images/fedora/sysroot/common/etc/containers/registries.d/spnngl-images.yaml
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ images/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub
       # Only CI signs: local builds (scripts/build.sh) are never pushed.
       # podman, not cosign: cosign 3 stores signatures as a sigstore bundle
       # (OCI referrers), which containers/image (bootc, podman, skopeo) can't
@@ -257,10 +262,12 @@ jobs:
       # Pull every platform back with the policy.json this image ships: fails
       # if the signing key doesn't match the committed public key, which
       # would make hosts refuse every upgrade. An application image ships
-      # none: use fedora's, the policy of the hosts that pull it.
+      # none: use fedora's, the policy of the hosts that pull it (any
+      # release: they share the rule for our images).
       - run: |-
-          policy="images/${NAME}/sysroot/etc/containers/policy.json"
-          [[ -f "${policy}" ]] || policy=images/fedora/sysroot/etc/containers/policy.json
+          policy="images/${NAME}/sysroot/${VERSION}/etc/containers/policy.json"
+          fedora=(images/fedora/sysroot/*/etc/containers/policy.json)
+          [[ -f "${policy}" ]] || policy="${fedora[0]}"
           read -r -a arches <<< "${ARCHES}"
           for arch in "${arches[@]}"; do
             podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${TAG}"

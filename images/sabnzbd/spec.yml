@@ -8,18 +8,17 @@
 #
 # Build (from the repo root):
 #   docker buildx build -f images/sabnzbd/spec.yml --target trixie/container \
-#     -t ghcr.io/spnngl/images/sabnzbd:5.1.3 images/
+#     -t ghcr.io/spnngl/images/sabnzbd:<BASE_VERSION> images/
 #
 # Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
 # (settings, queue, logs) and /downloads must be writable by it; web UI on
 # 8080/tcp. No shell: post-processing scripts must be Python with
 # #!/usr/bin/python3 or no shebang (no /usr/bin/env either), not sh.
 #
-# Bumping BASE_VERSION: also update the sabnzbd checksum below, run
-# scripts/sabnzbd-lock.sh, compare downloads-dir.patch with upstream's
-# sabnzbd/constants.py, and bump .github/workflows/build-dalec.yml.
-# Bumping PAR2_VERSION: also update the par2cmdline-turbo checksum.
-# Bumping UV_VERSION: also run scripts/sabnzbd-lock.sh.
+# Renovate (renovate.json5) bumps the args below, with the source
+# checksums (CI reads BASE_VERSION from here). In its PR for
+# a new SABnzbd or uv, run scripts/sabnzbd-lock.sh; for a new SABnzbd,
+# also compare downloads-dir.patch with upstream's sabnzbd/constants.py.
 
 args:
   # Releases: https://github.com/sabnzbd/sabnzbd/releases
