@@ -47,7 +47,7 @@ podman run --rm --privileged --pull=newer \
     -v "${PWD}/config.toml:/config.toml:ro" \
     -v "${PWD}/output:/output" \
     -v /var/lib/containers/storage:/var/lib/containers/storage \
-    ghcr.io/osbuild/image-builder-cli:v84.0.0 \
+    ghcr.io/osbuild/image-builder-cli:v86.0.0 \
     build --bootc-ref "${tag}" --blueprint /config.toml \
     --output-dir "${name}" --output-name "${name}" qcow2
 
