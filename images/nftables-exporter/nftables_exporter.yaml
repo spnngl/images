@@ -1,0 +1,11 @@
+# The image's config, at the exporter's default --config path. Replace it by
+# mounting a file over /etc/nftables_exporter.yaml (Kubernetes: a ConfigMap
+# with subPath). Keys left out keep upstream's defaults: options.go,
+# https://github.com/metal-stack/nftables-exporter#configuration-file
+nftables_exporter:
+  # Loopback only: in the host network namespace, upstream's default ":9630"
+  # would publish the host's rules (comments, addresses, ports) on every
+  # interface. Scrape it through a local proxy, or override this.
+  bind_to: "127.0.0.1:9630"
+  # Debian's nft, by its real path. Upstream's default is /sbin/nft.
+  nft_location: /usr/sbin/nft

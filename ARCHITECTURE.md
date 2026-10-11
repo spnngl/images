@@ -3,10 +3,10 @@
 This repository builds [bootc](https://bootc.dev/bootc/) images: bootable
 operating systems shipped as OCI container images. A bootc host boots from
 an image and updates by pulling a newer one (`bootc upgrade`), the same way
-a container is updated. Two folders are not bootc images but application
-images, containers the hosts run: `images/cs-firewall-bouncer` and
-`images/sabnzbd`, the latter built with Dalec, not a Containerfile (see
-their sections).
+a container is updated. Three folders are not bootc images but
+application images, containers the hosts run: `images/cs-firewall-bouncer`,
+`images/sabnzbd` and `images/nftables-exporter`, the last two built with
+Dalec, not a Containerfile (see their sections).
 
 For a bootc image there are two stages:
 
@@ -33,7 +33,8 @@ For a bootc image there are two stages:
 │   │   └── sysroot/...         # CRI-O configuration, kube.slice, swap
 │   └── <name>/                 # one folder per image (bootc, or application
 │       │                       # image: cs-firewall-bouncer)
-│       ├── Containerfile       # or spec.yml, for a Dalec image: sabnzbd
+│       ├── Containerfile       # or spec.yml, for a Dalec image: sabnzbd,
+│       │                       # nftables-exporter
 │       └── sysroot/...         # files copied as is into the image root
 │                               # (bootc: common/, then <BASE_VERSION>/)
 ├── scripts/
@@ -312,6 +313,57 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
   bumps it in the spec (with the sabnzbd checksum), where
   `build-dalec.yml` reads it; push the regenerated lock to its PR.
 
+### `images/nftables-exporter`
+
+[nftables-exporter](https://github.com/metal-stack/nftables-exporter)
+(Prometheus metrics of the host's nftables counters, sets, chains and
+rules, Go), built with Dalec from `images/nftables-exporter/spec.yml`, as
+`images/sabnzbd` (same reasons, same `docker buildx` build). One Debian
+trixie package, the exporter, installed with Debian's `nftables`.
+
+- **Not a static binary on scratch**, unlike cs-firewall-bouncer: the
+  exporter runs `nft -j -t list ruleset` on every scrape, and nft needs
+  its libraries. trixie's nftables (1.1.3) is enough: set `count`
+  metrics need nft 1.1.7 and an unreleased exporter.
+- **Go from trixie-backports**, only for the build (`extra_repos` with
+  `envs: [build]`): trixie's golang-go is 1.24, the exporter's `go.mod`
+  and modules need 1.26. Renovate follows backports' golang-go through
+  Repology (its deb datasource can't read backports' `Packages.xz`).
+  Go modules are downloaded before the build by Dalec's `gomod`
+  generator, pinned by `go.sum`.
+- **Only native builds**: a cross build (`--platform` another
+  architecture, through QEMU) fails in the `gomod` generator with `exec:
+  "sh": executable file not found in $PATH` (Dalec 0.22 runs it in the
+  build platform's root filesystem without its `PATH`). CI builds each
+  platform on its own runner.
+- **Config in `/etc/nftables_exporter.yaml`**
+  (`nftables_exporter.yaml`), the exporter's default `--config`, without
+  which it exits: listens on `127.0.0.1:9630` instead of upstream's
+  `:9630`, as it runs in the host network and the rules (comments,
+  addresses, ports) would be on every interface; `nft` at Debian's
+  `/usr/sbin/nft`. Mount another file over it to change it.
+- **Runtime contract (Kubernetes DaemonSet):** `hostNetwork: true`
+  (rules belong to a network namespace), root with `NET_ADMIN` as only
+  capability (drop ALL, `allowPrivilegeEscalation: false`, read-only
+  root filesystem), no volume. Root because nft reads the ruleset over
+  netlink with `CAP_NET_ADMIN`, and a non-root process loses it when it
+  runs nft: only ambient or file capabilities survive an exec, Kubernetes
+  can't set ambient ones, and file ones need `allowPrivilegeEscalation`.
+  Checked: as UID 65532 with `NET_ADMIN`, `nftables_up` is 0.
+- **Loopback, so probes and scrapes need care:** probes need `host:
+  127.0.0.1` (the kubelet probes the pod IP, the node's). Prometheus
+  can't reach loopback from another node: put an authenticating TLS proxy
+  in the pod (kube-rbac-proxy on the node's IP, upstream
+  `http://127.0.0.1:9630/`), or set `bind_to` to the node's IP and filter
+  the port on the host (NetworkPolicies don't apply to host network pods
+  with most CNIs).
+- **Upstream's unit tests run in the build** (`go test ./...`, no network
+  or nft needed): with the spec's tests, the only check of an automerged
+  Go update.
+- **`BASE_VERSION` is the exporter's tag** without its `v` (upstream
+  publishes no GitHub releases). Renovate bumps it with the source
+  checksum; check upstream's `options.go` for new options.
+
 ## Design decisions
 
 - **The build context is the shared `images/` folder, not each image's
@@ -498,8 +550,9 @@ config.
   repository for it (`images/k3s/install.sh`): re-run the PR's checks then.
 - **Reviewed by hand**, each PR saying what to check: base images (CI
   fail until their `sysroot/<BASE_VERSION>/` is added, see "Signing"),
-  SABnzbd and uv (regenerate the lock), cs-firewall-bouncer (port
-  upstream's config changes), image-builder-cli, and every major
+  SABnzbd and uv (regenerate the lock), cs-firewall-bouncer and
+  nftables-exporter (port upstream's config changes), image-builder-cli,
+  and every major
   release.
 - **A new base major or Kubernetes minor release changes the image
   tag**: hosts stay on the old one, which is no longer rebuilt, until
