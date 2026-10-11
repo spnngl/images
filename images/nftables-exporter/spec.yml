@@ -1,0 +1,166 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.1
+#
+# nftables-exporter (Prometheus metrics of the host's nftables counters,
+# sets, chains and rules) built with Dalec
+# (https://project-dalec.github.io/dalec/): one Debian trixie package, the
+# exporter, installed into the minimal image of the trixie/container target
+# with Debian's nftables. Not a static image on scratch: the exporter runs
+# `nft -j -t list ruleset` for every scrape, and nft needs its libraries.
+#
+# Build (from the repo root):
+#   docker buildx build -f images/nftables-exporter/spec.yml \
+#     --target trixie/container \
+#     -t ghcr.io/spnngl/images/nftables-exporter:<BASE_VERSION> images/
+#
+# Runtime contract (Kubernetes DaemonSet):
+# - hostNetwork: true. nftables rules belong to a network namespace: in the
+#   pod's own, nft would list the pod's empty ruleset.
+# - Root, with NET_ADMIN as its only capability: runAsUser: 0,
+#   capabilities: {drop: [ALL], add: [NET_ADMIN]},
+#   allowPrivilegeEscalation: false, readOnlyRootFilesystem: true.
+#   nft needs CAP_NET_ADMIN to read the ruleset over netlink. A non-root
+#   process loses the capabilities a container adds when it runs a program
+#   (exec): only ambient or file capabilities survive it. Kubernetes can't
+#   set ambient ones (KEP-2763 isn't implemented), and file capabilities
+#   need a setcap, which dpkg doesn't ship, and no_new_privs off
+#   (allowPrivilegeEscalation: true), which is worse than root without
+#   other capabilities.
+# - Metrics on 127.0.0.1:9630/tcp of the host, path /metrics (the config in
+#   nftables_exporter.yaml). Nothing to write: no volume.
+# - Probes need host: 127.0.0.1 (httpGet on /metrics, port 9630): the
+#   kubelet probes the pod IP, the node's IP in the host network, where
+#   nothing listens.
+# - Prometheus can't reach loopback from another node. Either put an
+#   authenticating TLS proxy in the pod (kube-rbac-proxy with
+#   --secure-listen-address on the node's IP and --upstream
+#   http://127.0.0.1:9630/), or set bind_to to the node's IP and filter
+#   the port on the host: NetworkPolicies don't apply to host network pods
+#   with most CNIs.
+#
+# Renovate (renovate.json5) bumps the version below with the source checksum
+# (CI reads BASE_VERSION from here), and the Go toolchain. In its PR for a
+# new exporter, compare upstream's options.go with nftables_exporter.yaml.
+
+args:
+  # Tags (upstream publishes no GitHub releases):
+  # https://github.com/metal-stack/nftables-exporter/tags
+  BASE_VERSION: 0.4.5
+
+name: nftables-exporter
+description: Prometheus exporter for nftables counters, sets, chains and rules
+website: https://github.com/metal-stack/nftables-exporter
+license: GPL-3.0-only
+packager: spnngl/images
+vendor: spnngl/images
+version: ${BASE_VERSION}
+revision: 1
+
+sources:
+  nftables-exporter:
+    git:
+      url: https://github.com/metal-stack/nftables-exporter.git
+      commit: v${BASE_VERSION}
+      # The tag must resolve to this commit: tags can be moved.
+      checksum: a11a119bdc67e43a9cd4e21ef400e0be6048ed92
+    # Downloads the Go modules before the build, which has no network;
+    # go.sum pins each one by hash.
+    generate:
+      - gomod: {}
+  # This folder: the config.
+  files:
+    context: {}
+    path: nftables-exporter/
+    includes:
+      - nftables_exporter.yaml
+
+dependencies:
+  build:
+    # trixie's golang-go is 1.24: go.mod and its modules need 1.26 or later
+    # (prometheus/common requires 1.25). From trixie-backports, see
+    # extra_repos. Dalec puts its /usr/lib/go-<version>/bin on the PATH.
+    golang-1.27-go: {}
+  runtime:
+    # /usr/sbin/nft, which the exporter runs (nft_location in the config).
+    nftables: {}
+  extra_repos:
+    # trixie-backports for Go, only for the build: the image gets nothing
+    # from it. Same mirror and signing key as the worker's own
+    # /etc/apt/sources.list.d/debian.sources. Dalec only takes the one-line
+    # format (it names the file *.list).
+    - config:
+        backports:
+          inline:
+            file:
+              contents: |
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian trixie-backports main
+      envs:
+        - build
+
+build:
+  env:
+    # Pure Go, no C library: a static binary, and no gcc to install.
+    CGO_ENABLED: "0"
+    # Fail with go.mod's requirement rather than try to download a newer Go
+    # (no network): a new go directive needs a newer golang-<version>-go.
+    GOTOOLCHAIN: local
+    # No nftables-exporter-dbgsym package: the image would install it.
+    DEB_BUILD_OPTIONS: noautodbgsym
+  # Steps run with sh (dash) from the folder holding one folder per source.
+  steps:
+    # Upstream's unit tests (no network, no nft): the only check of the
+    # code beyond the spec's tests when Renovate automerges a new Go.
+    - command: |
+        cd nftables-exporter
+        go test ./...
+    # Upstream's Makefile flags, without the git-derived ones (the source
+    # has no .git) nor the build date (reproducible builds). Dalec expands
+    # args in env, not in the command.
+    - env:
+        VERSION: v${BASE_VERSION}
+      command: |
+        cd nftables-exporter
+        go build -trimpath \
+          -ldflags "-X github.com/metal-stack/v.Version=${VERSION}" \
+          -o ../out/nftables-exporter .
+
+artifacts:
+  binaries:
+    out/nftables-exporter: {}
+  configFiles:
+    # Installed as /etc/nftables_exporter.yaml, the exporter's default
+    # --config: without a config file it exits.
+    files/nftables_exporter.yaml: {}
+  licenses:
+    # The GPL-3.0 text that must ship with the binary, in
+    # /usr/share/doc/nftables-exporter/. Declaring it also makes
+    # trixie/container keep all of /usr/share/doc, so the Debian packages'
+    # copyright files stay too (it deletes the whole tree otherwise).
+    nftables-exporter/LICENSE: {}
+
+image:
+  entrypoint: /usr/bin/nftables-exporter
+  # Root on purpose, numeric to be explicit: see the runtime contract above.
+  user: "0:0"
+  labels:
+    org.opencontainers.image.title: nftables-exporter
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: GPL-3.0-only
+    org.opencontainers.image.source: https://github.com/spnngl/images
+    # Metrics on 127.0.0.1:9630/tcp: Dalec has no EXPOSE equivalent.
+
+tests:
+  # From the path in the config. --version needs no capability; listing the
+  # ruleset needs NET_ADMIN, which the build's containers don't have.
+  - name: nft runs
+    steps:
+      - command: /usr/sbin/nft --version
+        stdout:
+          contains:
+            - nftables v
+  # The exporter prints its version with Go's log package, to stderr.
+  - name: nftables-exporter starts
+    steps:
+      - command: /usr/bin/nftables-exporter --version
+        stderr:
+          contains:
+            - "nftables_exporter version: v${BASE_VERSION}"
