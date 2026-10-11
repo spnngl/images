@@ -104,8 +104,8 @@ jobs:
             target: kubeenv
             # Renovate updates both in one replacement (renovate.json5):
             # keep them on consecutive lines, in this order.
-            suffix: &kubeenv -v1.36k3s
-            k3s: &k3s v1.36.5+k3s1
+            suffix: &kubeenv -v1.37k3s
+            k3s: &k3s v1.37.1+k3s1
           - name: almalinux
             version: "9"
             target: dockerenv
