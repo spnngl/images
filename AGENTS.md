@@ -62,8 +62,8 @@ Check the source rather than blog posts or memory:
   the upstream release. `scripts/build.sh` refuses them.
 - Dalec images (`images/sabnzbd/`): `images/<name>/spec.yml` instead of
   a `Containerfile`, target `trixie/container`, built with `docker
-  buildx` by `.github/workflows/build-dalec.yml` (add new ones to its
-  matrix, not `build.yml`'s). `args.BASE_VERSION` is the upstream
+  buildx` by `.github/workflows/build-dalec.yml` (it finds every
+  `spec.yml`; don't add them to `build.yml`). `args.BASE_VERSION` is the upstream
   release; pin git sources with `checksum`; the spec's `tests` replace
   the smoke test. The Containerfile rules above don't apply.
 - Comment every significant step with *why*, and link docs when useful.

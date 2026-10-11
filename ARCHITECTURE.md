@@ -423,20 +423,31 @@ Container images only: disk images need `config.toml`.
 
 ## CI: `.github/workflows/build-dalec.yml`
 
-The same for Dalec images (`images/<name>/spec.yml`): same triggers,
-runners, matrix shape (`name`, `version`), tags, and a `push` job copied
-from `build.yml`. The differences:
+The same for Dalec images: same triggers, runners and tags as
+`build.yml`, Docker tooling only (no podman). The differences:
 
-- **`docker buildx`, not podman**, with a `docker-container` builder
-  (the docker driver can't export an OCI layout). Building also runs the
+- **Images are found, not listed**: a `discover` job makes the matrix
+  from every `images/<name>/spec.yml`, its version being the spec's
+  `args.BASE_VERSION` (read with `yq`). A new Dalec image needs no
+  workflow change.
+- **`docker/build-push-action`**, with a `docker-container` builder
+  (the docker driver can't add attestations). Building also runs the
   spec's tests on each platform.
-- **`version` is passed as `--build-arg BASE_VERSION`**, only as a check:
-  the spec pins the source checksum and `requirements.lock` to its own
-  version, so a matrix that doesn't match fails the build.
-- **Each build job hands over an OCI layout folder** (`oci:` transport;
-  no `SHELL` to lose), built without buildx's provenance and SBOM
-  manifests, which podman's `manifest add` can't pick from. The `push`
-  job attests the image as in `build.yml`.
+- **Attestations from BuildKit**
+  (<https://docs.docker.com/build/metadata/attestations/>), in each
+  platform's index: SLSA provenance (`mode=max`, `version=v1`: also the
+  build args; the spec has no secrets) and an SPDX SBOM. BuildKit's syft
+  scanner runs on the final image whatever the frontend, so it lists the
+  Debian packages (dpkg database) and the Python ones (`dist-info`).
+  Read them with `docker buildx imagetools inspect <tag> --format
+  '{{ json .Provenance }}'` (or `.SBOM`). No
+  `actions/attest-build-provenance`: it would be a second provenance.
+- **Each build job pushes its platform by digest**, untagged, and hands
+  the digest over; the `push` job merges them into the tagged list with
+  `docker buildx imagetools create`, attestations included.
+- **Signed by `cosign sign`**, with the same key and in the same
+  attachment format as podman's (see "Signing"), then checked with
+  `cosign verify`.
 - **No lint job**: hadolint is for Containerfiles.
 
 ## Signing
@@ -458,6 +469,16 @@ a local build upgrades from CI's signed images.
   containers/image can't see. podman writes the attachment format and
   takes cosign keys (`ENCRYPTED SIGSTORE PRIVATE KEY`). No Rekor
   transparency log entry is made; the policy doesn't ask for one.
+  Dalec images, built without podman, use `cosign sign` with cosign 3's
+  deprecated legacy flags, which write the same attachments
+  (`build-dalec.yml` explains each flag). `--sign-container-identity`
+  makes it claim the tag, as podman does: otherwise a tag pull is
+  rejected.
+- **Not keyless**: containers/image's policy matches a Fulcio
+  certificate by email only (`subjectEmail`,
+  `image/signature/fulcio_cert.go` in
+  `github.com/containers/container-libs`), and a GitHub Actions
+  certificate carries the workflow's URL, not an email.
 - **`etc/containers/registries.d/spnngl-images.yaml`** turns on
   `use-sigstore-attachments` for our namespace: needed to read the
   signatures on hosts, and to write them in CI.
@@ -479,7 +500,8 @@ a local build upgrades from CI's signed images.
   don't read it: the signature above is what they check. Check it with
   `gh attestation verify oci://ghcr.io/spnngl/images/<name>:<tag> -R spnngl/images`.
   The action only reads Docker's credential file, so CI logs podman in
-  with `REGISTRY_AUTH_FILE=~/.docker/config.json`.
+  with `REGISTRY_AUTH_FILE=~/.docker/config.json`. Dalec images carry
+  BuildKit's provenance and SBOM instead (`build-dalec.yml` section).
 
 ## Running: `scripts/run.sh`
 
