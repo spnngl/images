@@ -10,9 +10,16 @@
 #   docker buildx build -f images/sabnzbd/spec.yml --target trixie/container \
 #     -t ghcr.io/spnngl/images/sabnzbd:5.1.3 images/
 #
+# Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
+# (settings, queue, logs) and /downloads must be writable by it; web UI on
+# 8080/tcp. No shell: post-processing scripts must be Python with
+# #!/usr/bin/python3 or no shebang (no /usr/bin/env either), not sh.
+#
 # Bumping BASE_VERSION: also update the sabnzbd checksum below, run
 # scripts/sabnzbd-lock.sh, compare downloads-dir.patch with upstream's
 # sabnzbd/constants.py, and bump .github/workflows/build-dalec.yml.
+# Bumping PAR2_VERSION: also update the par2cmdline-turbo checksum.
+# Bumping UV_VERSION: also run scripts/sabnzbd-lock.sh.
 
 args:
   # Releases: https://github.com/sabnzbd/sabnzbd/releases
@@ -159,6 +166,14 @@ artifacts:
     out/sabnzbd: {}
     out/sabnzbd.pth:
       subpath: python3/dist-packages
+  licenses:
+    # The GPL-2.0 text that must ship with the par2 binary, in
+    # /usr/share/doc/sabnzbd/par2cmdline-turbo/. SABnzbd's own are in
+    # /usr/lib/sabnzbd. Declaring it also makes trixie/container keep all of
+    # /usr/share/doc, so the Debian packages' copyright files stay too (it
+    # deletes the whole tree otherwise), with their docs and man pages.
+    par2cmdline-turbo/COPYING:
+      subpath: par2cmdline-turbo
 
 image:
   entrypoint: /usr/bin/python3 /usr/lib/sabnzbd/SABnzbd.py

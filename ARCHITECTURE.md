@@ -282,6 +282,11 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
 - **par2cmdline-turbo built from source**, SABnzbd's recommended par2:
   trixie only has par2cmdline 0.8.1. unrar comes from trixie's
   `non-free` (only when building the image, not the package).
+- **Licenses kept in `/usr/share/doc`**: par2cmdline-turbo's `COPYING`
+  (GPL-2.0, ships with the binary) is a `licenses` artifact. Declaring one
+  makes `trixie/container` keep the whole tree, so the Debian packages'
+  `copyright` files stay too (about 4 MB with their docs and man pages);
+  without it Dalec deletes all of it.
 - **7za through `/usr/local/bin/7za`**, a symlink to
   `/usr/lib/7zip/7za`: Debian's `/usr/bin/7za` is a shell script.
   The spec's tests run every tool from the path SABnzbd finds.
@@ -294,7 +299,10 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
   UI on 8080/tcp. Reaching it by a host name other than an IP or
   `localhost` needs that name in SABnzbd's `host_whitelist` (Config →
   Special). At start SABnzbd prints `Exception in isFAT(...): ... 'df'`:
-  harmless, only a FAT warning check.
+  harmless, only a FAT warning check. No shell, no `/usr/bin/env`, no
+  `nice`/`ionice`: post-processing scripts must be Python, executable,
+  with `#!/usr/bin/python3` or no shebang (SABnzbd then runs them with
+  its own Python); upstream's `Sample-PostProc.sh` can't run.
 - **`BASE_VERSION` is the SABnzbd release**, also the tag. Bump it in the
   spec (with the sabnzbd checksum) and in `build-dalec.yml`'s matrix, in
   one commit, with the regenerated lock.
