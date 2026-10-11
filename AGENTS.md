@@ -14,6 +14,9 @@ Check the source rather than blog posts or memory:
 - buildah (Containerfile behaviour under podman): `github.com/containers/buildah`
 - firewalld (zone/policy/ipset behaviour): `github.com/firewalld/firewalld`
   (`doc/xml` for docs, `src/firewall/core` for behaviour)
+- Dalec (`images/*/spec.yml`): `github.com/project-dalec/dalec`
+  (`website/content` for docs, `spec.go` for the schema), at the tag of
+  the frontend in the spec's `# syntax=` line
 - nushell (`images/almalinux/geoblock.nu`): `github.com/nushell/nushell`,
   at the tag of the `ghcr.io/nushell/nushell` image the Containerfile uses
 - Base image tags:
@@ -57,6 +60,12 @@ Check the source rather than blog posts or memory:
   lint; the last instruction is an exec-form smoke test
   (`RUN ["<binary>", ...]`) that needs no capability. `BASE_VERSION` is
   the upstream release. `scripts/build.sh` refuses them.
+- Dalec images (`images/sabnzbd/`): `images/<name>/spec.yml` instead of
+  a `Containerfile`, target `trixie/container`, built with `docker
+  buildx` by `.github/workflows/build-dalec.yml` (add new ones to its
+  matrix, not `build.yml`'s). `args.BASE_VERSION` is the upstream
+  release; pin git sources with `checksum`; the spec's `tests` replace
+  the smoke test. The Containerfile rules above don't apply.
 - Comment every significant step with *why*, and link docs when useful.
 
 ## Scripts
@@ -74,6 +83,7 @@ scripts/build.sh <name>   # needs rootful podman and ./config.toml
 scripts/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
 shellcheck scripts/*.sh
 podman run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint images/*/Containerfile
+docker buildx build -f images/<name>/spec.yml --target trixie/container images/   # Dalec images
 ```
 
 If you can't run a build (for example no podman), say so explicitly

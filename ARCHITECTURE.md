@@ -3,9 +3,10 @@
 This repository builds [bootc](https://bootc.dev/bootc/) images: bootable
 operating systems shipped as OCI container images. A bootc host boots from
 an image and updates by pulling a newer one (`bootc upgrade`), the same way
-a container is updated. One folder, `images/cs-firewall-bouncer`, is not
-a bootc image but an application image: a container the hosts run (see
-its section).
+a container is updated. Two folders are not bootc images but application
+images, containers the hosts run: `images/cs-firewall-bouncer` and
+`images/sabnzbd`, the latter built with Dalec, not a Containerfile (see
+their sections).
 
 For a bootc image there are two stages:
 
@@ -21,7 +22,9 @@ For a bootc image there are two stages:
 .
 ├── .github/
 │   ├── dependabot.yml          # Saturday updates of the workflow's actions
-│   └── workflows/build.yml     # CI: lint, build, push every image to ghcr.io
+│   └── workflows/
+│       ├── build.yml           # CI: lint, build, push every Containerfile image
+│       └── build-dalec.yml     # CI: build, push every Dalec image (spec.yml)
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── images/                     # shared build context for every image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
@@ -30,10 +33,11 @@ For a bootc image there are two stages:
 │   │   └── sysroot/...         # CRI-O configuration, kube.slice, swap
 │   └── <name>/                 # one folder per image (bootc, or application
 │       │                       # image: cs-firewall-bouncer)
-│       ├── Containerfile
+│       ├── Containerfile       # or spec.yml, for a Dalec image: sabnzbd
 │       └── sysroot/...         # files copied as is into the image root
 ├── scripts/
 │   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
+│   ├── sabnzbd-lock.sh         # regenerate images/sabnzbd/requirements.lock
 │   └── run.sh [name]           # boot the qcow2 in QEMU (macOS Apple Silicon)
 ├── config.example.toml         # template for config.toml (git-ignored)
 ├── K3S.md                      # setting up k3s hosts (kubeenv images)
@@ -243,6 +247,58 @@ engine that decides the bans) is not part of this repository.
   admin's IP must be allowlisted on the LAPI, or a ban locks out sshd
   (port 42022).
 
+### `images/sabnzbd`
+
+[SABnzbd](https://sabnzbd.org) (Usenet downloader, Python), built with
+[Dalec](https://project-dalec.github.io/dalec/) from
+`images/sabnzbd/spec.yml`: no Containerfile. Dalec builds one Debian
+trixie package (the app, its Python modules, par2cmdline-turbo), then the
+`trixie/container` target installs it into an image built from scratch
+out of the package's dependency closure (python3.13, unrar, 7zip, libc,
+…).
+
+- **Dalec, not a Containerfile on distroless.** The image keeps a dpkg
+  database, so scanners see every Debian package and its version, and
+  is about as small as distroless: no shell, no apt (dpkg stays). A
+  distroless base (`gcr.io/distroless/*`) can't be used: Dalec installs
+  the package with dpkg, and distroless has no `/var/lib/dpkg/status`
+  (base-files' postinst fails).
+- **Only `docker buildx` builds it** (Dalec is a BuildKit frontend, the
+  spec's `# syntax=` line; buildah ignores it): `docker buildx build -f
+  images/sabnzbd/spec.yml --target trixie/container images/`, and CI's
+  `build-dalec.yml`. `scripts/build.sh` refuses it (no Containerfile).
+- **Sources pinned by commit**: Dalec checks that the sabnzbd and
+  par2cmdline-turbo tags resolve to the commits in the spec.
+- **Python modules from PyPI, not Debian**: Debian's are older than
+  SABnzbd requires (sabctools 8.2 for 9.6). `requirements.lock` is
+  upstream's `requirements.txt` without notify2 (desktop notifications),
+  every module pinned with its hashes; the build installs it with uv
+  (`--require-hashes`, the only network access of the build), into
+  `/usr/lib/sabnzbd/site-packages`, found through a `.pth` file. Bytecode
+  is compiled at build time (`unchecked-hash`: the user can't write
+  `/usr/lib`, and dpkg clamps mtimes). Regenerate it with
+  `scripts/sabnzbd-lock.sh` on every bump, or to update unpinned modules
+  (cryptography).
+- **par2cmdline-turbo built from source**, SABnzbd's recommended par2:
+  trixie only has par2cmdline 0.8.1. unrar comes from trixie's
+  `non-free` (only when building the image, not the package).
+- **7za through `/usr/local/bin/7za`**, a symlink to
+  `/usr/lib/7zip/7za`: Debian's `/usr/bin/7za` is a shell script.
+  The spec's tests run every tool from the path SABnzbd finds.
+- **Downloads in `/downloads/{incomplete,complete}`**, patched into
+  SABnzbd's defaults (`downloads-dir.patch`): otherwise they default to
+  `Downloads/` next to `sabnzbd.ini`, in `/config`, and there is no CLI
+  option or variable to change them. Check the patch on every bump.
+- **Runtime contract:** UID/GID 65532 (no passwd entry, `HOME=/config`),
+  `/config` (settings, queue, logs) and `/downloads` writable by it, web
+  UI on 8080/tcp. Reaching it by a host name other than an IP or
+  `localhost` needs that name in SABnzbd's `host_whitelist` (Config →
+  Special). At start SABnzbd prints `Exception in isFAT(...): ... 'df'`:
+  harmless, only a FAT warning check.
+- **`BASE_VERSION` is the SABnzbd release**, also the tag. Bump it in the
+  spec (with the sabnzbd checksum) and in `build-dalec.yml`'s matrix, in
+  one commit, with the regenerated lock.
+
 ## Design decisions
 
 - **The build context is the shared `images/` folder, not each image's
@@ -356,6 +412,24 @@ Container images only: disk images need `config.toml`.
   `policy.json` to check the signature. See "Signing". An application
   image ships none: the check uses fedora's, the policy of the hosts that
   pull it.
+
+## CI: `.github/workflows/build-dalec.yml`
+
+The same for Dalec images (`images/<name>/spec.yml`): same triggers,
+runners, matrix shape (`name`, `version`), tags, and a `push` job copied
+from `build.yml`. The differences:
+
+- **`docker buildx`, not podman**, with a `docker-container` builder
+  (the docker driver can't export an OCI layout). Building also runs the
+  spec's tests on each platform.
+- **`version` is passed as `--build-arg BASE_VERSION`**, only as a check:
+  the spec pins the source checksum and `requirements.lock` to its own
+  version, so a matrix that doesn't match fails the build.
+- **Each build job hands over an OCI layout folder** (`oci:` transport;
+  no `SHELL` to lose), built without buildx's provenance and SBOM
+  manifests, which podman's `manifest add` can't pick from. The `push`
+  job attests the image as in `build.yml`.
+- **No lint job**: hadolint is for Containerfiles.
 
 ## Signing
 
