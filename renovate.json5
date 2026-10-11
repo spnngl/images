@@ -1,0 +1,220 @@
+{
+    "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+    "description": "Keeps every pinned version current: base images, the k3s release of kubeenv, application images' upstream releases, build tools, GitHub Actions. Base images are pinned to a major release, not a digest: the weekly rebuild (build.yml) picks up their updates within it.",
+    "extends": [
+        "config:recommended",
+        ":semanticCommits",
+        // Actions only: a digest on a Containerfile's FROM would freeze the
+        // base image between rebuilds, and the dockerfile manager would write
+        // it into `ARG BASE_VERSION`, which is also the image's tag.
+        "helpers:pinGitHubActionDigests",
+        ":configMigration",
+        "abandonments:recommended"
+    ],
+    "timezone": "Europe/Paris",
+    // The day before the weekly rebuild (Sunday 07:00, build.yml), so a
+    // merged update ships with it.
+    "schedule": ["at any time"],
+    "automergeSchedule": ["at any time"],
+    "labels": ["dependencies"],
+    // dockerfile: FROM lines, with `ARG BASE_VERSION` resolved, so the
+    // Containerfile default of a base image is updated in place.
+    "enabledManagers": ["dockerfile", "github-actions", "custom.regex"],
+    "customManagers": [
+        {
+            "customType": "regex",
+            "description": "fedora-bootc release in the build.yml matrix (the Containerfile's ARG BASE_VERSION is the dockerfile manager's: same dependency, same PR).",
+            "managerFilePatterns": ["/^\\.github/workflows/build\\.yml$/"],
+            "matchStrings": [
+                "- name: fedora\\n\\s+version: \"(?<currentValue>[^\"]+)\""
+            ],
+            "depNameTemplate": "quay.io/fedora/fedora-bootc",
+            "datasourceTemplate": "docker",
+            "versioningTemplate": "docker"
+        },
+        {
+            "customType": "regex",
+            "description": "almalinux-bootc major releases in the build.yml matrix (the Containerfile's ARG BASE_VERSION is the dockerfile manager's).",
+            "managerFilePatterns": ["/^\\.github/workflows/build\\.yml$/"],
+            "matchStrings": [
+                "- name: almalinux\\n\\s+version: \"(?<currentValue>[^\"]+)\""
+            ],
+            "depNameTemplate": "quay.io/almalinuxorg/almalinux-bootc",
+            "datasourceTemplate": "docker",
+            "versioningTemplate": "docker"
+        },
+        {
+            "customType": "regex",
+            "description": "k3s release of kubeenv in the build.yml matrix (its tag, v<x.y.z>+k3s<n>), with the -v<Kubernetes minor release>k3s tag suffix on the line above it: one replacement, so both always change together. Versioning: the k3s tag's (workarounds:k3sKubernetesVersioning, in config:recommended).",
+            "managerFilePatterns": ["/^\\.github/workflows/build\\.yml$/"],
+            "matchStrings": [
+                "suffix: &kubeenv -v\\d+\\.\\d+k3s\\n(?<indentation>[ ]*)k3s: &k3s (?<currentValue>\\S+)"
+            ],
+            "autoReplaceStringTemplate": "suffix: &kubeenv -v{{{newMajor}}}.{{{newMinor}}}k3s\n{{{indentation}}}k3s: &k3s {{{newValue}}}",
+            "depNameTemplate": "k3s",
+            "packageNameTemplate": "k3s-io/k3s",
+            "datasourceTemplate": "github-releases"
+        },
+        {
+            "customType": "regex",
+            "description": "k3s release of kubeenv: the Containerfiles' ARG INSTALL_K3S_VERSION default (same dependency as the build.yml matrix, same PR).",
+            "managerFilePatterns": ["/^images/[^/]+/Containerfile$/"],
+            "matchStrings": ["ARG INSTALL_K3S_VERSION=(?<currentValue>\\S+)"],
+            "depNameTemplate": "k3s",
+            "packageNameTemplate": "k3s-io/k3s",
+            "datasourceTemplate": "github-releases"
+        },
+        {
+            "customType": "regex",
+            "description": "cs-firewall-bouncer release: the Containerfile's ARG BASE_VERSION and the build.yml matrix.",
+            "managerFilePatterns": [
+                "/^images/cs-firewall-bouncer/Containerfile$/",
+                "/^\\.github/workflows/build\\.yml$/"
+            ],
+            "matchStrings": [
+                "ARG BASE_VERSION=(?<currentValue>\\S+)",
+                "- name: cs-firewall-bouncer\\n\\s+version: \"(?<currentValue>[^\"]+)\""
+            ],
+            "depNameTemplate": "crowdsecurity/cs-firewall-bouncer",
+            "datasourceTemplate": "github-releases",
+            "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+        },
+        {
+            "customType": "regex",
+            "description": "SABnzbd release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit, one match so both change together). build-dalec.yml reads the version from the spec.",
+            "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
+            "matchStrings": [
+                "BASE_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/sabnzbd/sabnzbd\\.git\\n\\s+commit: \\$\\{BASE_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
+            ],
+            "depNameTemplate": "sabnzbd/sabnzbd",
+            "datasourceTemplate": "github-tags",
+            "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)$"
+        },
+        {
+            "customType": "regex",
+            "description": "par2cmdline-turbo release: the spec's args.PAR2_VERSION with the checksum of its source (the tag's commit).",
+            "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
+            "matchStrings": [
+                "PAR2_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/animetosho/par2cmdline-turbo\\.git\\n\\s+commit: v\\$\\{PAR2_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
+            ],
+            "depNameTemplate": "animetosho/par2cmdline-turbo",
+            "datasourceTemplate": "github-tags",
+            "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+        },
+        {
+            "customType": "regex",
+            "description": "Dalec frontend of the specs (# syntax= line, which the dockerfile manager only reads in Containerfiles).",
+            "managerFilePatterns": ["/^images/[^/]+/spec\\.yml$/"],
+            "matchStrings": [
+                "# syntax=(?<depName>[^:\\s]+):(?<currentValue>\\S+)"
+            ],
+            "datasourceTemplate": "docker",
+            "versioningTemplate": "docker"
+        },
+        {
+            "customType": "regex",
+            "description": "uv image of the SABnzbd spec (args.UV_VERSION).",
+            "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
+            "matchStrings": ["UV_VERSION: (?<currentValue>\\S+)"],
+            "depNameTemplate": "ghcr.io/astral-sh/uv",
+            "datasourceTemplate": "docker",
+            "versioningTemplate": "docker"
+        },
+        {
+            "customType": "regex",
+            "description": "Images run by the scripts and the commands in the docs (image-builder-cli, hadolint...).",
+            "managerFilePatterns": ["/^scripts/[^/]+\\.sh$/", "/^[^/]+\\.md$/"],
+            "matchStrings": [
+                "(?<depName>(?:docker|ghcr|quay)\\.io/[a-z0-9._/-]+):(?<currentValue>v?\\d[\\w.-]*)"
+            ],
+            "datasourceTemplate": "docker",
+            "versioningTemplate": "docker"
+        }
+    ],
+    "packageRules": [
+        {
+            "description": "Wait 3 days before proposing a GitHub release or tag (actions, k3s, upstream sources): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
+            "matchDatasources": ["github-releases", "github-tags"],
+            "minimumReleaseAge": "3 days"
+        },
+        {
+            "description": "GitHub Actions and runners: one PR for all, like Dependabot did, automerged once CI is green. Not the validator's Renovate image: AGENTS.md has it too, they share a PR.",
+            "matchManagers": ["github-actions"],
+            "matchDepNames": ["!ghcr.io/renovatebot/renovate"],
+            "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
+            "groupName": "GitHub Actions",
+            "semanticCommitType": "ci",
+            "automerge": true
+        },
+        {
+            "description": "Build tools and application releases that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates: for par2cmdline-turbo, a moved tag.",
+            "matchDepNames": [
+                "docker.io/library/golang",
+                "ghcr.io/nushell/nushell",
+                "ghcr.io/project-dalec/dalec/frontend",
+                "animetosho/par2cmdline-turbo",
+                "docker.io/hadolint/hadolint",
+                "ghcr.io/renovatebot/renovate"
+            ],
+            "matchUpdateTypes": ["minor", "patch"],
+            "automerge": true
+        },
+        {
+            "description": "k3s: automerge (k3s builds, Kubernetes patch and minor releases: there is no 2.x). A minor release fails CI until CRI-O publishes its repository (images/k3s/install.sh); re-run the PR's checks then. Patch releases get their own PR meanwhile.",
+            "matchDepNames": ["k3s"],
+            "automerge": true,
+            "separateMinorPatch": true
+        },
+        {
+            "description": "A Kubernetes minor release changes the kubeenv tags: hosts must move.",
+            "matchDepNames": ["k3s"],
+            "matchUpdateTypes": ["minor", "major"],
+            "prBodyNotes": [
+                "Merging changes the `kubeenv` tags (`-v{{{newMajor}}}.{{{newMinor}}}k3s`): `bootc upgrade` stays on the old tag, which is no longer rebuilt. Move hosts with `bootc switch`."
+            ]
+        },
+        {
+            "description": "Base images: never automerged, a new major release changes the image tag. CI fails until its sysroot/<BASE_VERSION>/ (policy.json) is added: images/fedora/policy.jq.",
+            "matchDepNames": [
+                "quay.io/fedora/fedora-bootc",
+                "quay.io/almalinuxorg/almalinux-bootc"
+            ],
+            "prBodyNotes": [
+                "Before merging, add `images/<name>/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's `/etc/containers/policy.json` plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:{{{currentValue}}} cat /etc/containers/policy.json) <(podman run --rm {{{depName}}}:{{{newValue}}} cat /etc/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
+            ]
+        },
+        {
+            "description": "Fedora releases from endoflife.date, not from the image's tags: quay.io/fedora/fedora-bootc tags the branched release and rawhide with their number months before release.",
+            "matchDepNames": ["quay.io/fedora/fedora-bootc"],
+            "overrideDatasource": "endoflife-date",
+            "overridePackageName": "fedora"
+        },
+        {
+            "description": "AlmaLinux 9 is kept for x86-64-v2 hosts until its end of life (build.yml): never moved to 10.",
+            "matchDepNames": ["quay.io/almalinuxorg/almalinux-bootc"],
+            "matchCurrentValue": "9",
+            "enabled": false
+        },
+        {
+            "description": "cs-firewall-bouncer: never automerged, its config in the image follows upstream's (ARCHITECTURE.md).",
+            "matchDepNames": ["crowdsecurity/cs-firewall-bouncer"],
+            "prBodyNotes": [
+                "Before merging, port upstream's config changes to `images/cs-firewall-bouncer/sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`: https://github.com/crowdsecurity/cs-firewall-bouncer/compare/v{{{currentValue}}}...v{{{newValue}}} (`config/crowdsec-firewall-bouncer.yaml`)."
+            ]
+        },
+        {
+            "description": "uv: never automerged, scripts/sabnzbd-lock.sh compiles the lock with the spec's uv.",
+            "matchDepNames": ["ghcr.io/astral-sh/uv"],
+            "prBodyNotes": [
+                "Before merging: run `scripts/sabnzbd-lock.sh` and commit `images/sabnzbd/requirements.lock` if it changed."
+            ]
+        },
+        {
+            "description": "SABnzbd: never automerged, the lock and the patch need a hand.",
+            "matchDepNames": ["sabnzbd/sabnzbd"],
+            "prBodyNotes": [
+                "Before merging: run `scripts/sabnzbd-lock.sh` and commit `images/sabnzbd/requirements.lock`, and compare `images/sabnzbd/downloads-dir.patch` with upstream's `sabnzbd/constants.py`. A checksum-only update means the tag was moved upstream."
+            ]
+        }
+    ]
+}

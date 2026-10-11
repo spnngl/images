@@ -26,15 +26,15 @@
                     "rekorPublicKeyPath": "/etc/pki/sigstore/REKOR-signing-key"
                 }
             ],
-            "": [{"type": "insecureAcceptAnything"}]
+            "": [{ "type": "insecureAcceptAnything" }]
         },
-        "containers-storage": {"": [{"type": "insecureAcceptAnything"}]},
-        "dir": {"": [{"type": "insecureAcceptAnything"}]},
-        "docker-archive": {"": [{"type": "insecureAcceptAnything"}]},
-        "docker-daemon": {"": [{"type": "insecureAcceptAnything"}]},
-        "oci": {"": [{"type": "insecureAcceptAnything"}]},
-        "oci-archive": {"": [{"type": "insecureAcceptAnything"}]},
-        "sif": {"": [{"type": "insecureAcceptAnything"}]},
-        "tarball": {"": [{"type": "insecureAcceptAnything"}]}
+        "containers-storage": { "": [{ "type": "insecureAcceptAnything" }] },
+        "dir": { "": [{ "type": "insecureAcceptAnything" }] },
+        "docker-archive": { "": [{ "type": "insecureAcceptAnything" }] },
+        "docker-daemon": { "": [{ "type": "insecureAcceptAnything" }] },
+        "oci": { "": [{ "type": "insecureAcceptAnything" }] },
+        "oci-archive": { "": [{ "type": "insecureAcceptAnything" }] },
+        "sif": { "": [{ "type": "insecureAcceptAnything" }] },
+        "tarball": { "": [{ "type": "insecureAcceptAnything" }] }
     }
 }

@@ -13,14 +13,17 @@
 # image).
 set -xeuo pipefail
 
-# Kubernetes release (<major>.<minor>.<patch>), from the Containerfiles'
-# ARG KUBERNETES_VERSION (CI passes it, .github/workflows/build.yml).
-# k3s release, also the tag of its install script.
+# k3s release, its tag (v<Kubernetes release>+k3s<build>), also the tag of
+# its install script: the Containerfiles' ARG INSTALL_K3S_VERSION (CI
+# passes it, .github/workflows/build.yml).
 # https://github.com/k3s-io/k3s/releases
 # Named after the install script's variable, which reads it from the
 # environment: a K3S_* name would end up in the units' .env files, where
 # the script copies every K3S_* variable.
-export INSTALL_K3S_VERSION="v${KUBERNETES_VERSION:?}+k3s1"
+: "${INSTALL_K3S_VERSION:?}"
+# Kubernetes minor release: v<major>.<minor>.<patch>+k3s<n> -> <major>.<minor>.
+kubernetes_version="${INSTALL_K3S_VERSION#v}"
+kubernetes_minor="${kubernetes_version%.*}"
 
 # CRI-O, from its own repository: one per minor release, which must be
 # Kubernetes' minor. The patch release follows the repository.
@@ -33,7 +36,7 @@ export INSTALL_K3S_VERSION="v${KUBERNETES_VERSION:?}+k3s1"
 # already in the base images.
 # The package's runtime is crun, its own copy (/usr/libexec/crio/crun,
 # /etc/crio/crio.conf.d/10-crio.conf).
-crio_repo="https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v${KUBERNETES_VERSION%.*}/rpm/"
+crio_repo="https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v${kubernetes_minor}/rpm/"
 dnf -yq install --setopt=install_weak_deps=False \
     --repofrompath=cri-o,"${crio_repo}" \
     --setopt=cri-o.gpgcheck=1 --setopt=cri-o.gpgkey="${crio_repo}repodata/repomd.xml.key" \
@@ -42,7 +45,7 @@ dnf -yq install --setopt=install_weak_deps=False \
 systemctl enable crio.service
 
 # The package's registries.conf.d/crio.conf sorts after
-# fedora/sysroot/etc/containers/registries.conf.d/99-myregistries.conf and
+# fedora/sysroot/common/etc/containers/registries.conf.d/99-myregistries.conf and
 # would override its unqualified-search-registries, for podman too: keep
 # ours the only one. Fail if the package no longer ships it.
 rm /etc/containers/registries.conf.d/crio.conf
@@ -86,7 +89,7 @@ firewall-offline-cmd --check-config
 # binary's sha256. Run twice, once per role, with the same binary:
 # k3s.service runs `k3s server` (control-plane), k3s-agent.service
 # `k3s agent`. The role is per host, so both stay disabled: see K3S.md.
-# No SELinux RPM: SELinux is permissive (fedora/sysroot/etc/selinux/config).
+# No SELinux RPM: SELinux is permissive (fedora/sysroot/common/etc/selinux/config).
 #
 # INSTALL_K3S_SKIP_ENABLE: the script's enable also runs
 # `systemctl daemon-reload`, which fails without a running systemd.
