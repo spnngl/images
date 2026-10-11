@@ -96,7 +96,7 @@ FROM base AS kubeenv
 
 # k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
 # with --build-arg (.github/workflows/build.yml); keep this default in sync.
-ARG INSTALL_K3S_VERSION=v1.36.5+k3s1
+ARG INSTALL_K3S_VERSION=v1.37.1+k3s1
 
 # Bind-mounted, not copied: the script stays out of the image.
 RUN --mount=type=bind,source=k3s,target=/k3s \
