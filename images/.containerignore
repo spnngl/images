@@ -1,5 +1,16 @@
-# Build context: images/, shared by every image folder. Keep build files
-# out of `COPY . /`.
-# https://github.com/containers/buildah/blob/main/docs/buildah-build.1.md#containerignoredockerignore
+.DS_Store
+.github
+.git
+.gitignore
+.idea
+CONTRIBUTING.md
 Containerfile*
 .containerignore
+Dockerfile*
+.dockerignore
+compose.yml
+docker-bake.hcl
+public
+node_modules
+resources
+tmp
