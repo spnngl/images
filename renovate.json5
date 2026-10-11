@@ -1,22 +1,16 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "description": "Keeps every pinned version current: base images, the k3s release of kubeenv, application images' upstream releases, build tools, GitHub Actions. Base images are pinned to a major release, not a digest: the weekly rebuild (build.yml) picks up their updates within it.",
-    "extends": [
-        "config:recommended",
-        ":semanticCommits",
-        // Actions only: a digest on a Containerfile's FROM would freeze the
-        // base image between rebuilds, and the dockerfile manager would write
-        // it into `ARG BASE_VERSION`, which is also the image's tag.
-        "helpers:pinGitHubActionDigests",
-        ":configMigration",
-        "abandonments:recommended"
-    ],
-    "timezone": "Europe/Paris",
+    "extends": ["github>spnngl/.github:renovate.default.json5"],
+    // Digests for actions only (the preset's config:best-practices pins
+    // images too): a digest on a Containerfile's FROM would freeze the base
+    // image between rebuilds, and the dockerfile manager would write it into
+    // `ARG BASE_VERSION`, which is also the image's tag.
+    "ignorePresets": ["docker:pinDigests"],
     // The day before the weekly rebuild (Sunday 07:00, build.yml), so a
     // merged update ships with it.
     "schedule": ["at any time"],
     "automergeSchedule": ["at any time"],
-    "labels": ["dependencies"],
     // dockerfile: FROM lines, with `ARG BASE_VERSION` resolved, so the
     // Containerfile default of a base image is updated in place.
     "enabledManagers": ["dockerfile", "github-actions", "custom.regex"],
@@ -160,9 +154,8 @@
             "minimumReleaseAge": "3 days"
         },
         {
-            "description": "GitHub Actions and runners: one PR for all, like Dependabot did, automerged once CI is green. Not the validator's Renovate image: AGENTS.md has it too, they share a PR.",
+            "description": "GitHub Actions and runners: one PR for all, like Dependabot did, automerged once CI is green.",
             "matchManagers": ["github-actions"],
-            "matchDepNames": ["!ghcr.io/renovatebot/renovate"],
             "matchUpdateTypes": ["minor", "patch", "digest", "pin", "pinDigest"],
             "groupName": "GitHub Actions",
             "semanticCommitType": "ci",
@@ -219,8 +212,9 @@
             "enabled": false
         },
         {
-            "description": "cs-firewall-bouncer: never automerged, its config in the image follows upstream's (ARCHITECTURE.md).",
+            "description": "cs-firewall-bouncer: never automerged, its config in the image follows upstream's (ARCHITECTURE.md). Explicit: the shared preset automerges the build.yml matrix (under .github/).",
             "matchDepNames": ["crowdsecurity/cs-firewall-bouncer"],
+            "automerge": false,
             "prBodyNotes": [
                 "Before merging, port upstream's config changes to `images/cs-firewall-bouncer/sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`: https://github.com/crowdsecurity/cs-firewall-bouncer/compare/v{{{currentValue}}}...v{{{newValue}}} (`config/crowdsec-firewall-bouncer.yaml`)."
             ]
