@@ -103,6 +103,28 @@
         },
         {
             "customType": "regex",
+            "description": "nftables-exporter release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit). Tags: upstream publishes no GitHub releases.",
+            "managerFilePatterns": ["/^images/nftables-exporter/spec\\.yml$/"],
+            "matchStrings": [
+                "BASE_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/metal-stack/nftables-exporter\\.git\\n\\s+commit: v\\$\\{BASE_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
+            ],
+            "depNameTemplate": "metal-stack/nftables-exporter",
+            "datasourceTemplate": "github-tags",
+            "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+        },
+        {
+            "customType": "regex",
+            "description": "Go of the nftables-exporter spec: its golang-<major.minor>-go build dependency, from trixie-backports, whose golang-go (version 2:<major.minor>~...) depends on the newest one. Through Repology, by source package (golang-defaults builds golang-go): the deb datasource only reads Packages.gz, and backports only publishes Packages.xz.",
+            "managerFilePatterns": ["/^images/nftables-exporter/spec\\.yml$/"],
+            "matchStrings": ["\\bgolang-(?<currentValue>\\d+\\.\\d+)-go: "],
+            "depNameTemplate": "golang-go",
+            "packageNameTemplate": "debian_13_backports/golang-defaults",
+            "datasourceTemplate": "repology",
+            "extractVersionTemplate": "^\\d+:(?<version>\\d+\\.\\d+)~",
+            "versioningTemplate": "loose"
+        },
+        {
+            "customType": "regex",
             "description": "Dalec frontend of the specs (# syntax= line, which the dockerfile manager only reads in Containerfiles).",
             "managerFilePatterns": ["/^images/[^/]+/spec\\.yml$/"],
             "matchStrings": [
@@ -150,6 +172,7 @@
             "description": "Build tools and application releases that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates: for par2cmdline-turbo, a moved tag.",
             "matchDepNames": [
                 "docker.io/library/golang",
+                "golang-go",
                 "ghcr.io/nushell/nushell",
                 "ghcr.io/project-dalec/dalec/frontend",
                 "animetosho/par2cmdline-turbo",
@@ -207,6 +230,13 @@
             "matchDepNames": ["ghcr.io/astral-sh/uv"],
             "prBodyNotes": [
                 "Before merging: run `scripts/sabnzbd-lock.sh` and commit `images/sabnzbd/requirements.lock` if it changed."
+            ]
+        },
+        {
+            "description": "nftables-exporter: never automerged, its config in the image follows upstream's options (ARCHITECTURE.md).",
+            "matchDepNames": ["metal-stack/nftables-exporter"],
+            "prBodyNotes": [
+                "Before merging, port upstream's option changes to `images/nftables-exporter/nftables_exporter.yaml`: https://github.com/metal-stack/nftables-exporter/compare/v{{{currentValue}}}...v{{{newValue}}} (`options.go`). If CI fails with `go.mod requires go >= ...`, bump `golang-<version>-go` in the spec. A checksum-only update means the tag was moved upstream."
             ]
         },
         {
