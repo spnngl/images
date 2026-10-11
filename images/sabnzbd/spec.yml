@@ -1,0 +1,218 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.1
+#
+# SABnzbd built with Dalec (https://project-dalec.github.io/dalec/): one
+# Debian trixie package (the app, its Python modules, par2cmdline-turbo),
+# installed into the minimal image of the trixie/container target. That
+# image is built from scratch out of the package's dependency closure: no
+# shell, no apt, but a dpkg database scanners can read.
+#
+# Build (from the repo root):
+#   docker buildx build -f images/sabnzbd/spec.yml --target trixie/container \
+#     -t ghcr.io/spnngl/images/sabnzbd:5.1.3 images/
+#
+# Bumping BASE_VERSION: also update the sabnzbd checksum below, run
+# scripts/sabnzbd-lock.sh, compare downloads-dir.patch with upstream's
+# sabnzbd/constants.py, and bump .github/workflows/build-dalec.yml.
+
+args:
+  # Releases: https://github.com/sabnzbd/sabnzbd/releases
+  BASE_VERSION: 5.1.3
+  # Releases: https://github.com/animetosho/par2cmdline-turbo/releases
+  PAR2_VERSION: 1.5.0
+  # Releases: https://github.com/astral-sh/uv/releases
+  UV_VERSION: 0.13.0
+
+name: sabnzbd
+description: SABnzbd, an Open Source Binary Newsreader
+website: https://sabnzbd.org
+license: GPL-2.0-or-later
+packager: spnngl/images
+vendor: spnngl/images
+version: ${BASE_VERSION}
+revision: 1
+
+sources:
+  sabnzbd:
+    git:
+      url: https://github.com/sabnzbd/sabnzbd.git
+      commit: ${BASE_VERSION}
+      # The tag must resolve to this commit: tags can be moved.
+      checksum: a647f73426cb70ad60ae7964b96c2d5e939b4727
+  # SABnzbd's recommended par2 (https://sabnzbd.org/wiki/installation/par2cmdline-turbo):
+  # much faster than Debian's par2cmdline, which trixie only has at 0.8.1.
+  par2cmdline-turbo:
+    git:
+      url: https://github.com/animetosho/par2cmdline-turbo.git
+      commit: v${PAR2_VERSION}
+      checksum: 3e60f6fcfed52bf257e79c46deae616cb6135d59
+  # Installs the Python modules (uv pip install below). The image has only the
+  # static /uv binary.
+  uv:
+    image:
+      ref: ghcr.io/astral-sh/uv:${UV_VERSION}
+    path: /uv
+  # This folder: the hash-pinned Python modules and the patch.
+  files:
+    context: {}
+    path: sabnzbd/
+    includes:
+      - downloads-dir.patch
+      - requirements.lock
+
+patches:
+  sabnzbd:
+    # Default download folders: /downloads/{incomplete,complete} instead of
+    # Downloads/{incomplete,complete} relative to the folder of sabnzbd.ini,
+    # so /config only holds settings. SABnzbd has no CLI option or env
+    # variable for them, and a sabnzbd.ini shipped in the image would be
+    # hidden by the /config volume. Still changeable in the web UI.
+    # https://sabnzbd.org/wiki/advanced/directory-setup
+    - source: files
+      path: downloads-dir.patch
+
+dependencies:
+  build:
+    autoconf: {}
+    automake: {}
+    build-essential: {}
+    python3: {}
+    # Builds sgmllib3k, the only module without a wheel, without fetching an
+    # unpinned setuptools (--no-build-isolation below).
+    python3-setuptools: {}
+  runtime:
+    # Debian's 3.13: the Python modules in requirements.lock are cp313 wheels.
+    python3: {}
+    # The only extractor for RAR, which most Usenet posts use. From non-free,
+    # see extra_repos.
+    unrar: {}
+    # For 7z archives. See image.post for the command SABnzbd runs.
+    7zip: {}
+  extra_repos:
+    # trixie's non-free component for unrar, only when installing into the
+    # image: the build needs nothing from it. Same mirrors and signing key as
+    # the worker's own /etc/apt/sources.list.d/debian.sources. Dalec only
+    # takes the one-line format (it names the file *.list).
+    - config:
+        non-free:
+          inline:
+            file:
+              contents: |
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian trixie non-free
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian trixie-updates non-free
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian-security trixie-security non-free
+      envs:
+        - install
+
+build:
+  # uv downloads the modules from PyPI; requirements.lock pins each file by
+  # hash (--require-hashes).
+  network_mode: sandbox
+  env:
+    UV_CACHE_DIR: /tmp/uv-cache
+    # No sabnzbd-dbgsym package: the image would install it (9 MB).
+    DEB_BUILD_OPTIONS: noautodbgsym
+  # Steps run with sh (dash) from the folder holding one folder per source.
+  steps:
+    - command: |
+        cd par2cmdline-turbo
+        ./automake.sh
+        ./configure --prefix=/usr
+        make -j"$(nproc)"
+    # Compiled translations (locale/) and translated email templates: built
+    # from po/ with SABnzbd's own msgfmt.py, as its install guide says.
+    # https://sabnzbd.org/wiki/installation/install-off-modules
+    - command: |
+        cd sabnzbd
+        python3 tools/make_mo.py
+    # The files of upstream's release archives (builder/common.py,
+    # EXTRA_FOLDERS and EXTRA_FILES) plus the code; no tests, builder, po.
+    - command: |
+        mkdir -p out/sabnzbd
+        cd sabnzbd
+        cp -a SABnzbd.py sabnzbd interfaces scripts licenses locale email icons \
+          README.mkd LICENSE.txt GPL2.txt GPL3.txt COPYRIGHT.txt ISSUES.txt \
+          ../out/sabnzbd/
+    # Modules next to the app, not Debian's python3-* packages: those are
+    # older than SABnzbd requires (e.g. sabctools 8.2 for 9.6). bin/ only
+    # holds the modules' CLI entry points. sabnzbd.pth adds them to Python's
+    # path, so any python3 run (the image's, the tests') finds them without
+    # an env variable to keep set.
+    - command: |
+        uv/uv pip install --python /usr/bin/python3 --require-hashes \
+          --no-build-isolation --target out/sabnzbd/site-packages \
+          -r files/requirements.lock
+        rm -rf out/sabnzbd/site-packages/bin
+        echo /usr/lib/sabnzbd/site-packages > out/sabnzbd.pth
+    # The image's user can't write /usr/lib: without these, Python would
+    # compile every module at each start. unchecked-hash: dpkg-deb clamps
+    # file times, which would make mtime-based .pyc look stale. -s/-p record
+    # the installed paths in tracebacks.
+    - command: |
+        python3 -m compileall -q -j 0 --invalidation-mode unchecked-hash \
+          -s out -p /usr/lib out/sabnzbd
+
+artifacts:
+  binaries:
+    par2cmdline-turbo/par2: {}
+  libs:
+    # Installed as /usr/lib/sabnzbd.
+    out/sabnzbd: {}
+    out/sabnzbd.pth:
+      subpath: python3/dist-packages
+
+image:
+  entrypoint: /usr/bin/python3 /usr/lib/sabnzbd/SABnzbd.py
+  # --config-file: settings, queue and logs in /config (SABnzbd keeps them
+  # next to sabnzbd.ini). --browser 0: no browser to open.
+  cmd: --config-file /config/sabnzbd.ini --server 0.0.0.0:8080 --browser 0
+  env:
+    # No /etc/passwd entry for the user: Python's ~ would not resolve.
+    - HOME=/config
+  # Not root, numeric so Kubernetes' runAsNonRoot can check it. The image has
+  # no such user: the mounted folders must be writable by this UID/GID.
+  user: "65532:65532"
+  working_dir: /config
+  volumes:
+    /config: {}
+    /downloads: {}
+  labels:
+    org.opencontainers.image.title: sabnzbd
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: GPL-2.0-or-later
+    org.opencontainers.image.source: https://github.com/spnngl/images
+    # Web UI on 8080/tcp: Dalec has no EXPOSE equivalent.
+  post:
+    symlinks:
+      # SABnzbd looks up 7zz, 7zzs, 7za then 7z on the PATH. Debian's
+      # /usr/bin/7za is a shell script calling this binary, and the image has
+      # no shell. /usr/local/bin comes before /usr/bin in the image's PATH.
+      # Not 7z: it loads 7z.so from the folder it was called from.
+      /usr/lib/7zip/7za:
+        paths:
+          - /usr/local/bin/7za
+
+tests:
+  # The tools run, from the paths SABnzbd finds first. The image has no
+  # shell: a wrapper script would fail here.
+  - name: tools SABnzbd runs work
+    steps:
+      - command: /usr/bin/par2 --version
+        stdout:
+          contains:
+            - par2cmdline-turbo version ${PAR2_VERSION}
+      - command: /usr/bin/unrar
+        stdout:
+          contains:
+            - UNRAR
+      - command: /usr/local/bin/7za
+        stdout:
+          contains:
+            - 7-Zip (a)
+  # --version runs after SABnzbd imported all its modules (including
+  # sabctools, cryptography, cherrypy): a missing or broken one fails here.
+  - name: SABnzbd starts
+    steps:
+      - command: /usr/bin/python3 /usr/lib/sabnzbd/SABnzbd.py --version
+        stdout:
+          contains:
+            - SABnzbd.py-${BASE_VERSION}
