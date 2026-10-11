@@ -72,18 +72,22 @@ jobs:
       # Context is images/, as in build.yml. BASE_VERSION from the matrix: the
       # spec pins the source checksum and requirements.lock to its own
       # version, so a tag that doesn't match it fails here instead of being
-      # pushed. SOURCE_DATE_EPOCH, the last commit's time: Dalec exports it
-      # to the build, for reproducible packages.
+      # pushed. SOURCE_DATE_EPOCH, the last commit's time, as in build.yml:
+      # Dalec exports it to the build (packaging tools clamp the package's
+      # file times to it), and BuildKit dates the image with it.
       # Not pull requests: the image goes to an OCI layout folder for the
-      # push job. No provenance or SBOM: buildx would add them to that
-      # folder's index as extra manifests, which podman can't pick from; the
-      # push job attests the image itself.
+      # push job. rewrite-timestamp: BuildKit also clamps the layers' file
+      # times to SOURCE_DATE_EPOCH, otherwise they keep the build's time. No
+      # provenance or SBOM: buildx would add them to that folder's index as
+      # extra manifests, which podman can't pick from; the push job attests
+      # the image itself.
       - run: |-
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           output=()
           if [[ "${GITHUB_EVENT_NAME}" != pull_request ]]; then
-            output=(--output "type=oci,tar=false,dest=${RUNNER_TEMP}/${ARTIFACT}")
+            output=(--output "type=oci,tar=false,rewrite-timestamp=true,dest=${RUNNER_TEMP}/${ARTIFACT}")
           fi
-          docker buildx build --progress plain --target trixie/container --platform "linux/${ARCH}" --provenance false --sbom false --build-arg "BASE_VERSION=${VERSION}" --build-arg "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" "${output[@]}" -f "images/${NAME}/spec.yml" images/
+          docker buildx build --progress plain --target trixie/container --platform "linux/${ARCH}" --provenance false --sbom false --build-arg "BASE_VERSION=${VERSION}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" "${output[@]}" -f "images/${NAME}/spec.yml" images/
       # compression-level 0: the layers are already gzipped.
       # overwrite: "Re-run all jobs" uploads names this run already has.
       - if: github.event_name != 'pull_request'
