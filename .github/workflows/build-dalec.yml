@@ -1,0 +1,163 @@
+# Build every Dalec image (images/<name>/spec.yml, see ARCHITECTURE.md),
+# then push it to ghcr.io/spnngl/images/<name>:<version>, <version> being
+# the upstream release (the spec's args.BASE_VERSION).
+# Pull requests only build (which runs the spec's tests), they never push.
+#
+# Not in build.yml: Dalec is a BuildKit frontend (the spec's # syntax=
+# line), which podman/buildah can't run. The push job is build.yml's,
+# except for the transport of the build job's output.
+name: build-dalec
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  # Weekly rebuild: picks up Debian's security updates.
+  schedule:
+    - cron: "0 7 * * 0"
+      timezone: Europe/Paris
+  workflow_dispatch:
+
+# Every run on main pushes the same tags: cancel the older run so it can't
+# overwrite the newer one's images.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  # One job per image and platform, each on a runner of that platform:
+  # native builds and tests, no QEMU. The push job below merges them into
+  # one manifest list per image.
+  build:
+    name: build ${{ matrix.image.name }}:${{ matrix.image.version }} ${{ matrix.platform.arch }}
+    runs-on: ${{ matrix.platform.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # version: the spec's args.BASE_VERSION, keep them in sync (a
+        # mismatch fails the build, see below). The push job reuses this
+        # list (YAML anchor).
+        image: &images
+          - name: sabnzbd
+            version: "5.1.3"
+        # Keep the push job's ARCHES in sync.
+        platform:
+          - arch: amd64
+            runner: ubuntu-26.04
+          - arch: arm64
+            runner: ubuntu-26.04-arm
+    env:
+      NAME: ${{ matrix.image.name }}
+      VERSION: ${{ matrix.image.version }}
+      ARCH: ${{ matrix.platform.arch }}
+      TAG: ghcr.io/spnngl/images/${{ matrix.image.name }}:${{ matrix.image.version }}
+      # Same as the push job's: <image>_<arch>.
+      ARTIFACT: ${{ matrix.image.name }}_${{ matrix.image.version }}_${{ matrix.platform.arch }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # A docker-container builder: the default docker driver can't export
+      # to an OCI layout.
+      - uses: docker/setup-buildx-action@v4
+
+      # trixie/container: the minimal image, from scratch (see the spec).
+      # Context is images/, as in build.yml. BASE_VERSION from the matrix: the
+      # spec pins the source checksum and requirements.lock to its own
+      # version, so a tag that doesn't match it fails here instead of being
+      # pushed. SOURCE_DATE_EPOCH, the last commit's time: Dalec exports it
+      # to the build, for reproducible packages.
+      # Not pull requests: the image goes to an OCI layout folder for the
+      # push job. No provenance or SBOM: buildx would add them to that
+      # folder's index as extra manifests, which podman can't pick from; the
+      # push job attests the image itself.
+      - run: |-
+          output=()
+          if [[ "${GITHUB_EVENT_NAME}" != pull_request ]]; then
+            output=(--output "type=oci,tar=false,dest=${RUNNER_TEMP}/${ARTIFACT}")
+          fi
+          docker buildx build --progress plain --target trixie/container --platform "linux/${ARCH}" --provenance false --sbom false --build-arg "BASE_VERSION=${VERSION}" --build-arg "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" "${output[@]}" -f "images/${NAME}/spec.yml" images/
+      # compression-level 0: the layers are already gzipped.
+      # overwrite: "Re-run all jobs" uploads names this run already has.
+      - if: github.event_name != 'pull_request'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: ${{ runner.temp }}/${{ env.ARTIFACT }}
+          compression-level: 0
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 1
+
+  # Merge each image's platforms into one manifest list, then sign, push,
+  # attest and check it. Comments on the steps: see build.yml.
+  push:
+    name: push ${{ matrix.image.name }}:${{ matrix.image.version }}
+    needs: build
+    # needs: build waits for every build job, and fails if any did. Run
+    # anyway, unless cancelled: each image pushes on its own, and fails
+    # below if one of its platforms is missing.
+    if: >-
+      !cancelled() && github.event_name != 'pull_request' && needs.build.result != 'skipped'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        image: *images
+    env:
+      # The build job's platform list.
+      ARCHES: amd64 arm64
+      TAG: ghcr.io/spnngl/images/${{ matrix.image.name }}:${{ matrix.image.version }}
+      ARTIFACT_PREFIX: ${{ matrix.image.name }}_${{ matrix.image.version }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: ${{ env.ARTIFACT_PREFIX }}_*
+          path: ${{ runner.temp }}/images
+      # oci: the build job's output is an OCI layout folder holding one image.
+      - run: |-
+          read -r -a arches <<< "${ARCHES}"
+          podman manifest create "${TAG}"
+          for arch in "${arches[@]}"; do
+            podman manifest add "${TAG}" "oci:${RUNNER_TEMP}/images/${ARTIFACT_PREFIX}_${arch}"
+          done
+      - run: |-
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ images/fedora/sysroot/etc/containers/registries.d/spnngl-images.yaml
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ images/fedora/sysroot/usr/share/pki/containers/spnngl-images.pub
+      - id: push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
+        run: |-
+          umask 077
+          printf '%s\n' "${COSIGN_PRIVATE_KEY}" > "${RUNNER_TEMP}/cosign.key"
+          export REGISTRY_AUTH_FILE="${HOME}/.docker/config.json"
+          podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
+          podman manifest push --all --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null --digestfile "${RUNNER_TEMP}/digest" "${TAG}" "docker://${TAG}"
+          echo "digest=$(< "${RUNNER_TEMP}/digest")" >> "${GITHUB_OUTPUT}"
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ghcr.io/spnngl/images/${{ matrix.image.name }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
+      # The policy of the hosts that pull it: these images ship none.
+      - run: |-
+          read -r -a arches <<< "${ARCHES}"
+          for arch in "${arches[@]}"; do
+            podman pull --platform "linux/${arch}" --signature-policy images/fedora/sysroot/etc/containers/policy.json "${TAG}"
+          done
