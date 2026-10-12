@@ -152,7 +152,11 @@ header, and every source is pinned.
 
 ### 4. Track its versions
 
-Renovate doesn't read definitions: add a `renovate.json5` custom manager
+Application images keep their versions in a `docker-bake.hcl`
+(`containers/AGENTS.md`), but no DHI image exists yet, and whether the
+`dhi.io/build` frontend takes build arguments is untested: until the
+first one settles it, Renovate doesn't read definitions, so add a
+`renovate.json5` custom manager
 for the release under one dependency name, matching `vars.BASE_VERSION`
 and every literal copy. A source build: modeled on sabnzbd's, the tag in
 the source URL and its `checksum` in one match. An APT package: modeled
