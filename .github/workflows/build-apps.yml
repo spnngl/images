@@ -235,11 +235,14 @@ jobs:
             ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/oci,tar=false', runner.temp) || '' }}
 
       # Same as build-bootc.yml's: pull requests fail on a Critical
-      # vulnerability with a fix; pushed images, image-scan.yml.
+      # vulnerability with a fix that the pushed image doesn't have; pushed
+      # images, image-scan.yml.
       - if: github.event_name == 'pull_request'
         uses: spnngl/.github/.github/actions/scan-image@main
         with:
           oci-layout: ${{ runner.temp }}/oci
+          baseline: ${{ env.IMAGE }}:${{ matrix.image.version }}
+          platform: linux/${{ matrix.platform.arch }}
           fail: true
 
       # The digest, for the push job: one file per image and platform.
