@@ -36,9 +36,11 @@ Leave the tables alone while it runs: it doesn't recreate a deleted one.
 
 ## Updates
 
-Never automerged: port upstream's `config/crowdsec-firewall-bouncer.yaml`
-changes between the two tags to
-`sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`.
+Never automerged (`depType` of its Bake pin: no `automerge`). Before
+merging, port upstream's `config/crowdsec-firewall-bouncer.yaml` changes
+between the two tags to
+`sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`:
+`https://github.com/crowdsecurity/cs-firewall-bouncer/compare/v<old>...v<new>`.
 
 ## Limits
 
