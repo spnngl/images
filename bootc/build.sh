@@ -12,7 +12,7 @@
 #   - rootful podman: image-builder reads the image from the rootful storage.
 #     On macOS: podman machine stop; podman machine set --rootful; podman machine start
 #   - ./config.toml: image-builder blueprint with at least one user
-#     (cp config.example.toml config.toml, then edit it).
+#     (cp bootc/config.example.toml config.toml, then edit it).
 set -euo pipefail
 
 name="${1:-fedora}"
@@ -29,7 +29,7 @@ containerfile="bootc/${name}/Containerfile"
 version="$(sed -n -E 's/^ARG BASE_VERSION=([^[:space:]]+).*/\1/p' "${containerfile}")"
 [[ -n ${version} ]] || die "${containerfile} has no ARG BASE_VERSION=<version>"
 tag="ghcr.io/spnngl/images/${name}:${version}"
-[[ -f config.toml ]] || die "config.toml not found, start from: cp config.example.toml config.toml"
+[[ -f config.toml ]] || die "config.toml not found, start from: cp bootc/config.example.toml config.toml"
 [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == false ]] ||
     die "podman is rootless, on macOS run: podman machine stop; podman machine set --rootful; podman machine start"
 
