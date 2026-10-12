@@ -17,7 +17,8 @@ choice: [REFERENCES.md](REFERENCES.md).
 
 ## Updates
 
-Never automerged: port upstream's `options.go` changes to
-`nftables_exporter.yaml`. `go.mod requires go >= ...` in CI: bump
+Never automerged. Before merging, port upstream's `options.go` changes
+(`https://github.com/metal-stack/nftables-exporter/compare/v<old>...v<new>`)
+to `nftables_exporter.yaml`. `go.mod requires go >= ...` in CI: bump
 `golang-<version>-go` in the spec. A checksum-only update means
 upstream moved the tag.
