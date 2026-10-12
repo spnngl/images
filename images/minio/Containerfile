@@ -1,0 +1,117 @@
+# syntax=docker.io/docker/dockerfile:1
+#
+# MinIO server (S3-compatible object storage) built from source, on scratch.
+# Upstream is archived and source-only (no binaries or images after its last
+# release): this is that release, with no patch.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); /data writable by it;
+# S3 API on 9000/tcp, console on 9001/tcp; MINIO_ROOT_USER and
+# MINIO_ROOT_PASSWORD (or their *_FILE variants) set, or MinIO uses the
+# well-known minioadmin:minioadmin. TLS: public.crt and private.key, and
+# CAs/ for the private CAs MinIO must trust, mounted in /certs. Runs with
+# a read-only root filesystem, no capability and no-new-privileges: MinIO
+# only writes to /data.
+# https://github.com/minio/docs/blob/main/source/operations/deployments/baremetal-deploy-minio-as-a-container.rst
+
+# The last release. Tags: https://github.com/minio/minio/tags
+ARG BASE_VERSION=RELEASE.2025-10-15T17-29-55Z
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27 AS build
+
+ARG BASE_VERSION
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# --keep-git-dir: gen-ldflags.go reads the commit ID with git.
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a \
+    https://github.com/minio/minio.git#${BASE_VERSION} /src
+
+# Upstream's release build (Makefile's build target), version included:
+# gen-ldflags.go takes the tag's time in RFC 3339 (<date>T<hh:mm:ss>Z for
+# RELEASE.<date>T<hh-mm-ss>Z) and MINIO_RELEASE as the tag's prefix.
+# Without them, the binary is a DEVELOPMENT.GOGET build.
+# DL3062: `go run` of a file in the checkout, not of a remote module.
+# hadolint ignore=DL3062
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    <<EORUN
+version="${BASE_VERSION#RELEASE.}"
+clock="${version#*T}"
+version="${version%%T*}T${clock//-/:}"
+CGO_ENABLED=0 go build -tags kqueue -trimpath \
+    -ldflags "$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "${version}")" \
+    -o /out/minio
+mkdir /out/data
+EORUN
+
+# Server smoke test, here because scratch has no shell to run it. Renovate
+# automerges golang bumps on this test, and nobody upstream tests this
+# archived code with a newer Go. A single-drive server, a bucket, a
+# 1 MiB object written and read back through the S3 API, then a graceful
+# stop. Random throwaway credentials: none in the repository.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN <<EORUN
+/out/minio --version | grep -F "minio version ${BASE_VERSION} (commit-id="
+hex() { od -An -vtx1 -N16 /dev/urandom | tr -d ' \n'; }
+MINIO_ROOT_USER="$(hex)"
+MINIO_ROOT_PASSWORD="$(hex)"
+export MINIO_ROOT_USER MINIO_ROOT_PASSWORD MINIO_UPDATE=off
+/out/minio --certs-dir /tmp/certs server --address 127.0.0.1:9000 \
+    --console-address 127.0.0.1:9001 /tmp/data &
+server=$!
+# 503 until the drive is formatted: curl retries it.
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:9000/minio/health/ready
+head -c 1M /dev/urandom > /tmp/object
+s3=(curl -fsS --aws-sigv4 aws:amz:us-east-1:s3 --user "${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}")
+"${s3[@]}" -X PUT http://127.0.0.1:9000/smoke-test
+"${s3[@]}" -T /tmp/object http://127.0.0.1:9000/smoke-test/object
+"${s3[@]}" http://127.0.0.1:9000/smoke-test/object | cmp - /tmp/object
+kill "${server}"
+wait "${server}"
+rm -r /tmp/certs /tmp/data /tmp/object
+EORUN
+
+# MinIO execs nothing and has no C library: the binary, the CA bundle for its
+# outbound TLS (OpenID, LDAP, KMS, replication, notification targets), and
+# the licenses (AGPL: the source is upstream's tag).
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository, as the Dalec
+# specs do.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /src/CREDITS /usr/share/doc/minio/
+COPY --link --from=build /out/minio /usr/bin/
+# Owned by the user: a new Docker volume on /data takes this ownership.
+COPY --link --from=build --chown=65532:65532 /out/data /data
+
+# Not root, numeric so Kubernetes' runAsNonRoot can check it.
+USER 65532:65532
+# Variables, not flags, so that they stay when CMD is replaced (several
+# drives, distributed setup). MINIO_CONSOLE_ADDRESS: a random port without
+# it. MINIO_UPDATE=off: no update check against dl.min.io at each start,
+# and in-place updates (`mc admin update`) refused: the image is the update.
+ENV MINIO_CONSOLE_ADDRESS=:9001 \
+    MINIO_UPDATE=off
+
+EXPOSE 9000/tcp 9001/tcp
+VOLUME ["/data"]
+
+# --certs-dir in the entrypoint, so that it stays when CMD is replaced.
+# The default, ~/.minio/certs, depends on HOME: / without a passwd entry.
+# A global flag, before the command.
+ENTRYPOINT ["/usr/bin/minio", "--certs-dir", "/certs"]
+CMD ["server", "/data"]
+
+# Smoke test: the binary runs on this platform (the build stage tested the
+# server). Exec form: scratch has no shell.
+RUN ["/usr/bin/minio", "--version"]

@@ -83,6 +83,17 @@
         },
         {
             "customType": "regex",
+            "description": "MinIO release: the Containerfile's ARG BASE_VERSION with the --checksum of its source (the tag's commit, one match so both change together). Tags: upstream publishes no GitHub releases. Versioning: RELEASE.<date>T<time>Z, by date then time (the seconds left out: regex versioning has five parts). build-apps.yml reads the version from the Containerfile.",
+            "managerFilePatterns": ["/^images/minio/Containerfile$/"],
+            "matchStrings": [
+                "ARG BASE_VERSION=(?<currentValue>\\S+)\\n[\\s\\S]*?--checksum=(?<currentDigest>[0-9a-f]{40})"
+            ],
+            "depNameTemplate": "minio/minio",
+            "datasourceTemplate": "github-tags",
+            "versioningTemplate": "regex:^RELEASE\\.(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})T(?<build>\\d{2})-(?<revision>\\d{2})-\\d{2}Z$"
+        },
+        {
+            "customType": "regex",
             "description": "SABnzbd release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit, one match so both change together). build-apps.yml reads the version from the spec.",
             "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
             "matchStrings": [
@@ -279,6 +290,13 @@
             "matchDepNames": ["sabnzbd/sabnzbd"],
             "prBodyNotes": [
                 "Before merging: run `scripts/sabnzbd-lock.sh` and commit `images/sabnzbd/requirements.lock`, and compare `images/sabnzbd/downloads-dir.patch` with upstream's `sabnzbd/constants.py`. A checksum-only update means the tag was moved upstream."
+            ]
+        },
+        {
+            "description": "MinIO: never automerged, a release can migrate the data for good, and the repository was archived after the last one.",
+            "matchDepNames": ["minio/minio"],
+            "prBodyNotes": [
+                "Before merging, read what changed (https://github.com/minio/minio/compare/{{{currentValue}}}...{{{newValue}}}) and back up `/data`: the old version may not read what the new one writes. Check the image's flags and variables (`--certs-dir`, `MINIO_CONSOLE_ADDRESS`, `MINIO_UPDATE`) against `cmd/main.go` and `cmd/server-main.go`, and the build against the `build` target of the `Makefile`. A checksum-only update means the tag was moved upstream."
             ]
         }
     ]
