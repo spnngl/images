@@ -3,11 +3,11 @@
 This repository builds [bootc](https://bootc.dev/bootc/) images: bootable
 operating systems shipped as OCI container images. A bootc host boots from
 an image and updates by pulling a newer one (`bootc upgrade`), the same way
-a container is updated. Five folders are not bootc images but
+a container is updated. Six folders are not bootc images but
 application images, containers the hosts run: `images/cs-firewall-bouncer`,
-`images/garage`, `images/sabnzbd`, `images/nftables-exporter` and
-`images/jellyfin`, the last three built with Dalec, not a Containerfile
-(see their sections).
+`images/garage`, `images/minio`, `images/sabnzbd`,
+`images/nftables-exporter` and `images/jellyfin`, the last three built
+with Dalec, not a Containerfile (see their sections).
 
 For a bootc image there are two stages:
 
@@ -38,7 +38,7 @@ For a bootc image there are two stages:
 │   │   ├── install.sh          # k3s and CRI-O install
 │   │   └── sysroot/...         # CRI-O configuration, kube.slice, swap
 │   └── <name>/                 # one folder per image (bootc, or application
-│       │                       # image: cs-firewall-bouncer, garage)
+│       │                       # image: cs-firewall-bouncer, garage, minio)
 │       ├── Containerfile       # or spec.yml, for a Dalec image: sabnzbd,
 │       │                       # nftables-exporter, jellyfin
 │       └── sysroot/...         # files copied as is into the image root
@@ -478,6 +478,61 @@ docs and Helm chart apply (the chart sets either no command or
   test covers them); major releases are not: they migrate the metadata
   (upstream's `migration-<major>` guide).
 
+### `images/minio`
+
+[MinIO](https://github.com/minio/minio) (S3-compatible object storage, Go)
+built from source, one static binary on `scratch`, like
+`images/cs-firewall-bouncer`. Upstream archived the repository and ships
+source only: no binaries or images after its last release.
+
+- **The last release, without patches.** Fixes merged after the last tag
+  (a PostPolicy tag check among them) are not in the image: it is
+  upstream's release as tagged. `BASE_VERSION` is that tag
+  (`RELEASE.<date>T<time>Z`), also the image's tag.
+- **The commit is pinned** (`ADD --checksum`): MinIO holds the data, and
+  the tag is all that is left to trust. buildah ignores `--checksum` for
+  git and its docker-client backend refuses `--keep-git-dir`: CI's
+  BuildKit is the build that counts.
+- **Upstream's release build:** `go build -tags kqueue -trimpath` with
+  the ldflags of `buildscripts/gen-ldflags.go`, which reads the commit ID
+  with git (hence `--keep-git-dir`) and takes the tag's time, so
+  `--version` prints the release and commit, not `DEVELOPMENT.GOGET`.
+  Built with the `golang` image's Go, newer than `go.mod`'s toolchain:
+  the standard library's fixes.
+- **Smoke tests.** The build stage runs a single-drive server with
+  random credentials, creates a bucket, writes and reads back a 1 MiB
+  object through the S3 API (signed by `curl --aws-sigv4`), then stops
+  it gracefully: Renovate automerges `golang` bumps, and nobody upstream
+  tests this archived code with a newer Go. The final stage only runs
+  `--version` (`scratch` has no shell).
+- **What the image holds:** the binary, Debian's CA bundle (outbound TLS:
+  OpenID, LDAP, KMS, replication, notification targets), `LICENSE` and
+  `CREDITS`. MinIO runs no other program: no `mc`, curl or shell. Not
+  distroless: its extras (`/etc/passwd`, `/tmp`, tzdata,
+  `nsswitch.conf`) are unused by MinIO, and its Debian release is in the
+  image name, which Renovate can't follow.
+- **Runtime contract (documented in the Containerfile):** UID/GID 65532
+  without a passwd entry, `/data` writable by it (a new named volume
+  takes the image's ownership; a bind mount needs that owner), 9000/tcp
+  (S3 API), 9001/tcp (console: `MINIO_CONSOLE_ADDRESS`, a random port
+  without it). Credentials come from the runtime (`MINIO_ROOT_USER`,
+  `MINIO_ROOT_PASSWORD` or their `_FILE` variants), none in the image.
+  What must survive a replaced `CMD` (several drives, distributed setup)
+  is in the entrypoint or the environment. Runs with a read-only root
+  filesystem, `--cap-drop all` and `no-new-privileges` (tested): MinIO
+  only writes to `/data`.
+- **`MINIO_UPDATE=off`:** no update check against `dl.min.io` at each
+  start, and in-place updates (`mc admin update`, which would replace
+  the pinned binary) refused: a new image is the update.
+- **TLS in `/certs`** (`--certs-dir`, a global flag, in the entrypoint):
+  mount `public.crt`, `private.key` and `CAs/` there. Without them, MinIO
+  serves plain HTTP. The default, `~/.minio/certs`, depends on `HOME`.
+- **No `HEALTHCHECK`, no `WORKDIR`:** nothing in the image can run a
+  check (no curl, no health subcommand), and every path is absolute.
+  Probes: `GET /minio/health/live` and `/minio/health/ready` on 9000.
+- **Updates:** Renovate follows the repository's tags, never automerged:
+  a release can rewrite the data for good, back up `/data` first.
+
 ## Design decisions
 
 - **The build context is the shared `images/` folder, not each image's
@@ -722,7 +777,7 @@ commits, action digests, automerge under `.github/`).
   fail until their `sysroot/<BASE_VERSION>/` is added, see "Signing"),
   SABnzbd and uv (regenerate the lock), cs-firewall-bouncer and
   nftables-exporter (port upstream's config changes), Jellyfin (database
-  migrations), image-builder-cli,
+  migrations), MinIO (data format, flags), image-builder-cli,
   and every major
   release.
 - **A new base major or Kubernetes minor release changes the image
