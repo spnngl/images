@@ -4,7 +4,8 @@ An upstream app run as a container, not a host, one per
 `containers/<name>/`. `.github/workflows/build-apps.yml` finds and builds
 them with `docker buildx` (ARCHITECTURE.md, "CI:
 `.github/workflows/build-apps.yml`"): a new image needs no workflow
-change.
+change. DHI images are the exception: CI doesn't build them yet
+(ARCHITECTURE.md, "Known limits").
 
 ## Pick the build
 
@@ -15,6 +16,9 @@ ARCHITECTURE.md section.
   Containerfile on `scratch`, skill `add-containerfile-image`.
 - Distro packages (an interpreter, shared libraries, tools it execs):
   Dalec, skill `add-dalec-image`.
+- Docker's hardened Debian packages and the DHI catalog's build steps:
+  a DHI definition, skill `add-dhi-image`. When to pick it over Dalec
+  is not decided yet.
 
 ## Sources of truth
 
@@ -40,6 +44,7 @@ BuildKit: `github.com/moby/buildkit` (`frontend/dockerfile/docs`).
 ```sh
 docker buildx build -f containers/<name>/Containerfile containers/<name>/
 docker buildx build -f containers/<name>/spec.yml --target trixie/container containers/<name>/
+docker buildx build -f containers/<name>/dhi.yaml containers/<name>/   # after docker login dhi.io
 ```
 
 The build runs the image's smoke test.
