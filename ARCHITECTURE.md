@@ -4,8 +4,9 @@ This repository builds [bootc](https://bootc.dev/bootc/) images: bootable
 operating systems shipped as OCI container images. A bootc host boots from
 an image and updates by pulling a newer one (`bootc upgrade`), the same way
 a container is updated. The other images are application images,
-containers the hosts run, built from a Containerfile on `scratch` or with
-Dalec (see each one's section).
+containers the hosts run, built from a Containerfile on `scratch`, with
+Dalec, or from a Docker Hardened Images (DHI) definition (see each
+one's section).
 
 For a bootc image there are two stages:
 
@@ -49,8 +50,8 @@ For a bootc image there are two stages:
 ├── containers/                 # application images
 │   ├── AGENTS.md               # agent rules for application images
 │   └── <name>/                 # one folder, and build context, per application image
-│       ├── .dockerignore       # keeps the Containerfile, spec.yml and scripts out of the context
-│       ├── Containerfile       # or spec.yml, for a Dalec image
+│       ├── .dockerignore       # keeps the Containerfile, spec.yml, dhi.yaml and scripts out of the context
+│       ├── Containerfile       # or spec.yml (Dalec), or dhi.yaml (DHI)
 │       ├── <name>-lock.sh      # regenerate its lock, if any (sabnzbd)
 │       └── sysroot/...         # files copied as is into the image root
 ├── K3S.md                      # setting up k3s hosts (kubeenv images)
@@ -716,9 +717,10 @@ release build, `cmd/` for flags and variables).
   `containers/<name>/`.** None reads another's files, so a shared
   context would only widen what each build can see. Each folder has its
   own `.dockerignore`, the same list as `bootc/.containerignore` plus
-  `spec.yml` and `*-lock.sh`, keeping the build's own files out of the
-  context: BuildKit (`docker buildx`, Dalec's `context` sources
-  included) only reads `.dockerignore`, never `.containerignore`.
+  `spec.yml` and `*-lock.sh` (and `dhi.yaml` for a DHI image), keeping
+  the build's own files out of the context: BuildKit (`docker buildx`,
+  Dalec's `context` sources included) only reads `.dockerignore`, never
+  `.containerignore`.
 - **`COPY` rather than `ADD`.** `ADD` also downloads URLs and unpacks
   archives, which we don't want for plain files. Exception:
   `bootc/almalinux`'s build-only `geoblock` stage uses `ADD <url>` on
@@ -1028,6 +1030,12 @@ It only supports macOS on Apple Silicon, and says so when run anywhere else.
 ## Known limits
 
 - `run.sh` only supports macOS on Apple Silicon.
+- **DHI images (`containers/<name>/dhi.yaml`) are built locally only.**
+  `build-apps.yml` finds `spec.yml` and `Containerfile` alone, and has
+  no `dhi.io` login, which the `dhi.io/build` frontend needs. Its
+  support will also decide the SBOM generator
+  (`dhi.io/scout-sbom-indexer`, which the DHI docs use, or BuildKit's)
+  and give Renovate `dhi.io` credentials to look up the frontend's tags.
 - Only qcow2 is built. For other formats, change the image type in
   `build.sh` (for example `anaconda-iso`, `raw`, `vmdk`).
 - `build.sh` builds for the host architecture only. Building for x86_64
