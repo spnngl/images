@@ -19,6 +19,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Updates
 
-Never automerged. In the PR of a new SABnzbd or uv: run
-`sabnzbd-lock.sh` and push the lock. For a new SABnzbd, also check
-`downloads-dir.patch` against upstream's `sabnzbd/constants.py`.
+Never automerged. Before merging the PR of a new SABnzbd or uv: run
+`containers/sabnzbd/sabnzbd-lock.sh` and commit
+`containers/sabnzbd/requirements.lock` if it changed. For a new
+SABnzbd, also compare `downloads-dir.patch` with upstream's
+`sabnzbd/constants.py`. A checksum-only update means upstream moved the
+tag.
