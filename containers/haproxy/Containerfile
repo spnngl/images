@@ -1,0 +1,152 @@
+# syntax=docker.io/docker/dockerfile:1
+
+# HAProxy (https://www.haproxy.org), built from source with OpenSSL,
+# PCRE2, Lua, zlib and zstd linked statically, on distroless: the final
+# image needs only glibc (from distroless/base), the HAProxy binary and its
+# Lua modules. One image per release line, see docker-bake.hcl.
+#
+# Runtime contract: UID/GID 99, haproxy's in the Debian packages, not
+# 65532 like the other images: a Kubernetes deployment shares files with
+# an external haproxy (haproxy-ingress) under that user. A config in
+# /etc/haproxy (a volume, none shipped), the master process in the
+# foreground (-db). Ports: 1936 stats, 8080 HTTP, 8443 HTTPS, 9101
+# Prometheus, as the configs of the deployments use them (documentation
+# only). Distroless has no shell: the health check runs haproxy itself.
+
+# Versions come from containers/haproxy/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie, as the final image's (distroless/base-debian13): the
+# glibc the binary is linked against.
+FROM docker.io/library/debian:trixie@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5 AS build
+
+# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
+# DEBIAN_CODENAME: the release the tag names; DEBIAN_SNAPSHOT_VERSION:
+# Debian's archive for the packages installed below.
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG TARGETARCH
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Static libraries (libssl.a, liblua5.4.a...) are in the -dev packages:
+# linked into the binary. lua-json (pure Lua) and its lua-lpeg dependency
+# are copied into the image below.
+# Versions not pinned (DL3008): they follow the snapshot, which Renovate
+# moves (containers/docker-bake.hcl).
+# The checks first: built alone (not with bake), or on another Debian
+# release than the tag names, it fails here.
+# The snapshot: apt-get's --snapshot is not in trixie's apt (3.0.3), so
+# the sources point at snapshot.debian.org. No Valid-Until: snapshot
+# Release files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends build-essential libpcre2-dev libssl-dev liblua5.4-dev zlib1g-dev libzstd-dev lua-json
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# Each release line has its own repository: haproxy-<major>.<minor>.git.
+# --checksum: the tag must resolve to this commit, tags can be moved.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://git.haproxy.org/git/haproxy-${BASE_VERSION%.*}.git#v${BASE_VERSION} /build
+WORKDIR /build
+
+# - OpenSSL, PCRE2, Lua, zlib, zstd and libcrypt linked statically
+#   (USE_LIBCRYPT= and ADDLIB: the default links libcrypt dynamically); only
+#   glibc (libc, libm, libpthread, libdl) remains dynamic.
+# - USE_QUIC_OPENSSL_COMPAT: QUIC on OpenSSL, which HAProxy supports
+#   natively from 3.3 only, even if trixie has OpenSSL 3.5.
+# - SSL_LDFLAGS and LUA_LDFLAGS override the Makefile's: ADDLIB comes too
+#   late in the link order for -Bstatic to apply.
+# https://github.com/haproxy/haproxy/blob/master/INSTALL
+# hadolint ignore=SC2046
+RUN <<EORUN
+case "${TARGETARCH}" in
+    amd64) LIB_DIR="/usr/lib/x86_64-linux-gnu" ;;
+    arm64) LIB_DIR="/usr/lib/aarch64-linux-gnu" ;;
+    *)     LIB_DIR="/usr/lib/${TARGETARCH}-linux-gnu" ;;
+esac
+case "${BASE_VERSION}" in
+    2.* | 3.[0-2].*) quic_compat="USE_QUIC_OPENSSL_COMPAT=1" ;;
+    *)               quic_compat="" ;;
+esac
+make -j$(nproc) TARGET=linux-glibc \
+    USE_PCRE2=1 USE_PCRE2_JIT=1 USE_STATIC_PCRE2=1 \
+    USE_OPENSSL=1 USE_QUIC=1 ${quic_compat} \
+    SSL_INC=/usr/include \
+    SSL_LDFLAGS="-L${LIB_DIR} -Wl,-Bstatic -lssl -lcrypto -lz -lzstd -Wl,-Bdynamic" \
+    USE_LUA=1 LUA_INC=/usr/include/lua5.4 \
+    LUA_LDFLAGS="-Wl,--export-dynamic -L${LIB_DIR} -Wl,-Bstatic -l:liblua5.4.a -Wl,-Bdynamic -lm -ldl" \
+    USE_LIBCRYPT= \
+    ADDLIB="-Wl,-Bstatic -lcrypt -Wl,-Bdynamic" \
+    USE_ZLIB=1 USE_PROMEX=1 \
+    DEBUG=
+strip --strip-all haproxy
+install -d -o 99 -g 99 /rootfs/etc/haproxy /rootfs/var/run/haproxy /rootfs/var/lib/haproxy
+EORUN
+
+# distroless/base: glibc and the CA bundle.
+FROM gcr.io/distroless/base-debian13:nonroot@sha256:a0d70d6a97cd697d9362bc2aae4a6560dd65817e365d0043b07325a97975dc91
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository, as the Dalec
+# specs do.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="HAProxy" \
+    org.opencontainers.image.description="HAProxy with static OpenSSL, PCRE2 and Lua" \
+    org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="GPL-2.0-or-later" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The haproxy user and group, by hand: distroless has no useradd.
+COPY <<EOF /etc/passwd
+haproxy:x:99:99:haproxy:/var/lib/haproxy:/sbin/nologin
+EOF
+
+COPY <<EOF /etc/group
+haproxy:x:99:
+EOF
+
+COPY --link --from=build /build/haproxy /usr/sbin/haproxy
+
+# libgcc_s.so.1: pthread_cancel and pthread_exit unwind with it.
+COPY --link --from=build /usr/lib/*-linux-gnu/libgcc_s.so.1 /usr/lib/
+
+# Lua modules: lua-json and lua-lpeg, its native dependency. Debian's
+# lua-json links 5.4/ to 5.1/: copy everything, the links would break
+# here.
+COPY --link --from=build /usr/share/lua/ /usr/share/lua/
+COPY --link --from=build /usr/lib/*-linux-gnu/lua/ /usr/lib/lua/
+COPY --link --from=build /usr/lib/*-linux-gnu/liblua*.so* /usr/lib/
+
+# Empty folders owned by haproxy, made in the build stage: distroless
+# has no mkdir or chown.
+COPY --link --from=build --chown=99:99 /rootfs/ /
+
+# Numeric, so Kubernetes' runAsNonRoot can check it.
+USER 99:99
+WORKDIR /var/lib/haproxy
+ENTRYPOINT ["/usr/sbin/haproxy"]
+CMD ["-db", "-f", "/etc/haproxy"]
+VOLUME ["/etc/haproxy"]
+
+HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+    CMD ["/usr/sbin/haproxy", "-c", "-f", "/etc/haproxy"]
+
+# Graceful shutdown.
+STOPSIGNAL SIGUSR1
+EXPOSE 1936/tcp 8080/tcp 8443/tcp 9101/tcp
+
+# Smoke test: the binary runs on this platform, with its Lua and SSL.
+# Exec form: distroless has no shell.
+RUN ["/usr/sbin/haproxy", "-vv"]
