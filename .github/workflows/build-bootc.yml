@@ -18,6 +18,7 @@ on:
     paths: &paths
       - bootc/**
       - "!bootc/*.sh"
+      - "!bootc/*.md"
       - .github/workflows/build-bootc.yml
   pull_request:
     paths: *paths

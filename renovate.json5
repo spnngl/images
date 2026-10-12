@@ -187,7 +187,7 @@
             "managerFilePatterns": [
                 "/^containers/[^/]+/[^/]+\\.sh$/",
                 "/^bootc/[^/]+\\.sh$/",
-                "/^[^/]+\\.md$/"
+                "/\\.md$/"
             ],
             "matchStrings": [
                 "(?<depName>(?:docker|ghcr|quay)\\.io/[a-z0-9._/-]+):(?<currentValue>v?\\d[\\w.-]*)"
