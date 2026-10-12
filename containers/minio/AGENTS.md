@@ -22,4 +22,11 @@ sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 ## Updates
 
 Renovate follows the repository's tags, never automerged: a release can
-rewrite the data for good; back up `/data` first.
+rewrite the data for good. Before merging, read what changed
+(`https://github.com/minio/minio/compare/<old>...<new>`) and back up
+`/data`: the old version may not read what the new one writes. Check the
+image's flags and variables (`--certs-dir`, `MINIO_CONSOLE_ADDRESS`,
+`MINIO_UPDATE`) against `cmd/main.go` and `cmd/server-main.go`, and the
+build against the `build` target of the `Makefile`. A checksum-only
+update means upstream moved the tag. The repository was archived after
+the last release.
