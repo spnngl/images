@@ -101,7 +101,7 @@ scripts/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localh
 shellcheck scripts/*.sh
 podman run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint images/*/Containerfile
 docker buildx build -f images/<name>/spec.yml --target trixie/container images/   # Dalec images
-docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.151.2 renovate-config-validator --strict
+docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.151.4 renovate-config-validator --strict
 ```
 
 If you can't run a build (for example no podman), say so explicitly
