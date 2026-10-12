@@ -18,12 +18,18 @@
 # only writes to /data.
 # https://github.com/minio/docs/blob/main/source/operations/deployments/baremetal-deploy-minio-as-a-container.rst
 
-# The last release. Tags: https://github.com/minio/minio/tags
-ARG BASE_VERSION=RELEASE.2025-10-15T17-29-55Z
+# Versions come from containers/minio/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
 # Debian trixie: its ca-certificates is the CA bundle copied below.
-FROM docker.io/library/golang:1.27-trixie AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
 
+# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
+# DEBIAN_CODENAME: the release the tag names.
 ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 # HOME for the build user below, with no passwd entry: git and go read
 # theirs, and root's (/root) is closed to it. Before SHELL: hadolint
 # (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL
@@ -32,11 +38,18 @@ ENV HOME=/tmp
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 WORKDIR /src
 
+# The checks first: built alone (not with bake), or on another Debian
+# release than the tag names, it fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
 # --checksum: the tag must resolve to this commit, tags can be moved.
 # --keep-git-dir: gen-ldflags.go reads the commit ID with git.
 ADD --link \
     --keep-git-dir=true \
-    --checksum=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a \
+    --checksum=${BASE_CHECKSUM} \
     https://github.com/minio/minio.git#${BASE_VERSION} /src
 
 # git refuses a repository another user owns: trust this one, while root.

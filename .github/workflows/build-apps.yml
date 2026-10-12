@@ -3,17 +3,22 @@
 # (containers/<name>/Containerfile; bootc images: bootc/,
 # build-bootc.yml), those that changed since the last build, every one on
 # the weekly rebuild and manual runs (see the discover job). Then push
-# them to
-# ghcr.io/spnngl/images/<name>:<version>, <version> being the upstream
-# release (the spec's args.BASE_VERSION, the Containerfile's ARG
-# BASE_VERSION default). Pull requests only lint and build (which runs
-# the spec's tests, the Containerfile's smoke test), they never push.
+# them to the tags of their Bake target (containers/<name>/docker-bake.hcl,
+# containers/AGENTS.md): ghcr.io/spnngl/images/<name>:<version>-debian<N>,
+# <version> being the upstream release. Pull requests only lint and build
+# (which runs the spec's tests, the Containerfile's smoke test), they never
+# push.
 #
 # Not in build-bootc.yml: Dalec is a BuildKit frontend (the spec's #
 # syntax= line), which podman/buildah can't run. Docker tooling only:
 # buildx builds, pushes and merges, cosign signs. Application
 # Containerfiles too: one way to build, attest and sign every application
 # image.
+#
+# Bake only describes what to build (its resolved targets, `bake --print`):
+# the builds stay build-push-action's, one job per target and platform,
+# because they are scanned before anything is pushed (docker/github-builder
+# pushes first).
 name: build-apps
 
 on:
@@ -42,12 +47,14 @@ defaults:
     shell: bash
 
 jobs:
-  # The images to build. Found, not listed: every folder of containers/
-  # with a spec.yml or a Containerfile, its version being where Renovate
-  # updates it, the only place it is written.
-  # Only those that changed: a file of the image's folder (its build
-  # context) but its docs (*.md, kept out by .dockerignore), or every
-  # image for this workflow.
+  # The images to build. Found, not listed: the targets of the Bake files
+  # (containers/docker-bake.hcl, containers/*/docker-bake.hcl), their
+  # versions being where Renovate updates them, the only place they are
+  # written.
+  # Only those that changed: a target whose resolved definition differs
+  # from the base's (a version, a tag, an argument...), one with a file of
+  # its folder (its build context) changed but its docs (*.md, kept out by
+  # .dockerignore) and Bake file, or every one for this workflow.
   discover:
     runs-on: ubuntu-26.04
     permissions:
@@ -60,18 +67,17 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # The changed files, as a JSON array, or null to build every image:
-      # - pull request: its changes, against its base.
-      # - push: those since this workflow's last successful run on the
-      #   branch, not since the previous push: a cancelled or failed run
-      #   never pushed its images, so the next one builds its changes too.
-      #   Pull requests' runs are skipped: their commit isn't the
-      #   branch's.
+      # The commit to compare with, or nothing to build every image:
+      # - pull request: its base.
+      # - push: this workflow's last successful run on the branch, not
+      #   the previous push: a cancelled or failed run never pushed its
+      #   images, so the next one builds its changes too. Pull requests'
+      #   runs are skipped: their commit isn't the branch's.
       # - schedule, workflow_dispatch, or no base (first run, history
-      #   rewritten: fetching it fails): null.
-      # checkout fetches one commit: diff compares two trees, it needs no
-      # history between them. --no-renames: a renamed file changes the
-      # image it left too.
+      #   rewritten: fetching it fails): nothing.
+      # checkout fetches one commit: the comparison needs the two trees,
+      # no history between them. It is a checkout of the base, in a
+      # worktree, to resolve its Bake files too.
       - id: changes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -88,39 +94,80 @@ jobs:
               ;;
             *) ;;
           esac
-          if [[ -n "${base}" ]] && git fetch --quiet --depth=1 origin "${base}"; then
-            echo "files=$(git diff --name-only --no-renames "${base}" HEAD | jq -Rcn '[inputs]')" >> "${GITHUB_OUTPUT}"
-          else
-            echo "files=null" >> "${GITHUB_OUTPUT}"
+          if [[ -n "${base}" ]] && git fetch --quiet --depth=1 origin "${base}" && git worktree add --quiet --detach "${RUNNER_TEMP}/base" "${base}"; then
+            echo "base=${base}" >> "${GITHUB_OUTPUT}"
           fi
 
-      # nullglob: no image gives [], not the pattern. yq -e fails on a spec
-      # without BASE_VERSION, the version check on a Containerfile without
-      # an ARG BASE_VERSION default.
-      # Dalec images: their target is the minimal image, from scratch (see
-      # the specs). Containerfiles: the last stage.
+      # Each target of the Bake files, resolved, as one item:
+      # - id: the target's name, <image>-debian<N> or one per release line.
+      # - name: the image, the folder of its context.
+      # - file, target: Dalec images' target is the minimal image, from
+      #   scratch (see the specs); Containerfiles: none, the last stage.
+      # - tags: the first is the scan's baseline.
+      # - buildargs: the target's args, and SOURCE_DATE_EPOCH, the last
+      #   commit's time, as in build-bootc.yml: Dalec exports it to the
+      #   build (packaging tools clamp the package's file times to it), the
+      #   Containerfiles read it (ARG SOURCE_DATE_EPOCH), and BuildKit
+      #   dates the image and clamps its layers' file times with it. Not
+      #   in Bake: it would change every target at each commit.
+      # Bake takes one -f per file, and contexts from the repo root:
+      # relative paths, from where it runs.
+      # nullglob: no Bake file gives no target, not the pattern.
+      # The base's resolved targets: none if it has no Bake file (before
+      # they existed).
       - id: find
         env:
-          FILES: ${{ steps.changes.outputs.files }}
+          BASE: ${{ steps.changes.outputs.base }}
         run: |-
           shopt -s nullglob
-          {
-            for file in containers/*/spec.yml; do
-              version="$(yq -e '.args.BASE_VERSION' "${file}")"
-              jq -cn --arg file "${file}" --arg version "${version}" '{file: $file, version: $version, target: "trixie/container"}'
-            done
-            for file in containers/*/Containerfile; do
-              version="$(sed -n 's/^ARG BASE_VERSION=//p' "${file}")"
-              [[ -n "${version}" ]] || { echo "::error file=${file}::no ARG BASE_VERSION=<version>"; exit 1; }
-              jq -cn --arg file "${file}" --arg version "${version}" '{file: $file, version: $version, target: ""}'
-            done
-          } | jq -cs --argjson files "${FILES}" '
-            map(.name = (.file | split("/")[1]))
-            | if $files == null or any($files[]; . == ".github/workflows/build-apps.yml") then .
-              else map(select(.name as $name | any($files[]; startswith("containers/\($name)/") and (endswith(".md") | not))))
-              end' > "${RUNNER_TEMP}/images.json"
+          bake_print() {
+            (
+              cd "$1" || exit 1
+              [[ -f containers/docker-bake.hcl ]] || { echo '{"target":{}}'; exit 0; }
+              args=(-f containers/docker-bake.hcl)
+              for file in containers/*/docker-bake.hcl; do
+                args+=(-f "${file}")
+              done
+              docker buildx bake "${args[@]}" --print '*'
+            )
+          }
+          bake_print . > "${RUNNER_TEMP}/head.json"
+          if [[ -n "${BASE}" ]]; then
+            bake_print "${RUNNER_TEMP}/base" > "${RUNNER_TEMP}/base.json"
+            files="$(git diff --name-only --no-renames "${BASE}" HEAD | jq -Rcn '[inputs]')"
+          else
+            echo '{"target":{}}' > "${RUNNER_TEMP}/base.json"
+            files=null
+          fi
+          jq -c --slurpfile base "${RUNNER_TEMP}/base.json" --argjson files "${files}" --arg epoch "$(git log -1 --format=%ct)" '
+            .target
+            | to_entries
+            | map(
+                .key as $id
+                | .value as $target
+                | {
+                    id: $id,
+                    name: ($target.context | split("/")[1]),
+                    context: $target.context,
+                    file: "\($target.context)/\($target.dockerfile)",
+                    target: ($target.target // ""),
+                    tags: $target.tags,
+                    buildargs: (($target.args // {}) + {SOURCE_DATE_EPOCH: $epoch} | to_entries | map("\(.key)=\(.value)") | join("\n")),
+                    resolved: $target
+                  }
+              )
+            | map(
+                . as $image
+                | select(
+                    $files == null
+                    or $base[0].target[$image.id] != $image.resolved
+                    or any($files[]; . == ".github/workflows/build-apps.yml")
+                    or any($files[]; startswith("\($image.context)/") and (endswith(".md") | not) and (endswith("/docker-bake.hcl") | not))
+                  )
+                | del(.resolved)
+              )' "${RUNNER_TEMP}/head.json" > "${RUNNER_TEMP}/images.json"
           echo "images=$(< "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
-          echo "containerfiles=$(jq -c 'map(.file | select(endswith("/Containerfile")))' "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
+          echo "containerfiles=$(jq -c 'map(.file | select(endswith("/Containerfile"))) | unique' "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
 
   # Same as build-bootc.yml's, for the Containerfiles to build only: code
   # scanning keeps the others' alerts, from their last analysis.
@@ -155,11 +202,11 @@ jobs:
           category: hadolint-${{ matrix.containerfile }}
         if: always()
 
-  # One job per image and platform, each on a runner of that platform:
+  # One job per target and platform, each on a runner of that platform:
   # native builds and tests, no QEMU. The push job below merges them into
-  # one manifest list per image.
+  # one manifest list per target.
   build:
-    name: build ${{ matrix.image.name }}:${{ matrix.image.version }} ${{ matrix.platform.arch }}
+    name: build ${{ matrix.image.id }} ${{ matrix.platform.arch }}
     needs:
       - discover
       - hadolint
@@ -183,8 +230,8 @@ jobs:
             runner: ubuntu-26.04-arm
     env:
       IMAGE: ghcr.io/spnngl/images/${{ matrix.image.name }}
-      # Same as the push job's: <image>_<arch>.
-      ARTIFACT: ${{ matrix.image.name }}_${{ matrix.image.version }}_${{ matrix.platform.arch }}
+      # Same as the push job's: <target>_<arch>.
+      ARTIFACT: ${{ matrix.image.id }}_${{ matrix.platform.arch }}
     steps:
       - uses: actions/checkout@v7
 
@@ -199,14 +246,9 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The last commit's time, as in build-bootc.yml: Dalec exports it to
-      # the build (packaging tools clamp the package's file times to it),
-      # the Containerfiles read it (ARG SOURCE_DATE_EPOCH), and BuildKit
-      # dates the image with it.
-      - run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "${GITHUB_ENV}"
-
-      # Context is the image's own folder.
-      # target: none ("") for a Containerfile, its last stage.
+      # What the target says (see the discover job): its context (the
+      # image's own folder), file, target (none for a Containerfile) and
+      # args.
       # Attestations, attached to the image in its index
       # (https://docs.docker.com/build/metadata/attestations/):
       # - provenance mode=max: also the build args and each step's
@@ -223,11 +265,11 @@ jobs:
       - id: build
         uses: docker/build-push-action@v7
         with:
-          context: containers/${{ matrix.image.name }}
+          context: ${{ matrix.image.context }}
           file: ${{ matrix.image.file }}
           target: ${{ matrix.image.target }}
           platforms: linux/${{ matrix.platform.arch }}
-          build-args: SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
+          build-args: ${{ matrix.image.buildargs }}
           provenance: mode=max,version=v1
           sbom: true
           outputs: |
@@ -236,16 +278,16 @@ jobs:
 
       # Same as build-bootc.yml's: pull requests fail on a Critical
       # vulnerability with a fix that the pushed image doesn't have; pushed
-      # images, image-scan.yml.
+      # images, image-scan.yml. The baseline: the target's first tag.
       - if: github.event_name == 'pull_request'
         uses: spnngl/.github/.github/actions/scan-image@main
         with:
           oci-layout: ${{ runner.temp }}/oci
-          baseline: ${{ env.IMAGE }}:${{ matrix.image.version }}
+          baseline: ${{ matrix.image.tags[0] }}
           platform: linux/${{ matrix.platform.arch }}
           fail: true
 
-      # The digest, for the push job: one file per image and platform.
+      # The digest, for the push job: one file per target and platform.
       - if: github.event_name != 'pull_request'
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
@@ -262,15 +304,15 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Merge each image's platforms into one tagged manifest list, then sign
-  # and check it.
+  # Merge each target's platforms into one manifest list with all its
+  # tags, then sign and check it.
   push:
-    name: push ${{ matrix.image.name }}:${{ matrix.image.version }}
+    name: push ${{ matrix.image.id }}
     needs:
       - discover
       - build
     # needs: build waits for every build job, and fails if any did. Run
-    # anyway, unless cancelled: each image pushes on its own, and fails
+    # anyway, unless cancelled: each target pushes on its own, and fails
     # below if one of its platforms is missing.
     if: >-
       !cancelled() && github.event_name != 'pull_request' && needs.build.result != 'skipped'
@@ -286,8 +328,9 @@ jobs:
       # The build job's platform list.
       ARCHES: amd64 arm64
       IMAGE: ghcr.io/spnngl/images/${{ matrix.image.name }}
-      TAG: ghcr.io/spnngl/images/${{ matrix.image.name }}:${{ matrix.image.version }}
-      ARTIFACT_PREFIX: ${{ matrix.image.name }}_${{ matrix.image.version }}
+      # Space-separated, the target's tags.
+      TAGS: ${{ join(matrix.image.tags, ' ') }}
+      ARTIFACT_PREFIX: ${{ matrix.image.id }}
     steps:
       # The public key the check below uses.
       - uses: actions/checkout@v7
@@ -309,12 +352,17 @@ jobs:
       - id: merge
         run: |-
           read -r -a arches <<< "${ARCHES}"
+          read -r -a tags <<< "${TAGS}"
           sources=()
           for arch in "${arches[@]}"; do
             sources+=("${IMAGE}@$(< "${RUNNER_TEMP}/digests/${ARTIFACT_PREFIX}_${arch}")")
           done
-          docker buildx imagetools create --tag "${TAG}" "${sources[@]}"
-          echo "digest=$(docker buildx imagetools inspect --format '{{ json .Manifest }}' "${TAG}" | jq -r .digest)" >> "${GITHUB_OUTPUT}"
+          tag_flags=()
+          for tag in "${tags[@]}"; do
+            tag_flags+=(--tag "${tag}")
+          done
+          docker buildx imagetools create "${tag_flags[@]}" "${sources[@]}"
+          echo "digest=$(docker buildx imagetools inspect --format '{{ json .Manifest }}' "${tags[0]}" | jq -r .digest)" >> "${GITHUB_OUTPUT}"
 
       - uses: sigstore/cosign-installer@v4.1.2
 
@@ -329,6 +377,7 @@ jobs:
       # - --sign-container-identity: the tag, as podman writes it. cosign
       #   writes the repository alone otherwise, which the hosts' default
       #   signedIdentity (matchRepoDigestOrExact) rejects for a tag pull.
+      #   One signature per tag: a host pulling any of them finds its own.
       # --recursive: the list (what bootc checks) and every manifest in it
       # (what podman and CRI-O check). The key has no passphrase:
       # COSIGN_PASSWORD empty, without it cosign prompts for one.
@@ -336,14 +385,19 @@ jobs:
           COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
           COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
           DIGEST: ${{ steps.merge.outputs.digest }}
-        run: cosign sign --yes --recursive --key env://COSIGN_PRIVATE_KEY --new-bundle-format=false --use-signing-config=false --tlog-upload=false --sign-container-identity "${TAG}" "${IMAGE}@${DIGEST}"
+        run: |-
+          read -r -a tags <<< "${TAGS}"
+          for tag in "${tags[@]}"; do
+            cosign sign --yes --recursive --key env://COSIGN_PRIVATE_KEY --new-bundle-format=false --use-signing-config=false --tlog-upload=false --sign-container-identity "${tag}" "${IMAGE}@${DIGEST}"
+          done
 
       # Every manifest in the list carries a signature from the key hosts
       # trust (the public key in the fedora image).
       - env:
           DIGEST: ${{ steps.merge.outputs.digest }}
         run: |-
-          mapfile -t digests < <(docker buildx imagetools inspect --raw "${TAG}" | jq -r '.manifests[].digest')
+          read -r -a tags <<< "${TAGS}"
+          mapfile -t digests < <(docker buildx imagetools inspect --raw "${tags[0]}" | jq -r '.manifests[].digest')
           for digest in "${DIGEST}" "${digests[@]}"; do
             cosign verify --key bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub --insecure-ignore-tlog=true "${IMAGE}@${digest}" > /dev/null
           done

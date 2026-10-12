@@ -1,16 +1,28 @@
 # syntax=docker.io/docker/dockerfile:1
 
-# Releases: https://github.com/crowdsecurity/cs-firewall-bouncer/releases
-ARG BASE_VERSION=0.0.38
-FROM docker.io/library/golang:1.27-trixie AS build
+# Versions come from containers/cs-firewall-bouncer/docker-bake.hcl: build
+# with `docker buildx bake` (containers/AGENTS.md).
+FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
 
+# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
+# DEBIAN_CODENAME: the release the tag names.
 ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 WORKDIR /src
 
-ADD --link https://github.com/crowdsecurity/cs-firewall-bouncer.git#v${BASE_VERSION} /src
+# The checks first: built alone (not with bake), or on another Debian
+# release than the tag names, it fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+ADD --link --checksum=${BASE_CHECKSUM} https://github.com/crowdsecurity/cs-firewall-bouncer.git#v${BASE_VERSION} /src
 
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \

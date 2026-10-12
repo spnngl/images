@@ -16,12 +16,18 @@
 # no-new-privileges: Silo only writes to /data.
 # https://silo.pgsty.com
 
-# Tags: https://github.com/pgsty/silo/tags
-ARG BASE_VERSION=RELEASE.2026-09-16T00-00-00Z
+# Versions come from containers/silo/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
 # Debian trixie: its ca-certificates is the CA bundle copied below.
-FROM docker.io/library/golang:1.27-trixie AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
 
+# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
+# DEBIAN_CODENAME: the release the tag names.
 ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 # HOME for the build user below, with no passwd entry: git and go read
 # theirs, and root's (/root) is closed to it. Before SHELL: hadolint
 # (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL
@@ -30,11 +36,18 @@ ENV HOME=/tmp
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 WORKDIR /src
 
+# The checks first: built alone (not with bake), or on another Debian
+# release than the tag names, it fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
 # --checksum: the tag must resolve to this commit, tags can be moved.
 # --keep-git-dir: gen-ldflags.go reads the commit ID with git.
 ADD --link \
     --keep-git-dir=true \
-    --checksum=2a4d51406b7ed87af5fe6fe0f801f3290f96eb3c \
+    --checksum=${BASE_CHECKSUM} \
     https://github.com/pgsty/silo.git#${BASE_VERSION} /src
 
 # git refuses a repository another user owns: trust this one, while root.

@@ -7,10 +7,10 @@
 # with Debian's nftables. Not a static image on scratch: the exporter runs
 # `nft -j -t list ruleset` for every scrape, and nft needs its libraries.
 #
-# Build (from the repo root):
-#   docker buildx build -f containers/nftables-exporter/spec.yml \
-#     --target trixie/container \
-#     -t ghcr.io/spnngl/images/nftables-exporter:<BASE_VERSION> containers/nftables-exporter/
+# Build (from the repo root; the version is in docker-bake.hcl, which
+# passes the args below):
+#   docker buildx bake -f containers/docker-bake.hcl \
+#     -f containers/nftables-exporter/docker-bake.hcl
 #
 # Runtime contract (Kubernetes DaemonSet):
 # - hostNetwork: true. nftables rules belong to a network namespace: in the
@@ -37,14 +37,16 @@
 #   the port on the host: NetworkPolicies don't apply to host network pods
 #   with most CNIs.
 #
-# Renovate (renovate.json5) bumps the version below with the source checksum
-# (CI reads BASE_VERSION from here), and the Go toolchain. In its PR for a
-# new exporter, compare upstream's options.go with nftables_exporter.yaml.
+# Renovate bumps the version and source checksum in docker-bake.hcl, and
+# the Go toolchain below. In its PR for a new exporter, compare upstream's
+# options.go with nftables_exporter.yaml (AGENTS.md, Updates).
 
+# Set by docker-bake.hcl. Dalec needs them declared, empty here: a build
+# without them fails.
 args:
-  # Tags (upstream publishes no GitHub releases):
-  # https://github.com/metal-stack/nftables-exporter/tags
-  BASE_VERSION: 0.4.5
+  # The exporter's release and its tag's commit.
+  BASE_VERSION: ""
+  BASE_CHECKSUM: ""
 
 name: nftables-exporter
 description: Prometheus exporter for nftables counters, sets, chains and rules
@@ -61,7 +63,7 @@ sources:
       url: https://github.com/metal-stack/nftables-exporter.git
       commit: v${BASE_VERSION}
       # The tag must resolve to this commit: tags can be moved.
-      checksum: a11a119bdc67e43a9cd4e21ef400e0be6048ed92
+      checksum: ${BASE_CHECKSUM}
     # Downloads the Go modules before the build, which has no network;
     # go.sum pins each one by hash.
     generate:

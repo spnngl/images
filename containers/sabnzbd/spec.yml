@@ -6,27 +6,32 @@
 # image is built from scratch out of the package's dependency closure: no
 # shell, no apt, but a dpkg database scanners can read.
 #
-# Build (from the repo root):
-#   docker buildx build -f containers/sabnzbd/spec.yml --target trixie/container \
-#     -t ghcr.io/spnngl/images/sabnzbd:<BASE_VERSION> containers/sabnzbd/
+# Build (from the repo root; the versions are in docker-bake.hcl, which
+# passes the args below):
+#   docker buildx bake -f containers/docker-bake.hcl \
+#     -f containers/sabnzbd/docker-bake.hcl
 #
 # Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
 # (settings, queue, logs) and /downloads must be writable by it; web UI on
 # 8080/tcp. No shell: post-processing scripts must be Python with
 # #!/usr/bin/python3 or no shebang (no /usr/bin/env either), not sh.
 #
-# Renovate (renovate.json5) bumps the args below, with the source
-# checksums (CI reads BASE_VERSION from here). In its PR for
-# a new SABnzbd or uv, run containers/sabnzbd/sabnzbd-lock.sh; for a new
-# SABnzbd, also compare downloads-dir.patch with upstream's sabnzbd/constants.py.
+# Renovate bumps the versions and source checksums in docker-bake.hcl. In
+# its PR for a new SABnzbd or uv, run containers/sabnzbd/sabnzbd-lock.sh;
+# for a new SABnzbd, also compare downloads-dir.patch with upstream's
+# sabnzbd/constants.py (AGENTS.md, Updates).
 
+# Set by docker-bake.hcl. Dalec needs them declared, empty here: a build
+# without them fails.
 args:
-  # Releases: https://github.com/sabnzbd/sabnzbd/releases
-  BASE_VERSION: 5.1.3
-  # Releases: https://github.com/animetosho/par2cmdline-turbo/releases
-  PAR2_VERSION: 1.5.0
-  # Releases: https://github.com/astral-sh/uv/releases
-  UV_VERSION: 0.13.0
+  # SABnzbd's release and its tag's commit.
+  BASE_VERSION: ""
+  BASE_CHECKSUM: ""
+  # par2cmdline-turbo's.
+  PAR2_VERSION: ""
+  PAR2_CHECKSUM: ""
+  # The uv image's tag.
+  UV_VERSION: ""
 
 name: sabnzbd
 description: SABnzbd, an Open Source Binary Newsreader
@@ -43,14 +48,14 @@ sources:
       url: https://github.com/sabnzbd/sabnzbd.git
       commit: ${BASE_VERSION}
       # The tag must resolve to this commit: tags can be moved.
-      checksum: a647f73426cb70ad60ae7964b96c2d5e939b4727
+      checksum: ${BASE_CHECKSUM}
   # SABnzbd's recommended par2 (https://sabnzbd.org/wiki/installation/par2cmdline-turbo):
   # much faster than Debian's par2cmdline, which trixie only has at 0.8.1.
   par2cmdline-turbo:
     git:
       url: https://github.com/animetosho/par2cmdline-turbo.git
       commit: v${PAR2_VERSION}
-      checksum: 3e60f6fcfed52bf257e79c46deae616cb6135d59
+      checksum: ${PAR2_CHECKSUM}
   # Installs the Python modules (uv pip install below). The image has only the
   # static /uv binary.
   uv:
