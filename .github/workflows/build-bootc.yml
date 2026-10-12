@@ -1,19 +1,27 @@
-# Lint and build every container image (bootc images, plus application
-# images like cs-firewall-bouncer), then push it to
+# Lint and build every bootc image, then push it to
 # ghcr.io/spnngl/images/<name>:<version>, <version> being the base
-# image major release, or the upstream release for an application image
-# (the Containerfile's BASE_VERSION build arg).
+# image major release (the Containerfile's BASE_VERSION build arg).
+# Application images: build-apps.yml.
 # Pull requests only lint and build, they never push.
 #
 # Only the container image is built here. Disk images stay local
 # (scripts/build.sh): they need config.toml, which holds credentials.
-name: build
+name: build-bootc
 
 on:
+  # Only when a bootc image's input changed, and then every bootc image:
+  # they share most of their files. images/*: the files at the root of
+  # the build context (.containerignore).
   push:
     branches:
       - main
+    paths: &paths
+      - images/fedora/**
+      - images/almalinux/**
+      - images/k3s/**
+      - .github/workflows/build-bootc.yml
   pull_request:
+    paths: *paths
   # Weekly rebuild
   schedule:
     - cron: "0 7 * * 0"
@@ -42,7 +50,6 @@ jobs:
         containerfile:
           - images/fedora/Containerfile
           - images/almalinux/Containerfile
-          - images/cs-firewall-bouncer/Containerfile
     permissions:
       contents: read
       security-events: write
@@ -92,8 +99,6 @@ jobs:
         # <version>-v<Kubernetes minor release>k3s. Anchors: suffix and k3s
         # are written once. The tag has no patch release: a patch reaches
         # hosts with `bootc upgrade`, only a minor needs `bootc switch`.
-        # cs-firewall-bouncer: one stage, no target; the version is the
-        # bouncer release, keep it in sync with the Containerfile's BASE_VERSION.
         # The push job reuses this list (YAML anchor).
         image: &images
           - name: fedora
@@ -122,8 +127,6 @@ jobs:
             target: kubeenv
             suffix: *kubeenv
             k3s: *k3s
-          - name: cs-firewall-bouncer
-            version: "0.0.38"
         # Every image is built for every platform. Keep the push job's
         # ARCHES in sync.
         platform:
@@ -261,13 +264,9 @@ jobs:
           create-storage-record: false
       # Pull every platform back with the policy.json this image ships: fails
       # if the signing key doesn't match the committed public key, which
-      # would make hosts refuse every upgrade. An application image ships
-      # none: use fedora's, the policy of the hosts that pull it (any
-      # release: they share the rule for our images).
+      # would make hosts refuse every upgrade.
       - run: |-
           policy="images/${NAME}/sysroot/${VERSION}/etc/containers/policy.json"
-          fedora=(images/fedora/sysroot/*/etc/containers/policy.json)
-          [[ -f "${policy}" ]] || policy="${fedora[0]}"
           read -r -a arches <<< "${ARCHES}"
           for arch in "${arches[@]}"; do
             podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${TAG}"

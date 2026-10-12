@@ -1,13 +1,13 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "description": "Keeps every pinned version current: base images, the k3s release of kubeenv, application images' upstream releases, build tools, GitHub Actions. Base images are pinned to a major release, not a digest: the weekly rebuild (build.yml) picks up their updates within it.",
+    "description": "Keeps every pinned version current: base images, the k3s release of kubeenv, application images' upstream releases, build tools, GitHub Actions. Base images are pinned to a major release, not a digest: the weekly rebuild (build-bootc.yml) picks up their updates within it.",
     "extends": ["github>spnngl/.github:renovate.default.json5"],
     // Digests for actions only (the preset's config:best-practices pins
     // images too): a digest on a Containerfile's FROM would freeze the base
     // image between rebuilds, and the dockerfile manager would write it into
     // `ARG BASE_VERSION`, which is also the image's tag.
     "ignorePresets": ["docker:pinDigests"],
-    // The day before the weekly rebuild (Sunday 07:00, build.yml), so a
+    // The day before the weekly rebuild (Sunday 07:00, build-bootc.yml and build-apps.yml), so a
     // merged update ships with it.
     "schedule": ["at any time"],
     "automergeSchedule": ["at any time"],
@@ -17,8 +17,8 @@
     "customManagers": [
         {
             "customType": "regex",
-            "description": "fedora-bootc release in the build.yml matrix (the Containerfile's ARG BASE_VERSION is the dockerfile manager's: same dependency, same PR).",
-            "managerFilePatterns": ["/^\\.github/workflows/build\\.yml$/"],
+            "description": "fedora-bootc release in the build-bootc.yml matrix (the Containerfile's ARG BASE_VERSION is the dockerfile manager's: same dependency, same PR).",
+            "managerFilePatterns": ["/^\\.github/workflows/build-bootc\\.yml$/"],
             "matchStrings": [
                 "- name: fedora\\n\\s+version: \"(?<currentValue>[^\"]+)\""
             ],
@@ -28,8 +28,8 @@
         },
         {
             "customType": "regex",
-            "description": "almalinux-bootc major releases in the build.yml matrix (the Containerfile's ARG BASE_VERSION is the dockerfile manager's).",
-            "managerFilePatterns": ["/^\\.github/workflows/build\\.yml$/"],
+            "description": "almalinux-bootc major releases in the build-bootc.yml matrix (the Containerfile's ARG BASE_VERSION is the dockerfile manager's).",
+            "managerFilePatterns": ["/^\\.github/workflows/build-bootc\\.yml$/"],
             "matchStrings": [
                 "- name: almalinux\\n\\s+version: \"(?<currentValue>[^\"]+)\""
             ],
@@ -39,8 +39,8 @@
         },
         {
             "customType": "regex",
-            "description": "k3s release of kubeenv in the build.yml matrix (its tag, v<x.y.z>+k3s<n>), with the -v<Kubernetes minor release>k3s tag suffix on the line above it: one replacement, so both always change together. Versioning: the k3s tag's (workarounds:k3sKubernetesVersioning, in config:recommended).",
-            "managerFilePatterns": ["/^\\.github/workflows/build\\.yml$/"],
+            "description": "k3s release of kubeenv in the build-bootc.yml matrix (its tag, v<x.y.z>+k3s<n>), with the -v<Kubernetes minor release>k3s tag suffix on the line above it: one replacement, so both always change together. Versioning: the k3s tag's (workarounds:k3sKubernetesVersioning, in config:recommended).",
+            "managerFilePatterns": ["/^\\.github/workflows/build-bootc\\.yml$/"],
             "matchStrings": [
                 "suffix: &kubeenv -v\\d+\\.\\d+k3s\\n(?<indentation>[ ]*)k3s: &k3s (?<currentValue>\\S+)"
             ],
@@ -51,7 +51,7 @@
         },
         {
             "customType": "regex",
-            "description": "k3s release of kubeenv: the Containerfiles' ARG INSTALL_K3S_VERSION default (same dependency as the build.yml matrix, same PR).",
+            "description": "k3s release of kubeenv: the Containerfiles' ARG INSTALL_K3S_VERSION default (same dependency as the build-bootc.yml matrix, same PR).",
             "managerFilePatterns": ["/^images/[^/]+/Containerfile$/"],
             "matchStrings": ["ARG INSTALL_K3S_VERSION=(?<currentValue>\\S+)"],
             "depNameTemplate": "k3s",
@@ -60,22 +60,18 @@
         },
         {
             "customType": "regex",
-            "description": "cs-firewall-bouncer release: the Containerfile's ARG BASE_VERSION and the build.yml matrix.",
+            "description": "cs-firewall-bouncer release: the Containerfile's ARG BASE_VERSION. build-apps.yml reads the version from the Containerfile.",
             "managerFilePatterns": [
-                "/^images/cs-firewall-bouncer/Containerfile$/",
-                "/^\\.github/workflows/build\\.yml$/"
+                "/^images/cs-firewall-bouncer/Containerfile$/"
             ],
-            "matchStrings": [
-                "ARG BASE_VERSION=(?<currentValue>\\S+)",
-                "- name: cs-firewall-bouncer\\n\\s+version: \"(?<currentValue>[^\"]+)\""
-            ],
+            "matchStrings": ["ARG BASE_VERSION=(?<currentValue>\\S+)"],
             "depNameTemplate": "crowdsecurity/cs-firewall-bouncer",
             "datasourceTemplate": "github-releases",
             "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
         },
         {
             "customType": "regex",
-            "description": "SABnzbd release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit, one match so both change together). build-dalec.yml reads the version from the spec.",
+            "description": "SABnzbd release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit, one match so both change together). build-apps.yml reads the version from the spec.",
             "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
             "matchStrings": [
                 "BASE_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/sabnzbd/sabnzbd\\.git\\n\\s+commit: \\$\\{BASE_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
@@ -119,7 +115,7 @@
         },
         {
             "customType": "regex",
-            "description": "Jellyfin release: the spec's args.BASE_VERSION, from the jellyfin-server package of Jellyfin's trixie repository (<version>+deb13), not GitHub: the spec repackages it, so a PR only comes once it is installable. amd64's index: both architectures are published together. build-dalec.yml reads the version from the spec.",
+            "description": "Jellyfin release: the spec's args.BASE_VERSION, from the jellyfin-server package of Jellyfin's trixie repository (<version>+deb13), not GitHub: the spec repackages it, so a PR only comes once it is installable. amd64's index: both architectures are published together. build-apps.yml reads the version from the spec.",
             "managerFilePatterns": ["/^images/jellyfin/spec\\.yml$/"],
             "matchStrings": ["BASE_VERSION: \"(?<currentValue>[^\"]+)\""],
             "depNameTemplate": "jellyfin-server",
@@ -217,13 +213,13 @@
             "overridePackageName": "fedora"
         },
         {
-            "description": "AlmaLinux 9 is kept for x86-64-v2 hosts until its end of life (build.yml): never moved to 10.",
+            "description": "AlmaLinux 9 is kept for x86-64-v2 hosts until its end of life (build-bootc.yml): never moved to 10.",
             "matchDepNames": ["quay.io/almalinuxorg/almalinux-bootc"],
             "matchCurrentValue": "9",
             "enabled": false
         },
         {
-            "description": "cs-firewall-bouncer: never automerged, its config in the image follows upstream's (ARCHITECTURE.md). Explicit: the shared preset automerges the build.yml matrix (under .github/).",
+            "description": "cs-firewall-bouncer: never automerged, its config in the image follows upstream's (ARCHITECTURE.md). Explicit, whatever the shared preset automerges.",
             "matchDepNames": ["crowdsecurity/cs-firewall-bouncer"],
             "automerge": false,
             "prBodyNotes": [

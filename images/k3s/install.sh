@@ -15,7 +15,7 @@ set -xeuo pipefail
 
 # k3s release, its tag (v<Kubernetes release>+k3s<build>), also the tag of
 # its install script: the Containerfiles' ARG INSTALL_K3S_VERSION (CI
-# passes it, .github/workflows/build.yml).
+# passes it, .github/workflows/build-bootc.yml).
 # https://github.com/k3s-io/k3s/releases
 # Named after the install script's variable, which reads it from the
 # environment: a K3S_* name would end up in the units' .env files, where

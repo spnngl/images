@@ -5,7 +5,7 @@
 # Usage: scripts/build.sh [name]    (default: fedora)
 # Image:  ghcr.io/spnngl/images/<name>:<version>, <version> being
 #         the Containerfile's ARG BASE_VERSION default: the same name CI
-#         pushes (.github/workflows/build.yml). Not pushed.
+#         pushes (.github/workflows/build-bootc.yml). Not pushed.
 # Output: output/<name>/<name>.qcow2
 #
 # Requirements:

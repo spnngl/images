@@ -8,7 +8,7 @@ description: Add an application image (an upstream app run as a container, not a
 `images/sabnzbd/` is the **reference image**: its `spec.yml` comments carry
 the reason for each convention below. Read it whole before writing, and
 copy its shape. ARCHITECTURE.md, "`images/sabnzbd`" and "CI:
-`.github/workflows/build-dalec.yml`", has the design.
+`.github/workflows/build-apps.yml`", has the design.
 
 Dalec builds one Debian package, then installs it into an image built from
 scratch out of that package's dependency **closure**: only what the spec
@@ -66,7 +66,7 @@ Done when every item has a home on both platforms.
   tags for field names. The docs drift from the schema (they say
   `workdir`; the field is `working_dir`): the schema wins.
 - **Target**: `<Debian stable>/container`, today `trixie/container`, the
-  one `build-dalec.yml` builds. Dependencies are trixie package names.
+  one `build-apps.yml` builds. Dependencies are trixie package names.
 - **Header comment**: what the image is, the build command, what a
   version bump needs beyond Renovate's PR (a lock to regenerate, a patch
   to check), and the runtime contract: UID/GID, volumes, port, required
@@ -140,7 +140,7 @@ Done when every exec'd tool and the app itself have a step.
 
 ### 6. Track its versions
 
-`build-dalec.yml` finds every `images/*/spec.yml` itself: nothing to add
+`build-apps.yml` finds every `images/*/spec.yml` itself: nothing to add
 to CI. Renovate doesn't read specs: add a `renovate.json5` custom manager
 for each pinned version, modeled on sabnzbd's (a git source's version and
 `checksum` in one match, so both change together), and a `packageRules`
