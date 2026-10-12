@@ -3,7 +3,7 @@
 # MinIO Client (mc, S3 command-line client) from pgsty/mc, the maintained
 # fork of the archived minio/mc that ships with Silo (containers/silo), built
 # from source, on scratch. Upstream's release as tagged, with no patch. See
-# ARCHITECTURE.md (containers/mc).
+# containers/mc/REFERENCES.md.
 #
 # Runtime contract: UID/GID 65532 (no passwd entry); MC_CONFIG_DIR=/config
 # writable by it, as mc writes its config there at every start: with a

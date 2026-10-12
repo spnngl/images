@@ -21,9 +21,9 @@ catalog is the **reference image**.
 
 Building needs `docker login dhi.io`, with a Docker ID; never commit its
 credentials. CI support (`build-apps.yml` discovery, the `dhi.io` login,
-the SBOM generator) is a separate task (ARCHITECTURE.md, "Known
-limits"): this skill's changes stay in `containers/<name>/`,
-`renovate.json5` and ARCHITECTURE.md.
+the SBOM generator) is a separate task (`containers/AGENTS.md`,
+"Limits"): this skill's changes stay in `containers/<name>/` and
+`renovate.json5`.
 
 The final image is **shell-less** (`containers/AGENTS.md`): its packages
 are the app's runtime closure, without `bash`, `busybox` or `coreutils`.
@@ -167,13 +167,16 @@ version of the definition has a manager.
 
 ### 5. Document it
 
-Add a `### containers/<name>` section to ARCHITECTURE.md, after the last
-application image: its upstream and where in the source to read, the
-catalog definition it copies, each decision with its reason, the server
-test, the runtime contract, what a version bump needs. Add it to
-"Updates", under automerged or reviewed by hand.
+Write `containers/<name>/AGENTS.md` and `REFERENCES.md`, shaped like
+another image's, plus `CLAUDE.md`, a symlink to `AGENTS.md`:
 
-Done when every decision of step 3 has its reason in the section.
+- `AGENTS.md`: what the image is, where its runtime contract is, the
+  rules a later change must keep, the server test, what a version bump
+  needs and whether it automerges
+- `REFERENCES.md`: upstream and where in its source to read, the
+  catalog definition it copies, then each decision with its reason
+
+Done when every decision of step 3 has its reason in `REFERENCES.md`.
 
 ### 6. Verify
 

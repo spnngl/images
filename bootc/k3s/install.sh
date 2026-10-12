@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # k3s for the kubeenv stage of every image: firewall, binaries and units of
 # both roles (k3s server, k3s agent), all disabled. Run by the Containerfiles
-# from a bind mount of this folder; never copied into the image. See K3S.md.
+# from a bind mount of this folder; never copied into the image. See bootc/K3S.md.
 #
 # The CNI is Cilium, installed on the cluster, hence no flannel, kube-proxy
 # or network policy controller. The container runtime is CRI-O with crun
@@ -78,7 +78,7 @@ rm /etc/containers/registries.conf.d/crio.conf
 #
 # k3s requires firewalld to trust its pod and service CIDRs, k3s' defaults:
 # 10.42.0.0/16 and 10.43.0.0/16. Cilium's pod CIDR is set to the same
-# (K3S.md). Without it, the public zone rejects pod traffic to the host, and
+# (bootc/K3S.md). Without it, the public zone rejects pod traffic to the host, and
 # on AlmaLinux its geoblock policy drops it as private (geoblock-bogons).
 firewall-offline-cmd --add-port=6443/tcp --add-port=10250/tcp --add-port=4240/tcp \
     --add-port=51871/udp --add-port=6081/udp
@@ -88,7 +88,7 @@ firewall-offline-cmd --check-config
 # Install k3s with the install script of the same release, which checks the
 # binary's sha256. Run twice, once per role, with the same binary:
 # k3s.service runs `k3s server` (control-plane), k3s-agent.service
-# `k3s agent`. The role is per host, so both stay disabled: see K3S.md.
+# `k3s agent`. The role is per host, so both stay disabled: see bootc/K3S.md.
 # No SELinux RPM: SELinux is permissive (fedora/sysroot/common/etc/selinux/config).
 #
 # INSTALL_K3S_SKIP_ENABLE: the script's enable also runs
@@ -102,7 +102,7 @@ firewall-offline-cmd --check-config
 # Of k3s' packaged manifests (/var/lib/rancher/k3s/server/manifests), only
 # ccm, local-storage and rolebindings are deployed; rolebindings can't be
 # disabled, ccm has its own flag. CoreDNS, metrics-server, traefik and the
-# runtime classes are deployed separately (K3S.md). --disable also deletes
+# runtime classes are deployed separately (bootc/K3S.md). --disable also deletes
 # them from a server that already deployed them.
 # servicelb, k3s' LoadBalancer controller (in the cloud controller, no
 # manifest), is disabled too: LoadBalancer Services are up to the cluster.
@@ -127,7 +127,7 @@ INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_EXEC="agent ${cri}" sh /tmp/k3s-insta
 # switching to another image (bootc switch).
 # k3s-killall.sh is for k3s' containerd: it kills its shims, then unmounts
 # the pods' volumes and network namespaces, while CRI-O's containers still
-# run. CRI-O's pods are stopped with crictl (K3S.md).
+# run. CRI-O's pods are stopped with crictl (bootc/K3S.md).
 rm /usr/bin/k3s-uninstall.sh /usr/bin/k3s-agent-uninstall.sh /usr/bin/k3s-killall.sh
 
 # The script ends ExecStart with a dangling line continuation (` \` then a

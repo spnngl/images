@@ -4,7 +4,7 @@
 # Silo is the maintained, community fork of the MinIO server (Pigsty,
 # AGPL), compatible with its data, variables and API: upstream MinIO is
 # archived, with known vulnerabilities it will never fix. Upstream's
-# release as tagged, with no patch. See ARCHITECTURE.md (containers/silo).
+# release as tagged, with no patch. See containers/silo/REFERENCES.md.
 #
 # Runtime contract: UID/GID 65532 (no passwd entry); /data writable by it;
 # S3 API on 9000/tcp, console on 9001/tcp; MINIO_ROOT_USER and

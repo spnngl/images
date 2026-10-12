@@ -7,7 +7,7 @@
 # Known vulnerabilities, unfixed and accepted: in MinIO's code (among them
 # unauthenticated object writes, CVE-2026-40344 and CVE-2026-41145) and in
 # its frozen dependencies. Only for networks where every client is trusted.
-# See ARCHITECTURE.md (containers/minio).
+# See containers/minio/REFERENCES.md.
 #
 # Runtime contract: UID/GID 65532 (no passwd entry); /data writable by it;
 # S3 API on 9000/tcp, console on 9001/tcp; MINIO_ROOT_USER and

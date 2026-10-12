@@ -1,0 +1,10 @@
+# Trivy's false positives, for every image (spnngl/.github's scan-image
+# action). One entry per finding, with why it doesn't apply:
+#
+#   - id: CVE-YYYY-NNNNN
+#     purls:
+#       - pkg:<type>/<package>
+#     statement: <why it doesn't apply>
+#
+# Fields: https://trivy.dev/latest/guide/configuration/filtering/#trivyignoreyaml
+vulnerabilities: []

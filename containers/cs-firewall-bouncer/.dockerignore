@@ -9,6 +9,7 @@ Containerfile*
 Dockerfile*
 .dockerignore
 spec.yml
+*.md
 *-lock.sh
 compose.yml
 docker-bake.hcl

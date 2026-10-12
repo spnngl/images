@@ -1,5 +1,5 @@
 # Fails a bootc build when its policy.json is no longer the base image's
-# plus our changes (ARCHITECTURE.md, "Signing"), so that a change of the
+# plus our changes (bootc/REFERENCES.md, "Signing"), so that a change of the
 # base's gets ported.
 #
 #   jq -e --slurpfile ours <our policy.json> -f policy.jq <base's policy.json>

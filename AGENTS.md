@@ -1,27 +1,20 @@
 # Agent guide
 
-Two kinds of image, each with its own guide. Before changing a file
-under one folder, read its guide:
+[ARCHITECTURE.md](ARCHITECTURE.md) gives the overall design. Before
+changing a file, read the `AGENTS.md` of every folder above it, up to
+the image's own:
 
 - `bootc/`: bootable OS images, built with podman:
   [bootc/AGENTS.md](bootc/AGENTS.md)
 - `containers/`: application images, built with `docker buildx`:
   [containers/AGENTS.md](containers/AGENTS.md)
+- `.github/`, `renovate.json5`, or a pinned version:
+  [.github/AGENTS.md](.github/AGENTS.md)
 
-[ARCHITECTURE.md](ARCHITECTURE.md) holds the design and the reason for
-each choice. Before a change, read the sections it touches:
-
-- an image: its own section, "Design decisions" and "Known limits"
-- `.github/workflows/`: "CI: ..." and "Vulnerability scanning"
-- `renovate.json5`, or a pinned version: "Updates"
-
-## Sources of truth
-
-Read upstream's source at the version this repository pins
-(`git_clone`). Each image's ARCHITECTURE.md section names its upstream.
-
-Renovate: `github.com/renovatebot/renovate` (`docs/usage`, managers in
-`lib/modules/manager`, presets in `lib/config/presets/internal`).
+Beside each image's `AGENTS.md`, and `bootc/`'s and `.github/`'s, a
+`REFERENCES.md` names the upstream sources and gives the reason for
+each decision. Read upstream's source at the version this repository
+pins (`git_clone`). A changed decision updates its reason there.
 
 ## Every image
 

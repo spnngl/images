@@ -1,27 +1,18 @@
 # bootc images
 
 Bootable OS images, one per `bootc/<name>/`, built with podman by
-`bootc/build.sh` and `.github/workflows/build-bootc.yml`.
+`bootc/build.sh` and `.github/workflows/build-bootc.yml`. Every image
+has a `dockerenv` stage (Docker, the default target) and a `kubeenv`
+stage (k3s), both `FROM base`, the host system.
 
-Read before a change, in ARCHITECTURE.md:
+Before a change, read:
 
-- the firewall: "Firewalld (bootc images)"
-- `policy.json`, signing keys: "Signing"
-- `bootc/build.sh`, `bootc/run.sh`: "Disk images" and "Running"
-
-and [K3S.md](../K3S.md) for `bootc/k3s/` or a `kubeenv` stage.
-
-## Sources of truth
-
-- bootc: `github.com/bootc-dev/bootc` (`docs/src`, lint rules in
-  `crates/lib/src/lints.rs`)
-- Fedora bootc examples: `gitlab.com/fedora/bootc/examples`
-- image-builder: `github.com/osbuild/image-builder`
-- buildah, which runs the Containerfiles: `github.com/containers/buildah`
-- base image tags:
-  <https://quay.io/repository/fedora/fedora-bootc?tab=tags>,
-  <https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags>,
-  <https://quay.io/repository/centos-bootc/centos-bootc?tab=tags>
+- the image's own `AGENTS.md`, and `bootc/k3s/AGENTS.md` for a
+  `kubeenv` stage
+- [REFERENCES.md](REFERENCES.md), for sources and the reason behind
+  each shared rule: firewalld, signing, disk images, `run.sh`
+- [K3S.md](K3S.md), the k3s host setup, for `bootc/k3s/` or a
+  `kubeenv` stage
 
 ## Layout
 
@@ -44,14 +35,17 @@ and [K3S.md](../K3S.md) for `bootc/k3s/` or a `kubeenv` stage.
   ship untouched.
 - `ARG BASE_VERSION=<version>` before `FROM` pins the base to a major
   release and is the image's tag. CI passes it from the `build-bootc.yml`
-  matrix; Renovate bumps both in one PR. A new base fails the build until
-  `sysroot/<BASE_VERSION>/` holds the new base's
-  `/etc/containers/policy.json` plus our changes ("Signing").
+  matrix; Renovate bumps both in one PR, reviewed by hand. A new base
+  fails the build until `sysroot/<BASE_VERSION>/` holds the new base's
+  `/etc/containers/policy.json` plus our changes (REFERENCES.md,
+  "Signing"). The tag changes: hosts move with `bootc switch`.
 - A new image joins both `build-bootc.yml` matrices, `hadolint` and
   `build`.
 - The last instruction is `RUN bootc container lint`.
 - Users and SSH keys go in `config.toml` (repo root, git-ignored,
   template `bootc/config.example.toml`): added to the disk image only.
+- `firewall-offline-cmd` removes a service from a zone with
+  `--remove-service-from-zone=<service>` (REFERENCES.md, "Firewalld").
 
 ## Build check
 

@@ -1,4 +1,4 @@
-# Build the application images (see ARCHITECTURE.md): Dalec images
+# Build the application images (see .github/REFERENCES.md): Dalec images
 # (containers/<name>/spec.yml) and Containerfile ones
 # (containers/<name>/Containerfile; bootc images: bootc/,
 # build-bootc.yml), those that changed since the last build, every one on
@@ -46,7 +46,8 @@ jobs:
   # with a spec.yml or a Containerfile, its version being where Renovate
   # updates it, the only place it is written.
   # Only those that changed: a file of the image's folder (its build
-  # context), or every image for this workflow.
+  # context) but its docs (*.md, kept out by .dockerignore), or every
+  # image for this workflow.
   discover:
     runs-on: ubuntu-26.04
     permissions:
@@ -116,7 +117,7 @@ jobs:
           } | jq -cs --argjson files "${FILES}" '
             map(.name = (.file | split("/")[1]))
             | if $files == null or any($files[]; . == ".github/workflows/build-apps.yml") then .
-              else map(select(.name as $name | any($files[]; startswith("containers/\($name)/"))))
+              else map(select(.name as $name | any($files[]; startswith("containers/\($name)/") and (endswith(".md") | not)))))
               end' > "${RUNNER_TEMP}/images.json"
           echo "images=$(< "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
           echo "containerfiles=$(jq -c 'map(.file | select(endswith("/Containerfile")))' "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
@@ -317,7 +318,7 @@ jobs:
 
       - uses: sigstore/cosign-installer@v4.1.2
 
-      # The key hosts check (ARCHITECTURE.md, "Signing"), in the format they
+      # The key hosts check (bootc/REFERENCES.md, "Signing"), in the format they
       # read: containers/image (bootc, podman, CRI-O) only reads
       # sha256-<digest>.sig attachments, and can't match a keyless
       # signature's GitHub workflow identity. Hence cosign 3's deprecated

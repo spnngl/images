@@ -7,8 +7,7 @@ description: Dalec application image, for apps needing distro packages at runtim
 
 `containers/sabnzbd/` is the **reference image**: its `spec.yml` comments carry
 the reason for each convention below. Read it whole before writing, and
-copy its shape. ARCHITECTURE.md, "`containers/sabnzbd`" and "CI:
-`.github/workflows/build-apps.yml`", has the design.
+copy its shape, with its `AGENTS.md` and `REFERENCES.md`.
 
 Dalec builds one Debian package, then installs it into an image built from
 scratch out of that package's dependency **closure**: only what the spec
@@ -136,13 +135,17 @@ Done when `renovate-config-validator --strict` passes and every pinned version o
 
 ### 6. Document it
 
-Add a `### containers/<name>` section to ARCHITECTURE.md, after the last
-application image: its upstream and where in the source to read, each
-closure choice and patch with its reason, the tests, the runtime
-contract, what a version bump needs. Add it to "Updates", under
-automerged or reviewed by hand.
+Write `containers/<name>/AGENTS.md` and `REFERENCES.md`, shaped like
+sabnzbd's, plus `CLAUDE.md`, a symlink to `AGENTS.md`:
 
-Done when every choice of steps 1 to 4 has its reason in the section.
+- `AGENTS.md`: what the image is, where its runtime contract is, the
+  rules a later change must keep, the tests, what a version bump needs
+  and whether it automerges
+- `REFERENCES.md`: upstream and where in its source to read, then each
+  closure choice and patch with its reason
+
+Done when every choice of steps 1 to 4 has its reason in
+`REFERENCES.md`.
 
 ### 7. Verify
 
