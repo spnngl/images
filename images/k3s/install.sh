@@ -9,8 +9,8 @@
 # doesn't start when given a runtime endpoint. Its config:
 # k3s/sysroot/etc/crio/crio.conf.d/20-k3s.conf.
 # Requirements: https://docs.k3s.io/installation/requirements?os=rhel
-# (kernel-modules-extra, needed on RHEL 10, is already in the AlmaLinux base
-# image).
+# (kernel-modules-extra, needed on RHEL 10, is already in the AlmaLinux and
+# CentOS base images).
 set -xeuo pipefail
 
 # k3s release, its tag (v<Kubernetes release>+k3s<build>), also the tag of

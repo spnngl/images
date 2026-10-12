@@ -1,0 +1,159 @@
+# syntax=docker.io/docker/dockerfile:1
+
+# Derived CentOS Stream bootc image, in stages:
+#   - base: the host system (firewalld, sshd, chrony, systemd-networkd...).
+#     Not an image on its own.
+#   - kubeenv (FROM base): adds k3s, no Docker. Tag suffix
+#     -v<Kubernetes minor release>k3s.
+#   - dockerenv (FROM base, the default target): adds Docker.
+#
+# Build commands, same tags as CI (.github/workflows/build-bootc.yml):
+#   podman build --format=docker -f images/centos/Containerfile -t ghcr.io/spnngl/images/centos:<BASE_VERSION> images/
+#   podman build --format=docker --target kubeenv -f images/centos/Containerfile -t ghcr.io/spnngl/images/centos:<BASE_VERSION>-v<Kubernetes minor release>k3s images/
+#
+# scripts/build.sh does the first one (default target only) and also builds a
+# qcow2 disk image; scripts/run.sh boots it in QEMU.
+#
+# NB: This image ships no users, passwords or SSH keys.
+# Docs: https://bootc.dev/bootc/building/guidance.html
+
+# CentOS Stream major release, also the tag of this image. The base image
+# tags it stream<BASE_VERSION>: the number alone keeps our tags in line
+# with the other images'. CI sets it with --build-arg
+# (.github/workflows/build-bootc.yml); keep this default in sync.
+# Available tags: https://quay.io/repository/centos-bootc/centos-bootc?tab=tags
+ARG BASE_VERSION=10
+
+
+# The host system, shared by dockerenv and kubeenv.
+FROM quay.io/centos-bootc/centos-bootc:stream${BASE_VERSION} AS base
+
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV TZ=UTC
+
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+RUN <<EORUN
+# The base image ships subscription-manager's dnf plugins, useless on
+# CentOS (no Red Hat subscription): they only warn, and write /var/lib/rhsm
+# and /run/rhsm on every dnf run, here and on hosts. Their config has no
+# drop-in directory. Fail if a line was not found.
+for plugin in subscription-manager product-id; do
+    sed -i 's/^enabled=1$/enabled=0/' "/etc/dnf/plugins/${plugin}.conf"
+    grep -qx 'enabled=0' "/etc/dnf/plugins/${plugin}.conf"
+done
+
+# Install base stuff + repos. epel-release comes from CentOS' extras-common
+# repository.
+dnf -yq install ca-certificates dnf-plugins-core epel-release \
+    glibc-langpack-en glibc-langpack-fr
+
+# Install packages (needs epel)
+dnf -yq install \
+    sysstat iproute iputils procps-ng util-linux coreutils \
+    e2fsprogs mdadm lvm2 cryptsetup tree htop btrfs-progs firewalld \
+    netcat vim git nftables podman buildah \
+    systemd-networkd systemd-resolved containers-common
+
+# TZ
+ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
+
+# chrony.conf has no include directory: replace its default pool with a
+# sources directory, filled by etc/chrony/sources.d/. Fail if the pool line
+# was not found.
+sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
+grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
+
+# Firewall
+#
+# Used ports
+# - 80+443: HTTP(S)
+# - 42022: sshd (etc/ssh/sshd_config.d/10-myssh.conf)
+#
+# TODO selinux one day
+firewall-offline-cmd --add-port=80/tcp --add-port=443/tcp --add-port=42022/tcp
+firewall-offline-cmd --zone=public --remove-service-from-zone=cockpit --remove-service-from-zone=ssh
+firewall-offline-cmd --check-config
+
+# Systemd services
+systemctl disable NetworkManager
+systemctl mask NetworkManager
+systemctl enable sshd.service firewalld.service \
+    systemd-resolved.service systemd-networkd.service \
+    mdmonitor.service
+
+# Cleanup. /var/roothome/.viminfo: written by a vim package scriptlet.
+dnf -yq autoremove
+dnf -yq clean all
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /var/roothome/.viminfo
+EORUN
+
+# Our policy.json, about to replace the base's, must still be the base's
+# plus our changes (fedora/policy.jq). It is per release
+# (sysroot/<BASE_VERSION>/): a new release has none yet and fails here.
+# CentOS Stream 10's containers-common ships it in /usr/share/containers,
+# the fallback when /etc/containers/policy.json, ours, doesn't exist
+# (containers-policy.json(5)).
+# After the packages, so that editing sysroot/ keeps their layer cached.
+ARG BASE_VERSION
+RUN --mount=type=bind,source=fedora/policy.jq,target=/tmp/policy.jq \
+    --mount=type=bind,source=centos/sysroot,target=/tmp/sysroot \
+    jq -e --slurpfile ours "/tmp/sysroot/${BASE_VERSION}/etc/containers/policy.json" \
+    -f /tmp/policy.jq /usr/share/containers/policy.json
+
+# Copy static configuration files, keeping the modes of the build context:
+# fedora's shared ones, then the release's (policy.json). Not fedora's
+# release-specific files.
+COPY --link ./fedora/sysroot/common/ /
+COPY --link ./centos/sysroot/${BASE_VERSION}/ /
+
+
+# Kubernetes environment: k3s, without Docker. Steps and reasons in
+# images/k3s/install.sh, shared by every image; setup in K3S.md.
+FROM base AS kubeenv
+
+# k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
+# with --build-arg (.github/workflows/build-bootc.yml); keep this default in sync.
+ARG INSTALL_K3S_VERSION=v1.37.1+k3s1
+
+# Bind-mounted, not copied: the script stays out of the image.
+RUN --mount=type=bind,source=k3s,target=/k3s \
+    bash /k3s/install.sh
+
+# CRI-O configuration, after the install: changing it doesn't rerun it.
+COPY --link ./k3s/sysroot/ /
+
+# Keep this as the last instruction, on its own.
+# hadolint ignore=DL3059
+RUN bootc container lint
+
+
+# Docker environment. Last stage, so the default target: it is the plain
+# centos:<version> image, kubeenv being
+# centos:<version>-v<Kubernetes minor release>k3s.
+FROM base AS dockerenv
+
+RUN <<EORUN
+# See https://docs.docker.com/engine/install/centos/
+dnf config-manager --add-repo https://download.docker.com/linux/centos/docker-ce.repo
+
+# Install docker stuff
+dnf -yq install docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
+    docker-compose-plugin docker-model-plugin
+
+# Systemd services
+systemctl enable docker.service containerd.service
+
+# Cleanup
+dnf -yq autoremove
+dnf -yq clean all
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
+EORUN
+
+# Keep this as the last instruction, on its own.
+# hadolint ignore=DL3059
+RUN bootc container lint
