@@ -8,9 +8,10 @@
 # package's dependency closure: no shell, no apt, but a dpkg database
 # scanners can read.
 #
-# Build (from the repo root):
-#   docker buildx build -f containers/jellyfin/spec.yml --target trixie/container \
-#     -t ghcr.io/spnngl/images/jellyfin:<BASE_VERSION> containers/jellyfin/
+# Build (from the repo root; the version is in docker-bake.hcl, which
+# passes the arg below):
+#   docker buildx bake -f containers/docker-bake.hcl \
+#     -f containers/jellyfin/docker-bake.hcl
 #
 # Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
 # (database, settings, metadata, logs) and /cache (transcodes, images,
@@ -32,14 +33,15 @@
 # No Intel OpenCL (intel-opencl-icd isn't in trixie) nor Rockchip libmali:
 # HDR tone mapping on Intel uses VPP only, none on Rockchip.
 #
-# Renovate (renovate.json5) bumps BASE_VERSION (CI reads it from here) once
-# the server is in Jellyfin's trixie repository.
+# Renovate bumps the version in docker-bake.hcl once the server is in
+# Jellyfin's trixie repository.
 
+# Set by docker-bake.hcl. Dalec needs it declared, empty here: a build
+# without it fails.
 args:
-  # Releases: https://github.com/jellyfin/jellyfin/releases, built for
-  # trixie in https://repo.jellyfin.org/debian (jellyfin-server
-  # <BASE_VERSION>+deb13).
-  BASE_VERSION: "12.2"
+  # Jellyfin's release, built for trixie in
+  # https://repo.jellyfin.org/debian (jellyfin-server <BASE_VERSION>+deb13).
+  BASE_VERSION: ""
 
 name: jellyfin
 description: Jellyfin, the Free Software Media System (server only)

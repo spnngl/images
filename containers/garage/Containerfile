@@ -13,13 +13,21 @@
 # Host network for a multi-node cluster, as upstream's docs do.
 # https://garagehq.deuxfleurs.fr/documentation/cookbook/real-world/
 
-# Releases: https://git.deuxfleurs.fr/Deuxfleurs/garage/tags
-ARG BASE_VERSION=2.4.1
+# Versions come from containers/garage/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
 # Debian trixie: its musl-tools build the C libraries, its ca-certificates
 # is the CA bundle copied below.
-FROM docker.io/library/rust:1.99-trixie AS build
+FROM docker.io/library/rust:1.99-trixie@sha256:81015672d6939b0265f09adf96d5de125482bb1330106076956b0518e74edc90 AS build
 
+# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
+# DEBIAN_CODENAME: the release the tag names; DEBIAN_SNAPSHOT_VERSION:
+# Debian's archive for the packages installed below.
 ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+ARG DEBIAN_SNAPSHOT_VERSION
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 WORKDIR /src
 
@@ -28,11 +36,20 @@ WORKDIR /src
 # prost-build. cargo-auditable: embeds the dependency list in the binary,
 # for the SBOM and the vulnerability scans. ca-certificates: copied into
 # the image below.
-# Versions not pinned (DL3008): they follow the pinned trixie base image,
-# like dnf packages do in the bootc images (.hadolint.yaml).
-# The musl target too, while root.
+# Versions not pinned (DL3008): they follow the snapshot, which Renovate
+# moves (containers/docker-bake.hcl). The musl target too, while root.
+# The checks first: built alone (not with bake), or on another Debian
+# release than the tag names, it fails here.
+# The snapshot: apt-get's --snapshot is not in trixie's apt (3.0.3), so
+# the sources point at snapshot.debian.org, as the base image's own
+# comments say its build did. No Valid-Until: snapshot Release files
+# expire.
 # hadolint ignore=DL3008
 RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates cargo-auditable musl-tools protobuf-compiler
 rm -rf /var/lib/apt/lists/*
@@ -42,7 +59,7 @@ EORUN
 # --checksum: the tag must resolve to this commit, tags can be moved.
 # No .git: GIT_VERSION below sets the version.
 ADD --link \
-    --checksum=268334bd2530fa99f8b06c7383b2e9f776691edd \
+    --checksum=${BASE_CHECKSUM} \
     https://git.deuxfleurs.fr/Deuxfleurs/garage.git#v${BASE_VERSION} /src
 
 # Build and test as the image's user, not root: neither the crates' build

@@ -1,18 +1,25 @@
 # Validate renovate.json5 on every change to it: Renovate itself only
 # reports an invalid config in an issue, after it was merged. The
 # validator and its Renovate image live in spnngl/.github.
+#
+# And check that Renovate picks up every version of the Bake files
+# (containers/**/docker-bake.hcl): their one custom manager reads a
+# `# renovate:` comment before each version, and a mistyped comment is
+# silently ignored, which freezes that version for good.
 name: renovate
 
 on:
   pull_request:
     paths:
       - renovate.json5
+      - "containers/**/docker-bake.hcl"
       - .github/workflows/renovate.yml
   push:
     branches:
       - main
     paths:
       - renovate.json5
+      - "containers/**/docker-bake.hcl"
       - .github/workflows/renovate.yml
 
 concurrency:
@@ -26,3 +33,40 @@ jobs:
     permissions:
       contents: read
     uses: spnngl/.github/.github/workflows/renovate.yml@main
+
+  # Renovate's own extraction, on the checkout, no lookup (--dry-run=extract):
+  # one dependency per `# renovate:` comment, in each Bake file. The log
+  # lists the files only at the trace level.
+  extract:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # GITHUB_COM_TOKEN: Renovate fetches the shared preset (extends)
+      # from GitHub; the token only avoids the anonymous rate limit.
+      - env:
+          GITHUB_COM_TOKEN: ${{ github.token }}
+        run: |-
+          docker run --rm -v "${PWD}:/w:ro" -w /w -e LOG_LEVEL=trace -e LOG_FORMAT=json -e GITHUB_COM_TOKEN \
+            ghcr.io/renovatebot/renovate:44.151.2 renovate --platform=local --dry-run=extract > "${RUNNER_TEMP}/renovate.log"
+          # The number of dependencies of each file, from the log's list
+          # of the files each manager extracted.
+          jq -c 'select(.msg == "Extracted dependencies") | [.packageFiles.regex[]? | {key: .packageFile, value: (.deps | length)}] | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries' "${RUNNER_TEMP}/renovate.log" > "${RUNNER_TEMP}/extracted.json"
+          [[ -s "${RUNNER_TEMP}/extracted.json" ]] || { echo "::error::no extraction in Renovate's log"; exit 1; }
+          failed=0
+          while IFS= read -r file; do
+            expected="$(grep -cE '^[[:space:]]*#[[:space:]]*renovate:' "${file}" || true)"
+            actual="$(jq -r --arg file "${file}" '.[$file] // 0' "${RUNNER_TEMP}/extracted.json")"
+            if [[ "${expected}" != "${actual}" ]]; then
+              echo "::error file=${file}::${expected} '# renovate:' comments, Renovate extracts ${actual} versions: see the matchStrings of the docker-bake.hcl manager in renovate.json5"
+              failed=1
+            fi
+          done < <(git ls-files '*docker-bake.hcl')
+          exit "${failed}"
