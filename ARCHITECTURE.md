@@ -41,13 +41,12 @@ For a bootc image there are two stages:
 │       ├── Containerfile
 │       └── sysroot/...         # files copied as is into the image root:
 │                               # common/, then <BASE_VERSION>/
-├── images/                     # shared build context for every application image
-│   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
-│   └── <name>/                 # one folder per application image
+├── containers/                 # application images
+│   └── <name>/                 # one folder, and build context, per application image
+│       ├── .dockerignore       # keeps the Containerfile, spec.yml and scripts out of the context
 │       ├── Containerfile       # or spec.yml, for a Dalec image
+│       ├── <name>-lock.sh      # regenerate its lock, if any (sabnzbd)
 │       └── sysroot/...         # files copied as is into the image root
-├── scripts/
-│   └── sabnzbd-lock.sh         # regenerate images/sabnzbd/requirements.lock
 ├── config.example.toml         # template for config.toml (git-ignored)
 ├── K3S.md                      # setting up k3s hosts (kubeenv images)
 ├── renovate.json5              # Saturday updates of every pinned version
@@ -231,7 +230,7 @@ Source of truth: `github.com/firewalld/firewalld` (`doc/xml` for docs,
   ipset entries from external data has to validate them itself; see
   `bootc/almalinux/geoblock.nu`.
 
-### `images/cs-firewall-bouncer`
+### `containers/cs-firewall-bouncer`
 
 [cs-firewall-bouncer](https://github.com/crowdsecurity/cs-firewall-bouncer)
 built from source (tag `v<BASE_VERSION>`), on `scratch`. It pulls the
@@ -292,11 +291,11 @@ engine that decides the bans) is not part of this repository.
   admin's IP must be allowlisted on the LAPI, or a ban locks out sshd
   (port 42022).
 
-### `images/sabnzbd`
+### `containers/sabnzbd`
 
 [SABnzbd](https://sabnzbd.org) (Usenet downloader, Python), built with
 [Dalec](https://project-dalec.github.io/dalec/) from
-`images/sabnzbd/spec.yml`: no Containerfile. Dalec builds one Debian
+`containers/sabnzbd/spec.yml`: no Containerfile. Dalec builds one Debian
 trixie package (the app, its Python modules, par2cmdline-turbo), then the
 `trixie/container` target installs it into an image built from scratch
 out of the package's dependency closure (python3.13, unrar, 7zip, libc,
@@ -310,8 +309,8 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
   (base-files' postinst fails).
 - **Only `docker buildx` builds it** (Dalec is a BuildKit frontend, the
   spec's `# syntax=` line; buildah ignores it): `docker buildx build -f
-  images/sabnzbd/spec.yml --target trixie/container images/`, and CI's
-  `build-apps.yml`. `bootc/build.sh` refuses it (no Containerfile).
+  containers/sabnzbd/spec.yml --target trixie/container
+  containers/sabnzbd/`, and CI's `build-apps.yml`. `bootc/build.sh` refuses it (no Containerfile).
 - **Sources pinned by commit**: Dalec checks that the sabnzbd and
   par2cmdline-turbo tags resolve to the commits in the spec.
 - **Python modules from PyPI, not Debian**: Debian's are older than
@@ -322,8 +321,8 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
   `/usr/lib/sabnzbd/site-packages`, found through a `.pth` file. Bytecode
   is compiled at build time (`unchecked-hash`: the user can't write
   `/usr/lib`, and dpkg clamps mtimes). Regenerate it with
-  `scripts/sabnzbd-lock.sh` on every bump, or to update unpinned modules
-  (cryptography).
+  `containers/sabnzbd/sabnzbd-lock.sh` on every bump, or to update
+  unpinned modules (cryptography).
 - **par2cmdline-turbo built from source**, SABnzbd's recommended par2:
   trixie only has par2cmdline 0.8.1. unrar comes from trixie's
   `non-free` (only when building the image, not the package).
@@ -352,12 +351,12 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
   bumps it in the spec (with the sabnzbd checksum), where
   `build-apps.yml` reads it; push the regenerated lock to its PR.
 
-### `images/nftables-exporter`
+### `containers/nftables-exporter`
 
 [nftables-exporter](https://github.com/metal-stack/nftables-exporter)
 (Prometheus metrics of the host's nftables counters, sets, chains and
-rules, Go), built with Dalec from `images/nftables-exporter/spec.yml`, as
-`images/sabnzbd` (same reasons, same `docker buildx` build). One Debian
+rules, Go), built with Dalec from `containers/nftables-exporter/spec.yml`, as
+`containers/sabnzbd` (same reasons, same `docker buildx` build). One Debian
 trixie package, the exporter, installed with Debian's `nftables`.
 
 - **Not a static binary on scratch**, unlike cs-firewall-bouncer: the
@@ -403,10 +402,10 @@ trixie package, the exporter, installed with Debian's `nftables`.
   publishes no GitHub releases). Renovate bumps it with the source
   checksum; check upstream's `options.go` for new options.
 
-### `images/jellyfin`
+### `containers/jellyfin`
 
 [Jellyfin](https://jellyfin.org) (media server, C#/.NET), server only,
-built with Dalec from `images/jellyfin/spec.yml`, as `images/sabnzbd`
+built with Dalec from `containers/jellyfin/spec.yml`, as `containers/sabnzbd`
 (same reasons, same `docker buildx` build). One Debian trixie package,
 the server, installed with `jellyfin-ffmpeg8`.
 
@@ -459,12 +458,12 @@ the server, installed with `jellyfin-ffmpeg8`.
   `/config` first. The repository key's digest isn't followed: if
   upstream rotates it, the build fails on the digest.
 
-### `images/garage`
+### `containers/garage`
 
 [Garage](https://garagehq.deuxfleurs.fr) (S3-compatible distributed
 object store, Rust) built from source (tag `v<BASE_VERSION>`, pinned to
 its commit by `ADD --checksum`), one static binary on `scratch`, like
-`images/cs-firewall-bouncer`. Close to upstream's `dxflrs/garage`: same
+`containers/cs-firewall-bouncer`. Close to upstream's `dxflrs/garage`: same
 paths (`/garage`, `/etc/garage.toml`, `/var/lib/garage/{meta,data}`) and
 Cargo features (upstream's release set, `nix/compile.nix`), so upstream's
 docs and Helm chart apply (the chart sets either no command or
@@ -490,11 +489,11 @@ release build).
   change the source (root's). Only the packages and the toolchain's
   musl target are installed as root. No passwd entry, as in the image:
   `CARGO_HOME` and `RUSTUP_HOME` are set, so cargo needs no `HOME`.
-  Caches have ids of their own (`-65532`), as `images/minio`'s.
+  Caches have ids of their own (`-65532`), as `containers/minio`'s.
 - **`cargo auditable`** (Debian's package) embeds the crate list in the
   binary: without it, the SBOM and the scans see no Rust dependency.
 - **Smoke tests.** The build stage runs a single-node server
-  (`images/garage/smoke-test.toml`, not in the image) with a default key
+  (`containers/garage/smoke-test.toml`, not in the image) with a default key
   and bucket, writes and reads back a 1 MiB object through the S3 API
   (signed by `curl --aws-sigv4`), then stops it gracefully. Garage has
   no side-effect-free config check, and `scratch` has no shell to run a
@@ -520,11 +519,11 @@ release build).
   test covers them); major releases are not: they migrate the metadata
   (upstream's `migration-<major>` guide).
 
-### `images/minio`
+### `containers/minio`
 
 [MinIO](https://github.com/minio/minio) (S3-compatible object storage, Go)
 built from source, one static binary on `scratch`, like
-`images/cs-firewall-bouncer`. Upstream archived the repository and ships
+`containers/cs-firewall-bouncer`. Upstream archived the repository and ships
 source only: no binaries or images after its last release.
 
 Source of truth: `github.com/minio/minio` at the `BASE_VERSION` tag
@@ -545,7 +544,7 @@ Source of truth: `github.com/minio/minio` at the `BASE_VERSION` tag
   never get. The scanners' code scanning alerts are the current list;
   no ignore file hides them. No backports of ours: a fork to maintain.
   Only on a network where every client is trusted, never
-  exposed: `images/silo` is the maintained MinIO, `images/garage` the
+  exposed: `containers/silo` is the maintained MinIO, `containers/garage` the
   other maintained S3 store.
 - **The commit is pinned** (`ADD --checksum`): MinIO holds the data, and
   the tag is all that is left to trust. buildah ignores `--checksum` for
@@ -598,11 +597,11 @@ Source of truth: `github.com/minio/minio` at the `BASE_VERSION` tag
 - **Updates:** Renovate follows the repository's tags, never automerged:
   a release can rewrite the data for good, back up `/data` first.
 
-### `images/silo`
+### `containers/silo`
 
 [Silo](https://github.com/pgsty/silo) (S3-compatible object storage, Go),
 the community fork of the MinIO server published by Pigsty, built from
-source like `images/minio`: same build, user, layout and runtime
+source like `containers/minio`: same build, user, layout and runtime
 contract, read that section. Only the differences are here.
 
 Source of truth: `github.com/pgsty/silo` at the `BASE_VERSION` tag
@@ -613,7 +612,7 @@ for upstream's image); docs: <https://silo.pgsty.com>.
 - **Why a fork:** MinIO Inc. wound down MinIO's community edition: the
   console cut back to a stub, no binaries or images, then the repository
   archived, with known vulnerabilities and frozen dependencies
-  (`images/minio`). Silo forks the open-source server under the same
+  (`containers/minio`). Silo forks the open-source server under the same
   license (AGPL-3.0-or-later, no CLA) and maintains it: security fixes
   with a public advisory each, dependency and Go updates, a release
   every one or two months, the full console back
@@ -624,7 +623,7 @@ for upstream's image); docs: <https://silo.pgsty.com>.
   on-disk format (`.minio.sys`) are kept, so MinIO's docs, clients and
   `/data` apply. The binary is `silo` (no `minio` alias), its default
   config folder `~/.silo`.
-- **Next to `images/minio`, not instead of it:** `images/minio` is
+- **Next to `containers/minio`, not instead of it:** `containers/minio` is
   MinIO's last release as upstream tagged it, without a third party's
   commits (hundreds on top of MinIO); Silo is the maintained one, the
   choice for anything new. Moving from MinIO is a change of image on the
@@ -634,23 +633,23 @@ for upstream's image); docs: <https://silo.pgsty.com>.
   on `MINIO_ADDRESS` (`:9000` by default; a `--address` flag in `CMD`
   is invisible to it), over HTTPS when `/certs` holds a key pair
   (`--certs-dir` repeated: a `HEALTHCHECK` doesn't go through the
-  entrypoint). Kubernetes ignores it: same probes as `images/minio`.
+  entrypoint). Kubernetes ignores it: same probes as `containers/minio`.
 - **No `MINIO_UPDATE`:** Silo removed in-place updates and warns when
   it is set.
 - **`NOTICE` too** in `/usr/share/doc/silo/`, with `LICENSE` and
   `CREDITS`: upstream ships the three.
-- **Smoke tests:** `images/minio`'s, plus the `HEALTHCHECK`'s command
+- **Smoke tests:** `containers/minio`'s, plus the `HEALTHCHECK`'s command
   against the test server.
 - **Updates:** Renovate follows the repository's tags (MinIO's
   versioning), automerged once CI passes: the build stage tests the
   server, and Silo keeps the data format by contract. Back up `/data`
   anyway: a release can't be rolled back once it has written to it.
 
-### `images/mc`
+### `containers/mc`
 
 [pgsty/mc](https://github.com/pgsty/mc) (MinIO Client, the `mc` S3
 command-line client, Go) built from source, one static binary on
-`scratch`, like `images/silo`: same build, user and layout.
+`scratch`, like `containers/silo`: same build, user and layout.
 
 Source of truth: `github.com/pgsty/mc` at the `BASE_VERSION` tag
 (`.github/workflows/release.yml` and `.github/goreleaser.yml` for the
@@ -689,12 +688,12 @@ release build, `cmd/` for flags and variables).
 
 ## Design decisions
 
-- **bootc images in `bootc/`, application images in `images/`.** They
+- **bootc images in `bootc/`, application images in `containers/`.** They
   share no build input: different builders (podman, `docker buildx`),
   workflows and rules (AGENTS.md). The folder says which kind an image
   is, and which workflow builds it.
-- **The build context is the shared `bootc/` or `images/` folder, not
-  each image's own folder.** `bootc/build.sh` passes `-f
+- **A bootc image's build context is the shared `bootc/` folder, not
+  its own folder.** `bootc/build.sh` passes `-f
   bootc/<name>/Containerfile` with context `bootc/`. This is what lets
   `bootc/almalinux/Containerfile` do `COPY --link ./fedora/sysroot/common/ /`
   to reuse fedora's base configuration instead of duplicating it. Each
@@ -708,6 +707,13 @@ release build, `cmd/` for flags and variables).
   context root, or through `--ignorefile`) keeps every
   `Containerfile` out of `COPY . /`; there is no need for a copy per
   image folder.
+- **An application image's build context is its own folder,
+  `containers/<name>/`.** None reads another's files, so a shared
+  context would only widen what each build can see. Each folder has its
+  own `.dockerignore`, the same list as `bootc/.containerignore` plus
+  `spec.yml` and `*-lock.sh`, keeping the build's own files out of the
+  context: BuildKit (`docker buildx`, Dalec's `context` sources
+  included) only reads `.dockerignore`, never `.containerignore`.
 - **`COPY` rather than `ADD`.** `ADD` also downloads URLs and unpacks
   archives, which we don't want for plain files. Exception:
   `bootc/almalinux`'s build-only `geoblock` stage uses `ADD <url>` on
@@ -822,17 +828,16 @@ podman: it can't run Dalec, and one way to build, attest and sign every
 application image is simpler). The differences:
 
 - **Images are found, not listed**: a `discover` job makes the matrix
-  from every `images/<name>/spec.yml` and every `images/<name>/Containerfile`,
+  from every `containers/<name>/spec.yml` and every `containers/<name>/Containerfile`,
   its version being the spec's `args.BASE_VERSION` (read with `yq`) or the
   Containerfile's `ARG BASE_VERSION` default. A new application image
   needs no workflow change.
 - **Only the images that changed**: those whose folder changed, or
-  every one when a file at the root of `images/` or the workflow
-  changed, or on the weekly rebuild and manual runs. Changed since what:
-  a pull request's base, or for a push the workflow's last successful
-  run on the branch, not the previous push: a run cancelled by a newer
-  one (`concurrency`) or failed never pushed its images, so the next run
-  builds its changes too. No successful run to compare with: every
+  every one when the workflow changed, or on the weekly rebuild and
+  manual runs. Changed since what: a pull request's base, or for a push
+  the workflow's last successful run on the branch, not the previous
+  push: a run cancelled by a newer one (`concurrency`) or failed never
+  pushed its images, so the next run builds its changes too. No successful run to compare with: every
   image.
 - **hadolint for the Containerfiles to build**, as in `build-bootc.yml`.
   Code scanning keeps the others' alerts from their last analysis.
