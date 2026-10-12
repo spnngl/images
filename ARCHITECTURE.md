@@ -449,6 +449,12 @@ docs and Helm chart apply (the chart sets either no command or
   libraries the crates bundle (libsodium, LMDB, SQLite, zstd, ring),
   `protobuf-compiler` the OTLP exporter's protobufs. `GIT_VERSION` sets
   the version `--version` prints (the source has no `.git`).
+- **Compiled and tested as UID 65532, the image's, not root:** the
+  crates' build scripts and the test server run without root, and can't
+  change the source (root's). Only the packages and the toolchain's
+  musl target are installed as root. No passwd entry, as in the image:
+  `CARGO_HOME` and `RUSTUP_HOME` are set, so cargo needs no `HOME`.
+  Caches have ids of their own (`-65532`), as `images/minio`'s.
 - **`cargo auditable`** (Debian's package) embeds the crate list in the
   binary: without it, the SBOM and the scans see no Rust dependency.
 - **Smoke tests.** The build stage runs a single-node server
