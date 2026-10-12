@@ -27,4 +27,10 @@ Upstream sources and the reason for each choice:
 
 Renovate follows upstream's Forgejo tags. Minor and patch releases and
 Rust bumps are automerged (the server test covers them); a major release
-migrates the metadata: follow upstream's `migration-<major>` guide.
+migrates the metadata and is never automerged. Before merging, read
+upstream's migration guide
+(`https://garagehq.deuxfleurs.fr/documentation/working-documents/migration-<major>/`)
+and the release notes
+(`https://git.deuxfleurs.fr/Deuxfleurs/garage/releases/tag/v<new>`).
+Merging changes the image tag: nodes stay on the old one until moved,
+following that guide.
