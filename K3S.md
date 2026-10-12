@@ -1,7 +1,7 @@
 # k3s
 
 The `<name>:<version>-v<Kubernetes minor release>k3s` images (`kubeenv` stage,
-which runs `images/k3s/install.sh`) ship k3s for both roles, with the
+which runs `bootc/k3s/install.sh`) ship k3s for both roles, with the
 same binary:
 
 - `k3s.service`: `k3s server`, the control-plane. One per cluster: the
@@ -31,12 +31,12 @@ crictl rmp --all --force
 ```
 
 k3s (with its kubelet) and CRI-O run in `kube.slice`, out of
-`system.slice` (`images/k3s/sysroot/usr/lib/systemd/system/`), without
+`system.slice` (`bootc/k3s/sysroot/usr/lib/systemd/system/`), without
 resource limits. The kubelet puts pods in `kubepods.slice`, next to it,
 and CRI-O each container's conmon in its pod's cgroup.
 
 Short image names (`coredns/coredns`) resolve to docker.io only, as with
-containerd (`images/fedora/sysroot/common/etc/containers/registries.conf.d/99-myregistries.conf`):
+containerd (`bootc/fedora/sysroot/common/etc/containers/registries.conf.d/99-myregistries.conf`):
 images from other registries need full names. CRI-O pulls with the host's pull secret, `/etc/ostree/auth.json`, and its
 own signature policy, `/etc/crio/policy.json` (accepts anything), not
 `/etc/containers/policy.json`. Its default capabilities have no
@@ -45,14 +45,14 @@ own signature policy, `/etc/crio/policy.json` (accepts anything), not
 ## Swap
 
 Hosts swap on zram only, compressed with zstd, the size of RAM (at most
-8 GiB): `images/k3s/sysroot/usr/lib/systemd/zram-generator.conf.d/50-k3s.conf`.
-Disk swap and zswap stay off (`images/k3s/sysroot/usr/lib/bootc/kargs.d/10-swapoff.toml`).
+8 GiB): `bootc/k3s/sysroot/usr/lib/systemd/zram-generator.conf.d/50-k3s.conf`.
+Disk swap and zswap stay off (`bootc/k3s/sysroot/usr/lib/bootc/kargs.d/10-swapoff.toml`).
 Reclaim favours zram over dropping file pages (`vm.swappiness = 180`,
-no swap readahead: `images/k3s/sysroot/usr/lib/sysctl.d/60-zram.conf`).
+no swap readahead: `bootc/k3s/sysroot/usr/lib/sysctl.d/60-zram.conf`).
 
 - k3s, CRI-O and the other host daemons swap without limit.
 - Pods: the kubelet's `LimitedSwap`
-  (`images/k3s/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf`).
+  (`bootc/k3s/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf`).
   Only non-critical Burstable containers with a memory request below
   their limit (or no limit) swap, each up to its memory request × swap /
   RAM.
@@ -63,7 +63,7 @@ no swap readahead: `images/k3s/sysroot/usr/lib/sysctl.d/60-zram.conf`).
   kubelet reads the swap size at startup: restart it after zram is up.
 
 The kernel tracks pressure stall information (`psi=1`,
-`images/k3s/sysroot/usr/lib/bootc/kargs.d/10-psi.toml`), which AlmaLinux
+`bootc/k3s/sysroot/usr/lib/bootc/kargs.d/10-psi.toml`), which AlmaLinux
 and CentOS kernels build disabled: node-exporter's `node_pressure_*` metrics and the
 kubelet's PSI metrics need it.
 
@@ -78,7 +78,7 @@ cat /var/lib/rancher/k3s/server/node-token   # the agents' token
 `kubectl` works as root, with `/etc/rancher/k3s/k3s.yaml`.
 
 The API server writes an audit log to `/var/log/kubernetes/audit/`
-(`images/k3s/sysroot/etc/rancher/k3s/config.yaml`, 7 days, 3 × 100 MB),
+(`bootc/k3s/sysroot/etc/rancher/k3s/config.yaml`, 7 days, 3 × 100 MB),
 filtered by `audit-policy.yaml` next to it: exec / attach / port-forward,
 reads of authenticated users (except Secrets), leases, access reviews and
 events are not logged.
@@ -127,7 +127,7 @@ the pod CIDRs between them (native routing cannot work). The pod CIDR is k3s' ow
 `10.0.0.0/8`, which holds k3s' service CIDR (`10.43.0.0/16`).
 `cni.binPath`: Cilium's default, `/opt/cni/bin`, is read-only on bootc;
 CRI-O looks for CNI plugins in `/var/opt/cni/bin`
-(`images/k3s/sysroot/etc/crio/crio.conf.d/20-k3s.conf`). The CNI
+(`bootc/k3s/sysroot/etc/crio/crio.conf.d/20-k3s.conf`). The CNI
 configuration stays in both defaults, `/etc/cni/net.d`, and CRI-O picks
 it up without a restart.
 
@@ -139,7 +139,7 @@ local-storage and its RBAC rolebindings. Deploy the others yourself:
 - DNS: CoreDNS, its Service on `10.43.0.10` (k3s' `--cluster-dns`),
   domain `cluster.local`, and NodeLocal DNSCache on every node, listening
   on `169.254.25.10`: the kubelets point pods to it, not to CoreDNS
-  (`images/fedora/sysroot/common/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-cluster-dns.conf`).
+  (`bootc/fedora/sysroot/common/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-cluster-dns.conf`).
   Until it runs, pods have no DNS.
 - metrics-server, an ingress controller, runtime classes: as needed.
 - LoadBalancer Services: k3s' ServiceLB is disabled, use e.g. Cilium's
@@ -147,7 +147,7 @@ local-storage and its RBAC rolebindings. Deploy the others yourself:
 
 ## Firewall
 
-Open on the `public` zone, see `images/k3s/install.sh` for why:
+Open on the `public` zone, see `bootc/k3s/install.sh` for why:
 
 | Port      | For                                            |
 |-----------|------------------------------------------------|
