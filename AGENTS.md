@@ -22,6 +22,9 @@ Check the source rather than blog posts or memory:
 - Base image tags:
   <https://quay.io/repository/fedora/fedora-bootc?tab=tags>,
   <https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags>
+- Garage (`images/garage`): `git.deuxfleurs.fr/Deuxfleurs/garage`
+  (`doc/book` for docs, `nix/compile.nix` for the release build), at the
+  Containerfile's `BASE_VERSION` tag
 - Renovate (`renovate.json5`): `github.com/renovatebot/renovate`
   (`docs/usage`, managers in `lib/modules/manager`, presets in
   `lib/config/presets/internal`)

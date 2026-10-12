@@ -1,0 +1,19 @@
+# Config of the Containerfile's server smoke test, run in the build stage:
+# never copied into the image. A single node (replication_factor 1, for
+# `garage server --single-node`) on loopback, its state in /tmp. Secrets
+# come from the test's environment (GARAGE_RPC_SECRET), not from here.
+# Reference: https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/
+metadata_dir = "/tmp/garage/meta"
+data_dir = "/tmp/garage/data"
+# LMDB: upstream's default engine, the one most deployments run.
+db_engine = "lmdb"
+replication_factor = 1
+rpc_bind_addr = "127.0.0.1:3901"
+
+[s3_api]
+s3_region = "garage"
+api_bind_addr = "127.0.0.1:3900"
+
+# /health needs no token: the test polls it until the node is up.
+[admin]
+api_bind_addr = "127.0.0.1:3903"
