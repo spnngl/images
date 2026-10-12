@@ -28,7 +28,8 @@ For a bootc image there are two stages:
 │       ├── renovate.yml        # CI: validate renovate.json5
 │       ├── conventional-commits.yml  # CI: commit messages of a PR
 │       ├── betterleaks.yml     # CI: secrets in the git history
-│       └── betterleaks-github.yml    # daily: secrets in PRs, issues
+│       ├── betterleaks-github.yml    # daily: secrets in PRs, issues
+│       └── image-scan.yml      # daily: vulnerabilities of the pushed images
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── images/                     # shared build context for every image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
@@ -546,6 +547,8 @@ Container images only: disk images need `config.toml`.
   platform but upload nothing.
 - **Pushed images are signed**, then pulled back with the image's own
   `policy.json` to check the signature. See "Signing".
+- **Pull requests scan every image** for vulnerabilities. See
+  "Vulnerability scanning".
 
 ## CI: `.github/workflows/build-apps.yml`
 
@@ -591,6 +594,29 @@ application image is simpler). The differences:
 - **Signed by `cosign sign`**, with the same key and in the same
   attachment format as podman's (see "Signing"), then checked with
   `cosign verify`.
+- **Pull requests scan every image**, from an extra OCI layout output:
+  the `image` one is neither pushed nor loaded then. See "Vulnerability
+  scanning".
+
+## Vulnerability scanning
+
+spnngl/.github's `scan-image` action runs Grype and Trivy on an image.
+Both: Trivy has no Fedora vulnerability data (it skips the packages of
+`images/fedora`), Grype has; their other sources differ too.
+
+- **Pull requests:** each build job scans its image and platform (an
+  OCI layout: `podman save --format oci-dir`, buildx `type=oci`), and
+  fails on a Critical vulnerability with a fix. Without a fix, nothing
+  a pull request can do: reported, not failed.
+- **Pushed images:** `image-scan.yml` scans them daily, as a new
+  vulnerability shows up without any change here, and uploads the High
+  and Critical findings to code scanning. It never fails, nor do the
+  builds of `main` and the weekly rebuilds: failing them would keep the
+  older image, with more vulnerabilities, on the hosts. It scans the
+  tags pushed in the last 8 days, every platform of each: the weekly
+  rebuilds cover the current ones, older tags are no longer rebuilt.
+- **False positives:** `.grype.yaml` (`ignore:` rules) and
+  `.trivyignore.yaml`, at the repository root, with the reason for each.
 
 ## Updates: `renovate.json5`
 
