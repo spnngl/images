@@ -614,6 +614,47 @@ for upstream's image); docs: <https://silo.pgsty.com>.
   server, and Silo keeps the data format by contract. Back up `/data`
   anyway: a release can't be rolled back once it has written to it.
 
+### `images/mc`
+
+[pgsty/mc](https://github.com/pgsty/mc) (MinIO Client, the `mc` S3
+command-line client, Go) built from source, one static binary on
+`scratch`, like `images/silo`: same build, user and layout.
+
+Source of truth: `github.com/pgsty/mc` at the `BASE_VERSION` tag
+(`.github/workflows/release.yml` and `.github/goreleaser.yml` for the
+release build, `cmd/` for flags and variables).
+
+- **pgsty/mc, not [minio/mc](https://github.com/minio/mc):** minio/mc is
+  archived, its last release `RELEASE.2025-08-13T08-35-41Z`, its
+  dependencies frozen, and it still calls services MinIO Inc. runs
+  (update feed, SUBNET, telemetry, the `play` alias). pgsty/mc forks its
+  final commit and maintains it with Silo, in one release process:
+  security fixes, dependency and Go updates, Silo fixes, those services
+  cut off and `mc update` disabled. Silo's own `go.mod` pins it, and
+  Pigsty supports minio/mc against Silo on a best-effort basis only.
+  Same commands, config and `mc` name as minio/mc (upstream's archives
+  call it `mcli`, its image `mc`): minio/mc's docs apply.
+- **`MC_CONFIG_DIR=/config`**, owned by the image's user: mc writes
+  its config (`config.json`, `share/`, `certs/CAs/`) at every start,
+  and its default, `~/.mc`, needs a `HOME` the image hasn't. No
+  `VOLUME`: with aliases in `MC_HOST_<alias>`, the config is disposable.
+  With a read-only root filesystem, mount a tmpfs or a volume there; a
+  volume also keeps `mc alias set`'s aliases. Private CAs go in
+  `/config/certs/CAs/`.
+- **`ENTRYPOINT ["/usr/bin/mc"]`, no `CMD`**, upstream's: arguments are
+  mc's (`docker run <image> ls <alias>/<bucket>`).
+- **Smoke tests:** no S3 server, local files only: the build stage
+  checks `--version`, copies a 1 MiB file with `mc cp`, reads it back
+  with `mc cat` and checks the config is in `MC_CONFIG_DIR`. The S3 code
+  isn't exercised: building a server for the test would double the
+  build. The final stage runs `--version`.
+- **What the image holds:** the binary, Debian's CA bundle (TLS to S3
+  servers), `LICENSE`, `NOTICE` and `CREDITS`. `mc find --exec` and
+  `--autocompletion` run other programs (a command, `ps`): they fail.
+- **Updates:** Renovate follows the repository's tags, automerged once
+  CI passes: mc holds no data, a bad release is undone by the previous
+  image.
+
 ## Design decisions
 
 - **The build context is the shared `images/` folder, not each image's
@@ -852,8 +893,8 @@ commits, action digests, automerge under `.github/`).
   of the build tools and applications CI exercises (golang, Rust,
   nushell, Dalec frontend, par2cmdline-turbo, Garage) or the docs only
   use (hadolint, Renovate's
-  validator). Every Silo release, major included: it is versioned by
-  date, a new year is a major update. A Kubernetes minor release fails CI until CRI-O publishes its
+  validator). Every Silo and pgsty/mc release, major included: they are
+  versioned by date, a new year is a major update. A Kubernetes minor release fails CI until CRI-O publishes its
   repository for it (`images/k3s/install.sh`): re-run the PR's checks then.
 - **Reviewed by hand**, each PR saying what to check: base images (CI
   fail until their `sysroot/<BASE_VERSION>/` is added, see "Signing"),

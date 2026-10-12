@@ -1,0 +1,111 @@
+# syntax=docker.io/docker/dockerfile:1
+#
+# MinIO Client (mc, S3 command-line client) from pgsty/mc, the maintained
+# fork of the archived minio/mc that ships with Silo (images/silo), built
+# from source, on scratch. Upstream's release as tagged, with no patch. See
+# ARCHITECTURE.md (images/mc).
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); MC_CONFIG_DIR=/config
+# writable by it, as mc writes its config there at every start: with a
+# read-only root filesystem, mount a tmpfs or a volume on /config.
+# Credentials from the runtime: MC_HOST_<alias>=https://<key>:<secret>@<host>,
+# or `mc alias set` in a persistent /config. Private CAs in
+# /config/certs/CAs/. No capability needed. `mc find --exec` and
+# `--autocompletion` run other programs: none in the image.
+# https://silo.pgsty.com
+
+# Tags: https://github.com/pgsty/mc/tags
+ARG BASE_VERSION=RELEASE.2026-09-16T00-00-00Z
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27-trixie AS build
+
+ARG BASE_VERSION
+# HOME for the build user below, with no passwd entry: git and go read
+# theirs, and root's (/root) is closed to it. Before SHELL: hadolint
+# (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL
+# says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# --keep-git-dir: gen-ldflags.go reads the commit ID with git.
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=e952aa78f10a2b77dd525a2b7e3143bcda0cd377 \
+    https://github.com/pgsty/mc.git#${BASE_VERSION} /src
+
+# git refuses a repository another user owns: trust this one, while root.
+RUN git config --system --add safe.directory /src
+
+# Build and test as the image's user, not root, as images/minio does.
+# WORKDIR creates its folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (.github/workflows/release.yml and
+# .github/goreleaser.yml), version included: gen-ldflags.go takes the tag's
+# time in RFC 3339 (<date>T<hh:mm:ss>Z for RELEASE.<date>T<hh-mm-ss>Z) and
+# MC_RELEASE as the tag's prefix. Without them, the binary is a
+# DEVELOPMENT build. Caches: images/minio's ids, the same user.
+# DL3062: `go run` of a file in the checkout, not of a remote module.
+# hadolint ignore=DL3062
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+version="${BASE_VERSION#RELEASE.}"
+clock="${version#*T}"
+version="${version%%T*}T${clock//-/:}"
+CGO_ENABLED=0 go build -tags kqueue -trimpath \
+    -ldflags "$(MC_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "${version}")" \
+    -o /out/mc
+mkdir /out/config
+EORUN
+
+# Smoke test, here because scratch has no shell to run it. Renovate
+# automerges mc releases and golang bumps on this test. Local files only,
+# no S3 server: mc writes its config in MC_CONFIG_DIR, copies a 1 MiB file
+# and reads it back.
+RUN <<EORUN
+/out/mc --version | grep -F "mc version ${BASE_VERSION} (commit-id="
+export MC_CONFIG_DIR=/tmp/mc
+head -c 1M /dev/urandom > /tmp/object
+/out/mc --quiet cp /tmp/object /tmp/copy
+/out/mc cat /tmp/copy | cmp - /tmp/object
+test -f /tmp/mc/config.json
+rm -r /tmp/mc /tmp/object /tmp/copy
+EORUN
+
+# The binary, the CA bundle for TLS to S3 servers, and the licenses (AGPL:
+# the source is upstream's tag).
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository, as the Dalec
+# specs do.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /src/NOTICE /src/CREDITS /usr/share/doc/mc/
+# Owned by root, not by the build's user: mc can't rewrite its binary.
+COPY --link --from=build --chown=0:0 /out/mc /usr/bin/
+# Owned by the user: mc writes config.json, share/ and certs/ there.
+COPY --link --from=build --chown=65532:65532 /out/config /config
+
+# Not root, numeric so Kubernetes' runAsNonRoot can check it.
+USER 65532:65532
+# The default, ~/.mc, depends on HOME: unset without a passwd entry, and mc
+# fails without it. No VOLUME: the config is disposable when MC_HOST_*
+# holds the aliases.
+ENV MC_CONFIG_DIR=/config
+
+# Upstream's entrypoint: arguments are mc's (`docker run <image> ls ...`).
+ENTRYPOINT ["/usr/bin/mc"]
+
+# Smoke test: the binary runs on this platform (the build stage tested
+# it). Exec form: scratch has no shell.
+RUN ["/usr/bin/mc", "--version"]
