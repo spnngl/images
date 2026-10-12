@@ -606,8 +606,15 @@ Both: Trivy has no Fedora vulnerability data (it skips the packages of
 
 - **Pull requests:** each build job scans its image and platform (an
   OCI layout: `podman save --format oci-dir`, buildx `type=oci`), and
-  fails on a Critical vulnerability with a fix. Without a fix, nothing
-  a pull request can do: reported, not failed.
+  fails on a Critical vulnerability with a fix that the pushed image of
+  the same tag and platform doesn't have, scanned in the same job.
+  Everything else is reported, not failed: without a fix, or already
+  pushed, nothing a pull request can do. Most come with upstream's
+  binaries (the base image's, Docker's, CRI-O's, k3s), fixed when
+  upstream rebuilds them, and a newly published vulnerability shows up
+  in both images. No pushed image to compare with (a new image, or a
+  version bump: a new tag) fails nothing: blocking a version bump would
+  keep the older image.
 - **Pushed images:** `image-scan.yml` scans them daily, as a new
   vulnerability shows up without any change here, and uploads the High
   and Critical findings to code scanning. It never fails, nor do the
