@@ -495,6 +495,19 @@ source only: no binaries or images after its last release.
   (a PostPolicy tag check among them) are not in the image: it is
   upstream's release as tagged. `BASE_VERSION` is that tag
   (`RELEASE.<date>T<time>Z`), also the image's tag.
+- **Known vulnerabilities, accepted.** Advisories published after the
+  archive have no open-source fix, in MinIO's own code among them:
+  unauthenticated object writes through unsigned-trailer uploads
+  (CVE-2026-40344, CVE-2026-41145), OIDC JWT algorithm confusion
+  (CVE-2026-33322), LDAP user enumeration (CVE-2026-33419). Its
+  dependencies are frozen at the tag's versions (`amqp091-go`, `grpc`,
+  `golang.org/x/crypto`, `golang.org/x/net`...), with fixes they will
+  never get. The scanners' code scanning alerts are the current list;
+  no ignore file hides them. Kept over the maintained
+  [pgsty/silo](https://github.com/pgsty/silo) fork (hundreds of commits
+  on top of MinIO, renamed, unaffiliated) and over backports of our own
+  (a fork to maintain). Only on a network where every client is
+  trusted, never exposed; `images/garage` is the maintained S3 store.
 - **The commit is pinned** (`ADD --checksum`): MinIO holds the data, and
   the tag is all that is left to trust. buildah ignores `--checksum` for
   git and its docker-client backend refuses `--keep-git-dir`: CI's
@@ -505,6 +518,13 @@ source only: no binaries or images after its last release.
   `--version` prints the release and commit, not `DEVELOPMENT.GOGET`.
   Built with the `golang` image's Go, newer than `go.mod`'s toolchain:
   the standard library's fixes.
+- **Built and tested as UID 65532, not root:** upstream code runs in
+  the build (`gen-ldflags.go`, the server), and the test runs MinIO as
+  the image does. The source stays root's: git trusts it through a
+  system `safe.directory`, set while root. Its Go caches have ids of
+  their own: a cache keeps the owner it was created with, and root's
+  (cs-firewall-bouncer) aren't writable by this user. The binary is
+  copied owned by root, so MinIO can't rewrite it.
 - **Smoke tests.** The build stage runs a single-drive server with
   random credentials, creates a bucket, writes and reads back a 1 MiB
   object through the S3 API (signed by `curl --aws-sigv4`), then stops
