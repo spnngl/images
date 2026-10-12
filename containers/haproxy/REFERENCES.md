@@ -18,24 +18,17 @@
   and `docker-bake.hcl` has one Renovate entry per line
   (`extractVersion` keeps each within its line).
 - **`debian:trixie` build stage, not `dhi.io`:** CI has no dhi.io login.
-  The release is the final image's (distroless `cc-debian13`), so the
-  libraries the binary links against are the ones it runs with.
+  Same release as distroless `cc-debian13`: the binary runs with the
+  libraries it was linked against.
 - **Linked dynamically, on distroless `cc`:** OpenSSL, zlib, zstd and
   libstdc++ (Lua's) come from distroless, the rest from Debian
-  packages extracted as distroless does. Each library is then a package
-  the SBOM and the scanners see, updated by the snapshot and the base
-  digest; static linking hid OpenSSL from both and needed link-order
-  overrides of the Makefile.
-- **The official image's build options** (`USE_PTHREAD_EMULATION`,
-  `USE_GETADDRINFO`, `USE_PROMEX`, PCRE2 JIT...), upstream's defaults
-  otherwise: libcrypt for encrypted userlist passwords, SLZ for
-  compression, `DEBUG`.
-- **QUIC on every line:** native on OpenSSL from 3.2 (OpenSSL 3.5,
-  `INSTALL`); `USE_QUIC_OPENSSL_COMPAT` (no 0-RTT) on 2.8 and 3.0.
+  packages. Each library is then a package the SBOM and the scanners
+  see, moved by the snapshot and the base digest. A static build hides
+  OpenSSL from both and needs per-architecture link flags.
+- **The official image's build options:** what most HAProxy containers
+  run. `USE_PTHREAD_EMULATION` trades some observability for faster
+  locks under OpenSSL 3 (`INSTALL`).
 - **Lua modules from Debian** (`lua-json`, `lua-lpeg`): configs of the
-  deployments load them; the smoke test loads lua-json in the final
-  image.
-- **`strip --strip-debug`:** the symbol table stays, for HAProxy's
-  backtraces.
+  deployments load them.
 - **No `HEALTHCHECK`:** `haproxy -c` checks the config, not the
-  process; Kubernetes ignores it.
+  process, and Kubernetes ignores it.

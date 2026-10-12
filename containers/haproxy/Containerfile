@@ -1,12 +1,10 @@
 # syntax=docker.io/docker/dockerfile:1
 
-# HAProxy (https://www.haproxy.org), built from source with the build
-# options of the official image (docker-library/haproxy), on
-# distroless/cc: its OpenSSL, zlib, zstd and libstdc++, plus Debian's
-# PCRE2, Lua, libcrypt and Lua modules. One image per release line, see
-# docker-bake.hcl.
+# HAProxy (https://www.haproxy.org) from source, on distroless/cc. One
+# image per release line (docker-bake.hcl). The reason for each choice:
+# containers/haproxy/REFERENCES.md.
 #
-# Runtime contract: UID/GID 99, not 65532 (containers/haproxy/AGENTS.md).
+# Runtime contract: UID/GID 99 (containers/haproxy/AGENTS.md).
 # A config in /etc/haproxy (a volume, none shipped), the master process
 # in the foreground (-db). Ports: 1936 stats, 8080 HTTP, 8443 HTTPS, 9101
 # Prometheus, as the configs of the deployments use them (documentation
@@ -35,9 +33,9 @@ SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 # Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
 # files expire.
 # Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
-# The runtime packages missing from distroless/cc go to /rootfs as
-# distroless installs its own: files extracted, control fields in
-# /var/lib/dpkg/status.d, so the SBOM and the scanners list them.
+# /rootfs gets the runtime packages distroless/cc lacks, laid out as
+# distroless lays out its own: the files, plus control fields and md5sums
+# in /var/lib/dpkg/status.d, which the SBOM and the scanners read.
 # /debs is _apt's: apt downloads as that user.
 WORKDIR /debs
 # hadolint ignore=DL3008
@@ -67,11 +65,12 @@ ADD --link \
     https://git.haproxy.org/git/haproxy-${BASE_VERSION%.*}.git#v${BASE_VERSION} /build
 WORKDIR /build
 
-# The official image's options (docker-library/haproxy), plus QUIC on
-# every line: native on OpenSSL from 3.2, through the compatibility
-# layer (no 0-RTT) before. Upstream's defaults otherwise (libcrypt, SLZ
-# for compression, DEBUG). Debug symbols stripped, the symbol table kept
-# for backtraces. -vv: the build options, in the build log.
+# The official image's options, QUIC on every line: 2.8 and 3.0 lack
+# native QUIC on OpenSSL, so they get the compatibility layer (no
+# 0-RTT). Upstream's defaults for the rest: libcrypt (encrypted userlist
+# passwords), SLZ (compression), DEBUG (runtime checks).
+# --strip-debug keeps the symbol table, for backtraces. -vv puts the
+# build options in the build log.
 # https://github.com/haproxy/haproxy/blob/master/INSTALL
 RUN <<EORUN
 opts=(TARGET=linux-glibc USE_GETADDRINFO=1 USE_LUA=1 LUA_INC=/usr/include/lua5.4
@@ -106,7 +105,7 @@ LABEL org.opencontainers.image.title="HAProxy" \
     org.opencontainers.image.licenses="GPL-2.0-or-later" \
     org.opencontainers.image.source="https://github.com/spnngl/images"
 
-# Owners kept: root's files, haproxy's folders.
+# COPY keeps the build stage's owners: root's files, haproxy's folders.
 COPY --link --from=build /rootfs/ /
 
 # Numeric, so runAsNonRoot can check it.
@@ -116,7 +115,7 @@ ENTRYPOINT ["/usr/sbin/haproxy"]
 CMD ["-db", "-f", "/etc/haproxy"]
 VOLUME ["/etc/haproxy"]
 
-# Graceful shutdown.
+# Soft stop: listeners close, connections drain.
 STOPSIGNAL SIGUSR1
 EXPOSE 1936/tcp 8080/tcp 8443/tcp 9101/tcp
 
