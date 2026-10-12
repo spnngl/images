@@ -23,6 +23,7 @@ For a bootc image there are two stages:
 │   └── workflows/
 │       ├── build-bootc.yml     # CI: lint, build, push the bootc images
 │       ├── build-apps.yml      # CI: lint, build, push the changed application images
+│       ├── shellcheck.yml      # CI: lint the scripts
 │       │                       # the next four call spnngl/.github's:
 │       ├── renovate.yml        # CI: validate renovate.json5
 │       ├── conventional-commits.yml  # CI: commit messages of a PR
@@ -30,8 +31,12 @@ For a bootc image there are two stages:
 │       ├── betterleaks-github.yml    # daily: secrets in PRs, issues
 │       └── image-scan.yml      # daily: vulnerabilities of the pushed images
 ├── .hadolint.yaml              # hadolint config for every Containerfile
+├── .shellcheckrc               # shellcheck config for every script
+├── AGENTS.md                   # agent rules for every image (CLAUDE.md: a link to it)
 ├── bootc/                      # shared build context for every bootc image
 │   ├── .containerignore        # keeps every Containerfile, and the scripts, out of `COPY . /`
+│   ├── AGENTS.md               # agent rules for bootc images
+│   ├── config.example.toml     # template for ./config.toml (git-ignored)
 │   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
 │   ├── run.sh [name]           # boot the qcow2 in QEMU (macOS Apple Silicon)
 │   ├── k3s/                    # shared by every kubeenv stage (not an image)
@@ -42,12 +47,12 @@ For a bootc image there are two stages:
 │       └── sysroot/...         # files copied as is into the image root:
 │                               # common/, then <BASE_VERSION>/
 ├── containers/                 # application images
+│   ├── AGENTS.md               # agent rules for application images
 │   └── <name>/                 # one folder, and build context, per application image
 │       ├── .dockerignore       # keeps the Containerfile, spec.yml and scripts out of the context
 │       ├── Containerfile       # or spec.yml, for a Dalec image
 │       ├── <name>-lock.sh      # regenerate its lock, if any (sabnzbd)
 │       └── sysroot/...         # files copied as is into the image root
-├── config.example.toml         # template for config.toml (git-ignored)
 ├── K3S.md                      # setting up k3s hosts (kubeenv images)
 ├── renovate.json5              # Saturday updates of every pinned version
 └── output/                     # build results (git-ignored)
@@ -786,7 +791,7 @@ Container images only: disk images need `config.toml`.
   image and package updates, fresh almalinux geo-blocking data) and
   manual dispatch all push. Pull requests only lint and build. Pushes
   and pull requests only run it when a bootc image's input changed
-  (`paths`: `bootc/` but its scripts, the workflow), and then rebuild every
+  (`paths`: `bootc/` but its scripts and guides, the workflow), and then rebuild every
   bootc image: they share most of their files, and one rule is simpler
   than tracking which folder each Containerfile reads. A failed push is
   retried by the next bootc change or the weekly rebuild.

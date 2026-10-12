@@ -1,6 +1,6 @@
 ---
 name: add-containerfile-image
-description: Add or change an application image built from containers/<name>/Containerfile: one static binary (Go, Rust) on scratch. Use when an app ships as a static binary, or when editing an application image's Containerfile.
+description: Static-binary application image (Go, Rust) on scratch. Use when adding one, or editing a containers/*/Containerfile.
 ---
 
 # Add a Containerfile image
@@ -13,8 +13,8 @@ its ARCHITECTURE.md section and "CI: `.github/workflows/build-apps.yml`".
 `NET_ADMIN`, source not pinned to a commit.
 
 The final image is `scratch`: the binary, and only the files the
-Containerfile copies. It is **shell-less**: no shell, so the server test
-runs in the build stage, and everything in the final stage is exec form.
+Containerfile copies. It is **shell-less** (`containers/AGENTS.md`), so
+the server test runs in the build stage.
 
 ## Steps
 
@@ -38,8 +38,7 @@ Done when every item has an answer and a source file.
 
 ### 2. Write `containers/<name>/Containerfile`
 
-- **`.dockerignore`**: copy another image's; the folder is the build
-  context (BuildKit ignores `.containerignore`).
+- **`.dockerignore`**: copy another image's.
 - **Header comment**: what the image is, how it differs from upstream's,
   and the runtime contract: UID/GID, volumes, ports, required env or
   secrets, hardening it runs with (`--read-only`, no capability,
@@ -81,12 +80,10 @@ Done when every item has an answer and a source file.
   build user as owner; root's, the app can't rewrite it), the CA bundle
   when it makes outbound TLS, the license and notices in
   `/usr/share/doc/<name>/`.
-- **Runtime**: `USER 65532:65532`, numeric so `runAsNonRoot` can check
-  it. `ENV` for settings that must survive a replaced `CMD`. `EXPOSE`,
+- **Runtime**: `USER 65532:65532`. `ENV` for settings that must survive a replaced `CMD`. `EXPOSE`,
   `VOLUME`. `ENTRYPOINT` the binary's absolute path, `CMD` its default
   arguments.
 - **Last instruction**: `RUN ["<binary>", "--version"]`, exec form.
-- **Why-comments** on every non-obvious line (AGENTS.md).
 
 Done when every answer from step 1 appears in the Containerfile or its
 header, and `hadolint` passes.
@@ -126,5 +123,4 @@ The build runs the server test. Then:
   `--read-only --cap-drop all --security-opt no-new-privileges`: the
   health endpoint answers and the logs show no error
 
-Done when the build is green and the hardened container serves. Without
-docker, report that the build was not run.
+Done when the build is green and the hardened container serves.
