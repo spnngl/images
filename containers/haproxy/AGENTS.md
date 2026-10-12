@@ -1,18 +1,24 @@
 # haproxy
 
-HAProxy built from source with OpenSSL, PCRE2, Lua, zlib, zstd and
-libcrypt linked statically, on `gcr.io/distroless/base-debian13`: only
-glibc stays dynamic. One image per release line, listed in
-`docker-bake.hcl`. Runtime contract: the Containerfile's header.
+HAProxy built from source with the official image's build options, on
+`gcr.io/distroless/cc-debian13`, plus the Debian packages it lacks
+(PCRE2, Lua, libcrypt, lua-json, lua-lpeg). One image per release line,
+listed in `docker-bake.hcl`. Runtime contract: the Containerfile's header.
 Upstream sources and the reason for each choice:
 [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- **UID/GID 99, not 65532:** haproxy's in the Debian packages;
+- **UID/GID 99, not 65532:** haproxy's in the official image;
   haproxy-ingress shares files with an external haproxy under that
   user. The one exception to the 65532 rule of
   [containers/AGENTS.md](../AGENTS.md).
+- **A runtime library is a Debian package:** add it to the
+  `apt-get download` list of the Containerfile, with its dependencies
+  that distroless/cc lacks; `/var/lib/dpkg/status.d` then lists it for
+  the SBOM and the scanners.
+- **A Lua module the deployments load** goes in that list too, and in
+  `smoke-test.lua`.
 
 ## Updates
 
