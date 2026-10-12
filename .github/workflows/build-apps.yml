@@ -117,7 +117,7 @@ jobs:
           } | jq -cs --argjson files "${FILES}" '
             map(.name = (.file | split("/")[1]))
             | if $files == null or any($files[]; . == ".github/workflows/build-apps.yml") then .
-              else map(select(.name as $name | any($files[]; startswith("containers/\($name)/") and (endswith(".md") | not)))))
+              else map(select(.name as $name | any($files[]; startswith("containers/\($name)/") and (endswith(".md") | not))))
               end' > "${RUNNER_TEMP}/images.json"
           echo "images=$(< "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
           echo "containerfiles=$(jq -c 'map(.file | select(endswith("/Containerfile")))' "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
