@@ -1,24 +1,20 @@
 # haproxy
 
-HAProxy built from source with the official image's build options, on
-`gcr.io/distroless/cc-debian13`, plus the Debian packages it lacks
-(PCRE2, Lua, libcrypt, lua-json, lua-lpeg). One image per release line,
-listed in `docker-bake.hcl`. Runtime contract: the Containerfile's header.
-Upstream sources and the reason for each choice:
+HAProxy from source on `gcr.io/distroless/cc-debian13`, one image per
+release line (`docker-bake.hcl`). Runtime contract: the Containerfile's
+header. Upstream sources and the reason for each choice:
 [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- **UID/GID 99, not 65532:** haproxy's in the official image;
-  haproxy-ingress shares files with an external haproxy under that
-  user. The one exception to the 65532 rule of
-  [containers/AGENTS.md](../AGENTS.md).
-- **A runtime library is a Debian package:** add it to the
-  `apt-get download` list of the Containerfile, with its dependencies
-  that distroless/cc lacks; `/var/lib/dpkg/status.d` then lists it for
-  the SBOM and the scanners.
-- **A Lua module the deployments load** goes in that list too, and in
-  `smoke-test.lua`.
+- **UID/GID 99, the official image's:** haproxy-ingress shares files
+  with an external haproxy under that user. The one exception to the
+  65532 rule of [containers/AGENTS.md](../AGENTS.md).
+- **Runtime libraries and Lua modules are Debian packages** in the
+  Containerfile's `apt-get download` list, with each dependency
+  distroless/cc lacks (`apt-cache depends`). A Lua module also gets a
+  `require` in `smoke-test.lua`. Done when the build passes: its smoke
+  test runs in the final image, where a missing library fails it.
 
 ## Updates
 
