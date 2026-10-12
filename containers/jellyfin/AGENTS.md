@@ -21,6 +21,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
 Renovate follows the `jellyfin-server` package of Jellyfin's trixie
 repository (deb datasource), so a PR comes once the package exists.
 Never automerged: a release migrates the database and settings for
-good. Read the release notes, and check the spec's command-line options
-against upstream's `Jellyfin.Server/StartupOptions.cs`. A rotated
-repository key fails the build on its digest.
+good: the old version can't read what the new one wrote. Before
+merging, read the release notes
+(`https://github.com/jellyfin/jellyfin/releases/tag/v<new>`), back up
+`/config`, and check the spec's command-line options against upstream's
+`Jellyfin.Server/StartupOptions.cs`. A rotated repository key fails the
+build on its digest.
