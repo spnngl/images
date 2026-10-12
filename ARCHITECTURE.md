@@ -3,10 +3,11 @@
 This repository builds [bootc](https://bootc.dev/bootc/) images: bootable
 operating systems shipped as OCI container images. A bootc host boots from
 an image and updates by pulling a newer one (`bootc upgrade`), the same way
-a container is updated. Four folders are not bootc images but
+a container is updated. Five folders are not bootc images but
 application images, containers the hosts run: `images/cs-firewall-bouncer`,
-`images/sabnzbd`, `images/nftables-exporter` and `images/jellyfin`, the
-last three built with Dalec, not a Containerfile (see their sections).
+`images/garage`, `images/sabnzbd`, `images/nftables-exporter` and
+`images/jellyfin`, the last three built with Dalec, not a Containerfile
+(see their sections).
 
 For a bootc image there are two stages:
 
@@ -37,7 +38,7 @@ For a bootc image there are two stages:
 │   │   ├── install.sh          # k3s and CRI-O install
 │   │   └── sysroot/...         # CRI-O configuration, kube.slice, swap
 │   └── <name>/                 # one folder per image (bootc, or application
-│       │                       # image: cs-firewall-bouncer)
+│       │                       # image: cs-firewall-bouncer, garage)
 │       ├── Containerfile       # or spec.yml, for a Dalec image: sabnzbd,
 │       │                       # nftables-exporter, jellyfin
 │       └── sysroot/...         # files copied as is into the image root
@@ -426,6 +427,57 @@ the server, installed with `jellyfin-ffmpeg8`.
   `/config` first. The repository key's digest isn't followed: if
   upstream rotates it, the build fails on the digest.
 
+### `images/garage`
+
+[Garage](https://garagehq.deuxfleurs.fr) (S3-compatible distributed
+object store, Rust) built from source (tag `v<BASE_VERSION>`, pinned to
+its commit by `ADD --checksum`), one static binary on `scratch`, like
+`images/cs-firewall-bouncer`. Close to upstream's `dxflrs/garage`: same
+paths (`/garage`, `/etc/garage.toml`, `/var/lib/garage/{meta,data}`) and
+Cargo features (upstream's release set, `nix/compile.nix`), so upstream's
+docs and Helm chart apply (the chart sets either no command or
+`command: ["/garage"]`).
+
+- **`ENTRYPOINT ["/garage"]`, `CMD ["server"]`**, where upstream only has
+  `CMD ["/garage", "server"]`: arguments are Garage's (`docker run
+  <image> server --single-node`, `docker run <image> --version`). A
+  `docker run` or compose `command:` copied from upstream's docs drops
+  its leading `/garage`; Kubernetes' `command:` replaces the entrypoint,
+  and `docker exec <container> /garage status` is unchanged.
+- **Build: `rust:<version>-trixie`, musl target.** rustup's musl targets
+  link statically by default; `musl-gcc` (`musl-tools`) builds the C
+  libraries the crates bundle (libsodium, LMDB, SQLite, zstd, ring),
+  `protobuf-compiler` the OTLP exporter's protobufs. `GIT_VERSION` sets
+  the version `--version` prints (the source has no `.git`).
+- **`cargo auditable`** (Debian's package) embeds the crate list in the
+  binary: without it, the SBOM and the scans see no Rust dependency.
+- **Smoke tests.** The build stage runs a single-node server
+  (`images/garage/smoke-test.toml`, not in the image) with a default key
+  and bucket, writes and reads back a 1 MiB object through the S3 API
+  (signed by `curl --aws-sigv4`), then stops it gracefully. Garage has
+  no side-effect-free config check, and `scratch` has no shell to run a
+  server in the background: the final stage only runs `--version`.
+- **Not root, unlike upstream's image:** `65532:65532`. Every port is
+  above 1024. The state folders are owned by it in the image, so a new
+  named volume is writable; a bind mount needs that owner. A secret file
+  (`GARAGE_RPC_SECRET_FILE`, ...) must not be readable by others, or
+  Garage refuses it.
+- **CA bundle:** Debian's, for TLS to Consul, Kubernetes or an OTLP
+  collector. Upstream's image has none.
+- **No config in the image:** it is the cluster's (`replication_factor`,
+  `rpc_public_addr`, ...). Multi-node clusters run with the host network,
+  as upstream's docs do.
+- **No `HEALTHCHECK`:** no curl in the image to query the health
+  endpoint, and Kubernetes ignores it. Probe: `GET /health` on the admin
+  API (`[admin]` in the config), no token, 503 while the node can't
+  serve requests: a readiness probe, not a liveness one (a cluster-wide
+  outage would restart every node).
+- **`BASE_VERSION` is the Garage release**, followed by Renovate in the
+  tags of upstream's Forgejo (`forgejo-tags`). Minor and patch releases
+  and Rust toolchain bumps are automerged once CI passes (the server
+  test covers them); major releases are not: they migrate the metadata
+  (upstream's `migration-<major>` guide).
+
 ## Design decisions
 
 - **The build context is the shared `images/` folder, not each image's
@@ -661,8 +713,9 @@ commits, action digests, automerge under `.github/`).
   10 (kept for x86-64-v2 hosts).
 - **Automerged once CI passes:** actions (one grouped PR), k3s builds
   and Kubernetes patch and minor releases, and minor and patch releases
-  of the build tools CI exercises (golang, nushell, Dalec frontend,
-  par2cmdline-turbo) or the docs only use (hadolint, Renovate's
+  of the build tools and applications CI exercises (golang, Rust,
+  nushell, Dalec frontend, par2cmdline-turbo, Garage) or the docs only
+  use (hadolint, Renovate's
   validator). A Kubernetes minor release fails CI until CRI-O publishes its
   repository for it (`images/k3s/install.sh`): re-run the PR's checks then.
 - **Reviewed by hand**, each PR saying what to check: base images (CI
