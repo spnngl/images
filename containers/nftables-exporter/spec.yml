@@ -4,13 +4,7 @@
 # sets, chains and rules) built with Dalec
 # (https://project-dalec.github.io/dalec/): one Debian trixie package, the
 # exporter, installed into the minimal image of the trixie/container target
-# with Debian's nftables. Not a static image on scratch: the exporter runs
-# `nft -j -t list ruleset` for every scrape, and nft needs its libraries.
-#
-# Build (from the repo root; the version is in docker-bake.hcl, which
-# passes the args below):
-#   docker buildx bake -f containers/docker-bake.hcl \
-#     -f containers/nftables-exporter/docker-bake.hcl
+# with Debian's nftables (REFERENCES.md).
 #
 # Runtime contract (Kubernetes DaemonSet):
 # - hostNetwork: true. nftables rules belong to a network namespace: in the
@@ -37,15 +31,14 @@
 #   the port on the host: NetworkPolicies don't apply to host network pods
 #   with most CNIs.
 #
-# Renovate bumps the version and source checksum in docker-bake.hcl, and
-# the Go toolchain below. In its PR for a new exporter, compare upstream's
-# options.go with nftables_exporter.yaml (AGENTS.md, Updates).
+# Renovate bumps the version and checksum in docker-bake.hcl, and the Go
+# toolchain below (AGENTS.md, Updates).
 
-# Set by docker-bake.hcl. Dalec needs them declared, empty here: a build
-# without them fails.
+# Set by docker-bake.hcl; empty here, Dalec needs them declared
+# (containers/AGENTS.md).
 args:
-  # The exporter's release and its tag's commit.
   BASE_VERSION: ""
+  # The commit of the BASE_VERSION tag.
   BASE_CHECKSUM: ""
 
 name: nftables-exporter
@@ -108,8 +101,8 @@ build:
     DEB_BUILD_OPTIONS: noautodbgsym
   # Steps run with sh (dash) from the folder holding one folder per source.
   steps:
-    # Upstream's unit tests (no network, no nft): the only check of the
-    # code beyond the spec's tests when Renovate automerges a new Go.
+    # Upstream's unit tests (no network, no nft): the only code check when
+    # Renovate automerges a new Go.
     - command: |
         cd nftables-exporter
         go test ./...

@@ -24,6 +24,7 @@
   needs a `HOME` the image hasn't. No `VOLUME`: with aliases in
   `MC_HOST_<alias>`, the config is disposable; a volume keeps `mc alias
   set`'s aliases.
-- **No S3 server in the test:** building one would double the build.
+- **No S3 server in the test:** the S3 code isn't exercised; building
+  a server would double the build.
 - **The image holds the binary, Debian's CA bundle** (TLS to S3
   servers), `LICENSE`, `NOTICE` and `CREDITS`.

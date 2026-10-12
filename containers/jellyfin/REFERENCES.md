@@ -18,26 +18,18 @@
   and every NuGet package unpinned (upstream has no
   `packages.lock.json`). The deb is a build dependency: its maintainer
   scripts (bash, `adduser`) run in the build container, never in the
-  image, and one pin works for both architectures. Upstream's binaries
-  stay as is (`disable_strip`: their own build can't strip
-  `libpdfium.so`).
+  image, and one pin works for both architectures.
 - **`jellyfin-ffmpeg8` unpinned**, like Debian's packages: the weekly
-  rebuild picks up its fixes. It bundles the hardware drivers: Intel
-  (amd64: VA-API, QSV, Vulkan), AMD (VA-API, Vulkan), Rockchip (arm64:
-  MPP, RGA). Left out: Intel OpenCL (`intel-opencl-icd` isn't in
-  trixie; upstream's image installs GitHub debs, amd64 only; HDR tone
-  mapping on Intel falls back to VPP) and Rockchip's libmali.
+  rebuild picks up its fixes. It bundles the hardware drivers (spec
+  header). Left out: Intel OpenCL (`intel-opencl-icd` isn't in trixie;
+  upstream's image installs GitHub debs, amd64 only) and Rockchip's
+  libmali.
 - **No web client** (`--nowebclient`): clients are the apps (Android,
   TV) and Seerr; jellyfin-web needs a newer Node.js than trixie's to
   build.
-- **Upstream's Docker layout:** data in `/config`, cache in `/cache`,
-  jemalloc through `LD_PRELOAD`, CJK fonts (posters, burnt-in
-  subtitles), NVIDIA capabilities including `video` (NVENC/NVDEC).
-- **`TMPDIR=/cache`:** the root filesystem can be read-only, and Docker
-  and Kubernetes mount no tmpfs on `/tmp` (Podman does). Without it,
-  ASP.NET's key ring fails (`Read-only file system : '/tmp/'`). On
-  disk, not in memory: Jellyfin extracts attachments and subtitles
-  there.
-- **Tests:** ffmpeg and ffprobe run, and the server starts with `--mode
-  MigrateSystem` (.NET runtime, SQLite, plugins, an empty database's
-  migrations, then exit 0).
+- **Upstream's Docker image layout:** data in `/config`, cache in
+  `/cache`, jemalloc, CJK fonts, NVIDIA `video` capability (NVENC/NVDEC).
+- **`TMPDIR=/cache`:** Docker and Kubernetes mount no tmpfs on `/tmp`
+  (Podman does), so a read-only root filesystem breaks ASP.NET's key
+  ring (`Read-only file system : '/tmp/'`). On disk, not in memory:
+  Jellyfin extracts attachments and subtitles there.

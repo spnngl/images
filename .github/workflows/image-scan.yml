@@ -1,8 +1,8 @@
-# Vulnerabilities of the pushed images, daily: a new one shows up without
-# any change here. Findings in code scanning, it never fails on one. The
-# images: every tag pushed in the last 8 days, which the weekly rebuilds
-# of build-bootc.yml and build-apps.yml cover (spnngl/.github's
-# image-scan.yml). Pull requests are scanned by the build workflows.
+# Daily scan of the pushed images: a new vulnerability shows up without
+# any change here. Findings go to code scanning; it never fails on one.
+# Every tag pushed in the last 8 days, which the weekly rebuilds cover
+# (spnngl/.github's image-scan.yml). Pull requests are scanned by the
+# build workflows.
 name: image-scan
 
 on:

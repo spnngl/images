@@ -10,7 +10,6 @@
 
 ## Decisions
 
-- **Commit pinned** (`ADD --checksum`): a moved tag fails the build.
 - **`rust:<version>-trixie`, musl target:** rustup's musl targets link
   statically by default; `musl-gcc` (`musl-tools`) builds the C
   libraries the crates bundle (libsodium, LMDB, SQLite, zstd, ring),
@@ -22,11 +21,9 @@
   A cache keeps the owner it was created with: hence ids of their own.
 - **`cargo auditable`** embeds the crate list in the binary: without
   it, the SBOM and the scans see no Rust dependency.
-- **Server test in the build stage:** a single-node server with a
-  default key and bucket, a 1 MiB object written and read back through
-  the S3 API (`curl --aws-sigv4`), then a graceful stop. Garage has no
-  side-effect-free config check, and `scratch` has no shell to run a
-  server in the background.
+- **Server test in the build stage:** Garage has no side-effect-free
+  config check, and `scratch` has no shell to run a server in the
+  background.
 - **Entrypoint `/garage`**, where upstream only has `CMD ["/garage",
   "server"]`: Kubernetes' `command:` replaces it anyway (upstream's
   chart sets none or `["/garage"]`), and `docker exec <container>

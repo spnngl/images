@@ -19,9 +19,6 @@
 # is the CA bundle copied below.
 FROM docker.io/library/rust:1.99-trixie@sha256:81015672d6939b0265f09adf96d5de125482bb1330106076956b0518e74edc90 AS build
 
-# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
-# DEBIAN_CODENAME: the release the tag names; DEBIAN_SNAPSHOT_VERSION:
-# Debian's archive for the packages installed below.
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
 ARG DEBIAN_CODENAME
@@ -36,14 +33,12 @@ WORKDIR /src
 # prost-build. cargo-auditable: embeds the dependency list in the binary,
 # for the SBOM and the vulnerability scans. ca-certificates: copied into
 # the image below.
-# Versions not pinned (DL3008): they follow the snapshot, which Renovate
-# moves (containers/docker-bake.hcl). The musl target too, while root.
-# The checks first: built alone (not with bake), or on another Debian
-# release than the tag names, it fails here.
-# The snapshot: apt-get's --snapshot is not in trixie's apt (3.0.3), so
-# the sources point at snapshot.debian.org, as the base image's own
-# comments say its build did. No Valid-Until: snapshot Release files
-# expire.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# rustup's musl target is installed here too, while root.
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
 # hadolint ignore=DL3008
 RUN <<EORUN
 : "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
@@ -95,7 +90,7 @@ EORUN
 # single-node cluster (smoke-test.toml, next to this file) with a default
 # key and bucket, then a 1 MiB object written and read back through the
 # S3 API (large enough to go to the data directory, not inline in the
-# metadata), then a graceful stop. Random throwaway secrets: none in the repository.
+# metadata), then a graceful stop. Random throwaway secrets.
 # kill (DL3001) stops the server this step started, not a container's.
 # hadolint ignore=DL3001
 RUN --mount=type=bind,source=smoke-test.toml,target=/etc/garage.toml \
@@ -121,16 +116,14 @@ wait "${server}"
 rm -r /tmp/garage /tmp/object
 EORUN
 
-# State directories, owned by the image's user (this stage's): a named
-# volume mounted there starts with that owner, so it is writable without
-# a chown.
+# State directories, owned by the image's user: a named volume mounted
+# there starts with that owner, so it is writable without a chown.
 RUN mkdir -p /out/var/lib/garage/meta /out/var/lib/garage/data
 
 FROM scratch
 ARG BASE_VERSION
 
-# source: links the ghcr.io package to this repository, as the Dalec
-# specs do.
+# source: links the ghcr.io package to this repository.
 # hadolint ignore=DL3050
 LABEL org.opencontainers.image.version="${BASE_VERSION}" \
     org.opencontainers.image.licenses="AGPL-3.0-only" \
@@ -147,8 +140,8 @@ COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --link --from=build /src/LICENSE /usr/share/doc/garage/
 COPY --link --from=build --chown=65532:65532 /out/var/lib/garage/ /var/lib/garage/
 
-# Numeric, so Kubernetes' runAsNonRoot can check it. Garage needs no
-# privilege: every port is above 1024.
+# Numeric, so runAsNonRoot can check it. No privilege needed: every port
+# is above 1024.
 USER 65532:65532
 
 # S3 API, RPC, S3 web, admin API (and metrics), K2V API: upstream's
@@ -157,13 +150,12 @@ EXPOSE 3900/tcp 3901/tcp 3902/tcp 3903/tcp 3904/tcp
 # Metadata (SSD) and data (HDD) apart, as upstream recommends.
 VOLUME ["/var/lib/garage/meta", "/var/lib/garage/data"]
 
-# Arguments are Garage's: `docker run <image> server --single-node`, or
-# `--version`. Upstream's image has no entrypoint: drop the leading
-# /garage of a command copied from its docs. Kubernetes' `command:` (as
-# upstream's Helm chart sets it) replaces the entrypoint.
+# Arguments are Garage's: `docker run <image> server --single-node`.
+# Upstream's image has no entrypoint (containers/garage/AGENTS.md);
+# Kubernetes' `command:` replaces it, as in upstream's Helm chart.
 ENTRYPOINT ["/garage"]
 CMD ["server"]
 
 # Smoke test: the binary is static and runs on this platform (the build
-# stage tested the server). Exec form: scratch has no shell.
+# stage tested the server).
 RUN ["/garage", "--version"]

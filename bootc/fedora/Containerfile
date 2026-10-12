@@ -1,20 +1,6 @@
 # syntax=docker.io/docker/dockerfile:1
 
-# Derived Fedora bootc image, in stages:
-#   - base: the host system (firewalld, sshd, chrony, systemd-networkd...).
-#     Not an image on its own.
-#   - kubeenv (FROM base): adds k3s, no Docker. Tag suffix
-#     -v<Kubernetes minor release>k3s.
-#   - dockerenv (FROM base, the default target): adds Docker.
-#
-# Build commands, same tags as CI (.github/workflows/build-bootc.yml):
-#   podman build --format=docker -f bootc/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:<BASE_VERSION> bootc/
-#   podman build --format=docker --target kubeenv -f bootc/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:<BASE_VERSION>-v<Kubernetes minor release>k3s bootc/
-#
-# bootc/build.sh does the first one (default target only) and also builds a
-# qcow2 disk image; bootc/run.sh boots it in QEMU.
-#
-# NB: This image ships no users, passwords or SSH keys.
+# Derived Fedora bootc image. Stages and build commands: bootc/AGENTS.md.
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
 # Base image major release, also the tag of this image. CI sets it with
@@ -36,15 +22,12 @@ ENV TZ=UTC
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 RUN <<EORUN
-# Install base stuff + repos
 dnf -yq install ca-certificates dnf-plugins-core dnf5-plugins glibc-langpack-en glibc-langpack-fr \
     sysstat iproute iputils procps-ng util-linux coreutils e2fsprogs mdadm lvm2 cryptsetup
 
-# Install packages
 dnf -yq install tree htop btrfs-progs firewalld netcat vim git \
     nftables podman buildah systemd-networkd containers-common
 
-# TZ
 ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
 
 # chrony.conf has no include directory: replace its default pool with a
@@ -53,23 +36,17 @@ ln -sf ../usr/share/zoneinfo/Europe/Paris /etc/localtime
 sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
 grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 
-# Firewall
-#
-# Used ports
-# - 80+443: HTTP(S)
-# - 42022: sshd (etc/ssh/sshd_config.d/10-myssh.conf)
-#
+# Firewall: HTTP(S), and sshd on 42022 (etc/ssh/sshd_config.d/10-myssh.conf).
 # TODO selinux one day
 firewall-offline-cmd --add-port=80/tcp --add-port=443/tcp --add-port=42022/tcp
 firewall-offline-cmd --zone=public --remove-service-from-zone=cockpit --remove-service-from-zone=ssh
 
-# Systemd services
 systemctl disable NetworkManager
 systemctl mask NetworkManager
 systemctl enable sshd.service firewalld.service systemd-networkd.service \
     mdmonitor.service
 
-# Cleanup
+# /var ships empty.
 dnf -yq autoremove
 dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
@@ -84,14 +61,13 @@ RUN --mount=type=bind,source=fedora,target=/tmp/fedora \
     jq -e --slurpfile ours "/tmp/fedora/sysroot/${BASE_VERSION}/etc/containers/policy.json" \
     -f /tmp/fedora/policy.jq /etc/containers/policy.json
 
-# Copy static configuration files: shared ones, then the release's
-# (policy.json).
+# Shared files, then the release's (policy.json).
 COPY --link ./fedora/sysroot/common/ /
 COPY --link ./fedora/sysroot/${BASE_VERSION}/ /
 
 
-# Kubernetes environment: k3s, without Docker. Steps and reasons in
-# bootc/k3s/install.sh, shared by every image; setup in bootc/K3S.md.
+# k3s, without Docker. Steps and reasons: bootc/k3s/install.sh; host setup:
+# bootc/K3S.md.
 FROM base AS kubeenv
 
 # k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
@@ -102,7 +78,7 @@ ARG INSTALL_K3S_VERSION=v1.37.1+k3s1
 RUN --mount=type=bind,source=k3s,target=/k3s \
     bash /k3s/install.sh
 
-# CRI-O configuration, after the install: changing it doesn't rerun it.
+# After the install, so that editing sysroot/ doesn't rerun it.
 COPY --link ./k3s/sysroot/ /
 
 # Keep this as the last instruction, on its own.
@@ -110,23 +86,19 @@ COPY --link ./k3s/sysroot/ /
 RUN bootc container lint
 
 
-# Docker environment. Last stage, so the default target: it is the plain
-# fedora:<version> image, kubeenv being
-# fedora:<version>-v<Kubernetes minor release>k3s.
+# Docker. Last stage, so the default target.
 FROM base AS dockerenv
 
 RUN <<EORUN
 # See https://docs.docker.com/engine/install/fedora/
 dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
 
-# Install docker stuff
 dnf -yq install docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
     docker-compose-plugin docker-model-plugin
 
-# Systemd services
 systemctl enable docker.service containerd.service
 
-# Cleanup
+# /var ships empty.
 dnf -yq autoremove
 dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
