@@ -24,4 +24,5 @@ for each choice: [REFERENCES.md](REFERENCES.md).
 
 Renovate follows the repository's tags, automerged once CI passes, major
 included: versioned by date, a new year is a major update. A release
-can't be rolled back once it wrote to `/data`: back it up anyway.
+can't be rolled back once it wrote to `/data`: back it up anyway. What
+changed: `https://github.com/pgsty/silo/compare/<old>...<new>`.
