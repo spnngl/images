@@ -30,11 +30,13 @@ WORKDIR /src
 # the image below.
 # Versions not pinned (DL3008): they follow the pinned trixie base image,
 # like dnf packages do in the bootc images (.hadolint.yaml).
+# The musl target too, while root.
 # hadolint ignore=DL3008
 RUN <<EORUN
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates cargo-auditable musl-tools protobuf-compiler
 rm -rf /var/lib/apt/lists/*
+rustup target add "$(uname -m)-unknown-linux-musl"
 EORUN
 
 # --checksum: the tag must resolve to this commit, tags can be moved.
@@ -43,22 +45,33 @@ ADD --link \
     --checksum=268334bd2530fa99f8b06c7383b2e9f776691edd \
     https://git.deuxfleurs.fr/Deuxfleurs/garage.git#v${BASE_VERSION} /src
 
+# Build and test as the image's user, not root: neither the crates' build
+# scripts nor the server get root, and the source stays root's. No passwd
+# entry needed: CARGO_HOME and RUSTUP_HOME are set, /usr/local/cargo is
+# writable by all. WORKDIR creates its folder owned by USER: /out takes
+# the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
 # Static musl binary, as upstream's release builds (nix/compile.nix): the
 # rustup musl targets link statically by default. CC_<target>: cc-rs builds
 # the C libraries with musl-gcc, not glibc's gcc. Features: upstream's
 # release set (nix/compile.nix, release = true), so the image does what
 # dxflrs/garage does. GIT_VERSION: what `garage --version` prints, the tag,
 # as upstream's CI sets it (.woodpecker/release.yaml).
-RUN --mount=type=cache,target=/usr/local/cargo/registry \
-    --mount=type=cache,target=/src/target \
+# Caches: uid sets the owner of a new cache only, and one is shared by
+# every build that uses its id (the target by default): ids of their own,
+# as images/minio does.
+RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=garage-target-65532,uid=65532,gid=65532,target=/src/target \
     <<EORUN
 target="$(uname -m)-unknown-linux-musl"
-rustup target add "${target}"
 export "CC_${target//-/_}=musl-gcc"
 GIT_VERSION="v${BASE_VERSION}" PROTOC=/usr/bin/protoc cargo auditable build \
     --locked --release --target "${target}" --package garage \
     --features bundled-libs,lmdb,sqlite,fjall,k2v,consul-discovery,kubernetes-discovery,metrics,telemetry-otlp,syslog,journald
-install -D "target/${target}/release/garage" /usr/local/bin/garage
+cp "target/${target}/release/garage" /out/
 EORUN
 
 # Server smoke test, here because scratch has no shell to run it: a
@@ -70,18 +83,18 @@ EORUN
 # hadolint ignore=DL3001
 RUN --mount=type=bind,source=garage/smoke-test.toml,target=/etc/garage.toml \
     <<EORUN
-garage --version | grep -F "garage v${BASE_VERSION} ["
+/out/garage --version | grep -F "garage v${BASE_VERSION} ["
 hex() { od -An -vtx1 -N32 /dev/urandom | tr -d ' \n'; }
 GARAGE_RPC_SECRET="$(hex)"
 GARAGE_DEFAULT_ACCESS_KEY="GK$(hex | cut -c1-24)"
 GARAGE_DEFAULT_SECRET_KEY="$(hex)"
 export GARAGE_RPC_SECRET GARAGE_DEFAULT_ACCESS_KEY GARAGE_DEFAULT_SECRET_KEY
 export GARAGE_DEFAULT_BUCKET=smoke-test
-garage server --single-node --default-bucket &
+/out/garage server --single-node --default-bucket &
 server=$!
 # 503 until the node has its layout: curl retries it.
 curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:3903/health
-garage status
+/out/garage status
 head -c 1M /dev/urandom > /tmp/object
 s3=(curl -fsS --aws-sigv4 aws:amz:garage:s3 --user "${GARAGE_DEFAULT_ACCESS_KEY}:${GARAGE_DEFAULT_SECRET_KEY}")
 "${s3[@]}" -T /tmp/object http://127.0.0.1:3900/smoke-test/object
@@ -91,9 +104,10 @@ wait "${server}"
 rm -r /tmp/garage /tmp/object
 EORUN
 
-# State directories, owned by the image's user: a named volume mounted
-# there starts with that owner, so it is writable without a chown.
-RUN install -d -o 65532 -g 65532 /var/lib/garage/meta /var/lib/garage/data
+# State directories, owned by the image's user (this stage's): a named
+# volume mounted there starts with that owner, so it is writable without
+# a chown.
+RUN mkdir -p /out/var/lib/garage/meta /out/var/lib/garage/data
 
 FROM scratch
 ARG BASE_VERSION
@@ -109,11 +123,12 @@ LABEL org.opencontainers.image.version="${BASE_VERSION}" \
 # upstream's docs and Helm chart apply as is. CA bundle: TLS to Consul,
 # Kubernetes or an OTLP collector with a public CA (rustls-native-certs
 # reads this path); refreshed by the weekly rebuild.
-COPY --link --from=build /usr/local/bin/garage /garage
+# root's, not the build user's: the server can't replace its own binary.
+COPY --link --from=build --chown=0:0 /out/garage /garage
 COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # AGPL: the source is upstream's tag.
 COPY --link --from=build /src/LICENSE /usr/share/doc/garage/
-COPY --link --from=build /var/lib/garage/ /var/lib/garage/
+COPY --link --from=build --chown=65532:65532 /out/var/lib/garage/ /var/lib/garage/
 
 # Numeric, so Kubernetes' runAsNonRoot can check it. Garage needs no
 # privilege: every port is above 1024.
