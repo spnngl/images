@@ -12,6 +12,12 @@ Check the source rather than blog posts or memory:
 - Fedora bootc examples: `gitlab.com/fedora/bootc/examples`
 - image-builder / bootc-image-builder: `github.com/osbuild/image-builder`
 - buildah (Containerfile behaviour under podman): `github.com/containers/buildah`
+- BuildKit (Containerfile behaviour under `docker buildx`, e.g. `ADD
+  --checksum`): `github.com/moby/buildkit` (`frontend/dockerfile/docs`)
+- MinIO (`images/minio`): `github.com/minio/minio` (`Makefile` and
+  `buildscripts/gen-ldflags.go` for the release build, `cmd/` for flags
+  and variables), at the Containerfile's `BASE_VERSION` tag; docs:
+  `github.com/minio/docs`
 - firewalld (zone/policy/ipset behaviour): `github.com/firewalld/firewalld`
   (`doc/xml` for docs, `src/firewall/core` for behaviour)
 - Dalec (`images/*/spec.yml`): `github.com/project-dalec/dalec`
