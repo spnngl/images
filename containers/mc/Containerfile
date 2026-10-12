@@ -19,29 +19,26 @@
 # Debian trixie: its ca-certificates is the CA bundle copied below.
 FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
 
-# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
-# DEBIAN_CODENAME: the release the tag names.
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
 ARG DEBIAN_CODENAME
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
-# HOME for the build user below, with no passwd entry: git and go read
-# theirs, and root's (/root) is closed to it. Before SHELL: hadolint
-# (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL
-# says.
+# HOME for the build user below (no passwd entry): git and go read theirs,
+# and root's (/root) is closed to it. Before SHELL: hadolint (2.15.1)
+# checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
 ENV HOME=/tmp
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 WORKDIR /src
 
-# The checks first: built alone (not with bake), or on another Debian
-# release than the tag names, it fails here.
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
 RUN <<EORUN
 : "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 [ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
 EORUN
 
-# --checksum: the tag must resolve to this commit, tags can be moved.
+# --checksum: the tag must resolve to this commit.
 # --keep-git-dir: gen-ldflags.go reads the commit ID with git.
 ADD --link \
     --keep-git-dir=true \
@@ -76,10 +73,10 @@ CGO_ENABLED=0 go build -tags kqueue -trimpath \
 mkdir /out/config
 EORUN
 
-# Smoke test, here because scratch has no shell to run it. Renovate
-# automerges mc releases and golang bumps on this test. Local files only,
-# no S3 server: mc writes its config in MC_CONFIG_DIR, copies a 1 MiB file
-# and reads it back.
+# Smoke test, here because scratch has no shell to run it, and because mc
+# releases and golang bumps are automerged on it. Local files only, no S3
+# server: mc writes its config in MC_CONFIG_DIR, copies a 1 MiB file and
+# reads it back.
 RUN <<EORUN
 /out/mc --version | grep -F "mc version ${BASE_VERSION} (commit-id="
 export MC_CONFIG_DIR=/tmp/mc
@@ -95,8 +92,7 @@ EORUN
 FROM scratch
 ARG BASE_VERSION
 
-# source: links the ghcr.io package to this repository, as the Dalec
-# specs do.
+# source: links the ghcr.io package to this repository.
 # hadolint ignore=DL3050
 LABEL org.opencontainers.image.version="${BASE_VERSION}" \
     org.opencontainers.image.licenses="AGPL-3.0-or-later" \
@@ -109,7 +105,7 @@ COPY --link --from=build --chown=0:0 /out/mc /usr/bin/
 # Owned by the user: mc writes config.json, share/ and certs/ there.
 COPY --link --from=build --chown=65532:65532 /out/config /config
 
-# Not root, numeric so Kubernetes' runAsNonRoot can check it.
+# Numeric, so runAsNonRoot can check it.
 USER 65532:65532
 # The default, ~/.mc, depends on HOME: unset without a passwd entry, and mc
 # fails without it. No VOLUME: the config is disposable when MC_HOST_*
@@ -120,5 +116,5 @@ ENV MC_CONFIG_DIR=/config
 ENTRYPOINT ["/usr/bin/mc"]
 
 # Smoke test: the binary runs on this platform (the build stage tested
-# it). Exec form: scratch has no shell.
+# it).
 RUN ["/usr/bin/mc", "--version"]

@@ -80,19 +80,16 @@ jobs:
   build:
     name: build ${{ matrix.image.name }}:${{ matrix.image.version }}${{ matrix.image.suffix }} ${{ matrix.platform.arch }}
     needs: hadolint
-    # Podman 5.7 / Buildah 1.42 preinstalled: the Containerfiles use
-    # COPY --link (buildah 1.41+). ubuntu-24.04 (ubuntu-latest) only has
-    # buildah 1.33.
+    # Preinstalled Podman 5.7 / Buildah 1.42: the Containerfiles use
+    # COPY --link (buildah 1.41+); ubuntu-24.04 only has buildah 1.33.
     runs-on: ${{ matrix.platform.runner }}
     strategy:
       fail-fast: false
       matrix:
-        # fedora-bootc:44.x only got x86-64-v3 images
-        # almalinux-bootc:10.x got x86-64-v3 and x86-64-v2 images, BUT docker-ce
-        # official repo only got v3 binaries
-        #
-        # Building almalinux:9.x to get v2 binaries without issues, EOL is 2032.
-        # centos-bootc:stream10 only got x86-64-v3 images (no v2 variant).
+        # x86-64 levels: fedora-bootc:44 and centos-bootc:stream10 only have
+        # v3 images. almalinux-bootc:10 has v3 and v2 images, but the docker-ce
+        # repository only has v3 binaries. almalinux:9 (EOL 2032) gives v2
+        # binaries without issue.
         #
         # Optional keys, for multi-stage Containerfiles: target, the stage to
         # build (default: the last one), suffix, appended to the tag, and
@@ -159,22 +156,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Same flags as bootc/build.sh: context is bootc/, and
-      # --format=docker because the OCI format drops SHELL. --platform is
-      # the runner's own: without QEMU, a runner of another platform fails
-      # instead of building the wrong one. The source label links the
-      # ghcr.io package to this repository. --target only when the matrix
-      # sets one, INSTALL_K3S_VERSION only when it sets k3s.
+      # Same flags as bootc/build.sh. --format=docker: the OCI format drops
+      # SHELL. --platform is the runner's own: without QEMU, a runner of
+      # another platform fails instead of building the wrong one. The source
+      # label links the ghcr.io package to this repository.
       # SOURCE_DATE_EPOCH, the last commit's time, for reproducible builds.
       # See: https://oneuptime.com/blog/post/2026-03-18-use-podman-reproducible-builds/view
       - run: |-
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${NAME}/Containerfile" bootc/
-      # Pull requests: fail on a Critical vulnerability with a fix that the
-      # pushed image doesn't have, before the merge pushes it (spnngl/.github's
-      # scan-image action; see .github/REFERENCES.md, "Vulnerability scanning").
-      # The pushed images are scanned daily (image-scan.yml). Given as an
-      # OCI layout: both scanners read it, not both podman's storage.
+      # Pull requests fail on a Critical vulnerability with a fix that the
+      # pushed image doesn't have (.github/REFERENCES.md, "Vulnerability
+      # scanning"); pushed images, image-scan.yml. An OCI layout: both
+      # scanners read it, not both podman's storage.
       - if: github.event_name == 'pull_request'
         run: podman save --format oci-dir -o "${RUNNER_TEMP}/oci" "${TAG}"
       - if: github.event_name == 'pull_request'

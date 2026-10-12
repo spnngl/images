@@ -19,9 +19,9 @@
   Renovate (the tag is lightweight: `git ls-remote` gives the commit
   directly). The source has no `.git`: the build passes `BUILD_VERSION`
   and `BUILD_TAG` to the Makefile.
-- **Smoke test `-T`:** prints the merged config, needs no netlink nor
-  capability. Its `RUN` leaves empty `/dev`, `/proc`, `/sys` folders:
-  harmless, the runtime mounts over them.
+- **Smoke test `-T`:** needs no netlink nor capability. Its `RUN` leaves
+  empty `/dev`, `/proc`, `/sys` folders: harmless, the runtime mounts
+  over them.
 - **`label=disable`:** container-selinux grants
   `netlink_netfilter_socket` to the runtime's domain, not to
   `container_t`. It worked without on Fedora CoreOS (selinux-policy 42,

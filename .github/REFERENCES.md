@@ -42,7 +42,6 @@ Dalec, and one way to build, attest and sign is simpler.
   of `docker buildx bake --print '*'` on `containers/docker-bake.hcl`
   and every `containers/*/docker-bake.hcl`: one item per image, line
   and Debian release, with its context, file, build arguments and tags.
-  Versions are written there only (`containers/AGENTS.md`).
 - **Only what changed:** a target whose resolved definition differs from
   the base's (the same `--print`, on a worktree of the base: a bumped
   version, a new line), or whose folder changed (its docs and Bake file
@@ -57,8 +56,6 @@ Dalec, and one way to build, attest and sign is simpler.
   build arguments go to `docker/build-push-action`, plus
   `SOURCE_DATE_EPOCH` from the last commit (Bake's file can't hold it: it
   would change on every commit).
-- **Every tag of an item** goes to one `imagetools create` and gets its
-  own signature; the scan's baseline is the first tag.
 - **`docker/build-push-action`** on a `docker-container` builder (the
   docker driver can't attest). The image sets its own
   `org.opencontainers.image.source` label.
@@ -68,9 +65,10 @@ Dalec, and one way to build, attest and sign is simpler.
   `docker buildx imagetools inspect <tag> --format '{{ json .Provenance
   }}'` (or `.SBOM`). No `actions/attest-build-provenance`: it would be a
   second provenance.
-- **Pushed by digest per platform**, merged by `docker buildx imagetools
-  create`, attestations included; then signed with `cosign sign` and
-  checked with `cosign verify`.
+- **Pushed by digest per platform**, merged with attestations by one
+  `docker buildx imagetools create` for all the item's tags, each tag
+  signed with `cosign sign` and checked with `cosign verify`; the scan's
+  baseline is the first tag.
 
 ## Vulnerability scanning
 
@@ -90,10 +88,10 @@ data, and their sources differ.
 
 ## Updates: `renovate.json5`
 
-PRs every Saturday, the day before the weekly rebuild, for every pinned
-version. `renovate.yml` validates the config; the shared preset sets
-timezone, labels, semantic commits, action digests and automerge under
-`.github/`.
+PRs open as releases come; the Debian snapshot and base digests wait for
+Saturday, the day before the weekly rebuild. `renovate.yml` validates the
+config; the shared preset sets timezone, labels, semantic commits, action
+digests and automerge under `.github/`.
 
 - **One PR per dependency, every file at once:** an unmatched pin goes
   stale silently.
@@ -107,13 +105,12 @@ timezone, labels, semantic commits, action digests and automerge under
   bases: a digest there would freeze the base between rebuilds, and land
   in `ARG BASE_VERSION`, the tag. An application image's version is in
   its Bake file, so a digest costs nothing: its updates are grouped with
-  the Debian snapshot, weekly, automerged (the images' build and smoke
-  test run on the pull request).
+  the Debian snapshot, automerged (the images' build and smoke test run
+  on the pull request).
 - **One manager for every Bake file:** a `# renovate:` comment before
   each version names its datasource and lookup fields; the next line's
   quoted version and checksum are what Renovate replaces (the checksum
-  as `currentDigest`: a git tag's commit, peeled). Nothing to add to
-  `renovate.json5` for a new image, or a new line; `renovate.yml`'s
+  as `currentDigest`: a git tag's commit, peeled). `renovate.yml`'s
   `extract` job fails on a comment Renovate doesn't pick up. The
   `debian-snapshot` custom datasource lists `snapshot.debian.org`'s
   timestamps; Debian's packages follow the weekly bump.

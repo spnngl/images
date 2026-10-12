@@ -2,9 +2,8 @@
 
 CrowdSec's nftables bouncer, one static Go binary built from source on
 `scratch`. It pulls the bans of a CrowdSec Local API (LAPI, not in this
-repository) and drops those sources in its own nftables tables, `ip
-crowdsec` and `ip6 crowdsec6`, hooked at `input` and `forward`, priority
--10, before firewalld. Upstream sources and the reason for each choice:
+repository) and drops those sources in its own nftables tables, ahead
+of firewalld. Upstream sources and the reason for each choice:
 [REFERENCES.md](REFERENCES.md).
 
 ## Runtime contract
@@ -18,8 +17,8 @@ podman, rootful:
   to the LAPI (no CA bundle)
 - overrides: one file mounted `:ro`, no `:Z`, at
   `/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml.local` (the
-  host's `/etc/crowdsec/firewall-bouncer.yaml`), deep-merged: maps
-  merge, scalars and lists are replaced. To replace the config, mount a
+  host's `/etc/crowdsec/firewall-bouncer.yaml`), deep-merged (the
+  shipped config's header has the rules). To replace the config, mount a
   file and pass `-c <path>`.
 - metrics on `127.0.0.1:60601` of the host
 - the admin's IP allowlisted on the LAPI, or a ban locks out sshd
@@ -31,13 +30,13 @@ Leave the tables alone while it runs: it doesn't recreate a deleted one.
 ## Rules
 
 - Keep `retry_initial_connect: true`.
-- The last instruction is the smoke test `-T`, never `-t`: `-t` creates
-  the tables and deletes them on exit, the running bouncer's included.
+- The smoke test runs `-T`, which only prints the config. `-t` creates
+  the tables and deletes them on exit, the running bouncer's included:
+  for the same reason the image has no `HEALTHCHECK`.
 
 ## Updates
 
-Never automerged (`depType` of its Bake pin: no `automerge`). Before
-merging, port upstream's `config/crowdsec-firewall-bouncer.yaml` changes
+Never automerged. Before merging, port upstream's `config/crowdsec-firewall-bouncer.yaml` changes
 between the two tags to
 `sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`:
 `https://github.com/crowdsecurity/cs-firewall-bouncer/compare/v<old>...v<new>`.

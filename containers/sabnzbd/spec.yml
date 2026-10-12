@@ -6,23 +6,18 @@
 # image is built from scratch out of the package's dependency closure: no
 # shell, no apt, but a dpkg database scanners can read.
 #
-# Build (from the repo root; the versions are in docker-bake.hcl, which
-# passes the args below):
-#   docker buildx bake -f containers/docker-bake.hcl \
-#     -f containers/sabnzbd/docker-bake.hcl
-#
 # Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
 # (settings, queue, logs) and /downloads must be writable by it; web UI on
-# 8080/tcp. No shell: post-processing scripts must be Python with
-# #!/usr/bin/python3 or no shebang (no /usr/bin/env either), not sh.
+# 8080/tcp. No shell: post-processing scripts must be Python, executable,
+# with #!/usr/bin/python3 or no shebang (SABnzbd then runs them with its
+# own Python). No /usr/bin/env, nice or ionice either: upstream's
+# Sample-PostProc.sh can't run.
 #
-# Renovate bumps the versions and source checksums in docker-bake.hcl. In
-# its PR for a new SABnzbd or uv, run containers/sabnzbd/sabnzbd-lock.sh;
-# for a new SABnzbd, also compare downloads-dir.patch with upstream's
-# sabnzbd/constants.py (AGENTS.md, Updates).
+# Renovate bumps the versions and checksums in docker-bake.hcl (AGENTS.md,
+# Updates).
 
-# Set by docker-bake.hcl. Dalec needs them declared, empty here: a build
-# without them fails.
+# Set by docker-bake.hcl; empty here, Dalec needs them declared
+# (containers/AGENTS.md).
 args:
   # SABnzbd's release and its tag's commit.
   BASE_VERSION: ""
@@ -56,8 +51,8 @@ sources:
       url: https://github.com/animetosho/par2cmdline-turbo.git
       commit: v${PAR2_VERSION}
       checksum: ${PAR2_CHECKSUM}
-  # Installs the Python modules (uv pip install below). The image has only the
-  # static /uv binary.
+  # Installs the Python modules (uv pip install below): its static binary,
+  # taken from the uv image.
   uv:
     image:
       ref: ghcr.io/astral-sh/uv:${UV_VERSION}
@@ -172,9 +167,8 @@ artifacts:
   licenses:
     # The GPL-2.0 text that must ship with the par2 binary, in
     # /usr/share/doc/sabnzbd/par2cmdline-turbo/. SABnzbd's own are in
-    # /usr/lib/sabnzbd. Declaring it also makes trixie/container keep all of
-    # /usr/share/doc, so the Debian packages' copyright files stay too (it
-    # deletes the whole tree otherwise), with their docs and man pages.
+    # /usr/lib/sabnzbd. Declaring it also keeps the Debian packages'
+    # copyright files (REFERENCES.md).
     par2cmdline-turbo/COPYING:
       subpath: par2cmdline-turbo
 

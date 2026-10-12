@@ -22,7 +22,7 @@ die() {
 command -v docker >/dev/null || die "docker not found, install Docker: https://docs.docker.com/get-docker/"
 command -v curl >/dev/null || die "curl not found, install it with your package manager"
 command -v jq >/dev/null || die "jq not found, install it with your package manager"
-# The versions are in the Bake file (docker-bake.hcl): read what it passes.
+# Read the versions Bake passes.
 args="$(docker buildx bake -f containers/docker-bake.hcl -f containers/sabnzbd/docker-bake.hcl --print "*" 2>/dev/null | jq -c '.target[].args')"
 version="$(jq -r .BASE_VERSION <<<"${args}")"
 uv_version="$(jq -r .UV_VERSION <<<"${args}")"

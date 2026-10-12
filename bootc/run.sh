@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Boot output/<name>/<name>.qcow2, built by bootc/build.sh, in QEMU.
-# Supports macOS on Apple Silicon only (HVF acceleration, Homebrew qemu).
+# macOS on Apple Silicon only: HVF acceleration, Homebrew's qemu and firmware.
 #
 # Usage: [SSH_PORT=2222] bootc/run.sh [name]    (default: fedora)
 #

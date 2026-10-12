@@ -4,10 +4,8 @@
 # Upstream is archived and source-only (no binaries or images after its last
 # release): this is that release, with no patch.
 #
-# Known vulnerabilities, unfixed and accepted: in MinIO's code (among them
-# unauthenticated object writes, CVE-2026-40344 and CVE-2026-41145) and in
-# its frozen dependencies. Only for networks where every client is trusted.
-# See containers/minio/REFERENCES.md.
+# Known vulnerabilities, unfixed and accepted: only for networks where every
+# client is trusted. See containers/minio/REFERENCES.md.
 #
 # Runtime contract: UID/GID 65532 (no passwd entry); /data writable by it;
 # S3 API on 9000/tcp, console on 9001/tcp; MINIO_ROOT_USER and
@@ -23,29 +21,26 @@
 # Debian trixie: its ca-certificates is the CA bundle copied below.
 FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
 
-# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
-# DEBIAN_CODENAME: the release the tag names.
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
 ARG DEBIAN_CODENAME
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
-# HOME for the build user below, with no passwd entry: git and go read
-# theirs, and root's (/root) is closed to it. Before SHELL: hadolint
-# (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL
-# says.
+# HOME for the build user below (no passwd entry): git and go read theirs,
+# and root's (/root) is closed to it. Before SHELL: hadolint (2.15.1)
+# checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
 ENV HOME=/tmp
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 WORKDIR /src
 
-# The checks first: built alone (not with bake), or on another Debian
-# release than the tag names, it fails here.
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
 RUN <<EORUN
 : "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 [ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
 EORUN
 
-# --checksum: the tag must resolve to this commit, tags can be moved.
+# --checksum: the tag must resolve to this commit.
 # --keep-git-dir: gen-ldflags.go reads the commit ID with git.
 ADD --link \
     --keep-git-dir=true \
@@ -69,7 +64,7 @@ WORKDIR /src
 # Without them, the binary is a DEVELOPMENT.GOGET build.
 # Caches: uid sets the owner of a new cache only, and one is shared by
 # every build that uses its id (the target by default): ids of their own,
-# root's caches (cs-firewall-bouncer) aren't writable by this user.
+# as root's caches (cs-firewall-bouncer) aren't writable by this user.
 # DL3062: `go run` of a file in the checkout, not of a remote module.
 # hadolint ignore=DL3062
 RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
@@ -84,11 +79,10 @@ CGO_ENABLED=0 go build -tags kqueue -trimpath \
 mkdir /out/data
 EORUN
 
-# Server smoke test, here because scratch has no shell to run it. Renovate
-# automerges golang bumps on this test, and nobody upstream tests this
-# archived code with a newer Go. A single-drive server, a bucket, a
-# 1 MiB object written and read back through the S3 API, then a graceful
-# stop. Random throwaway credentials: none in the repository.
+# Server smoke test, here because scratch has no shell to run it, and
+# because golang bumps are automerged on it (REFERENCES.md). A single-drive
+# server, a bucket, a 1 MiB object written and read back through the S3
+# API, then a graceful stop. Random throwaway credentials.
 # kill (DL3001) stops the server this step started, not a container's.
 # hadolint ignore=DL3001
 RUN <<EORUN
@@ -118,8 +112,7 @@ EORUN
 FROM scratch
 ARG BASE_VERSION
 
-# source: links the ghcr.io package to this repository, as the Dalec
-# specs do.
+# source: links the ghcr.io package to this repository.
 # hadolint ignore=DL3050
 LABEL org.opencontainers.image.version="${BASE_VERSION}" \
     org.opencontainers.image.licenses="AGPL-3.0-or-later" \
@@ -132,7 +125,7 @@ COPY --link --from=build --chown=0:0 /out/minio /usr/bin/
 # Owned by the user: a new Docker volume on /data takes this ownership.
 COPY --link --from=build --chown=65532:65532 /out/data /data
 
-# Not root, numeric so Kubernetes' runAsNonRoot can check it.
+# Numeric, so runAsNonRoot can check it.
 USER 65532:65532
 # Variables, not flags, so that they stay when CMD is replaced (several
 # drives, distributed setup). MINIO_CONSOLE_ADDRESS: a random port without
@@ -151,5 +144,5 @@ ENTRYPOINT ["/usr/bin/minio", "--certs-dir", "/certs"]
 CMD ["server", "/data"]
 
 # Smoke test: the binary runs on this platform (the build stage tested the
-# server). Exec form: scratch has no shell.
+# server).
 RUN ["/usr/bin/minio", "--version"]

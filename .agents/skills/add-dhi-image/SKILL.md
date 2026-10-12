@@ -1,37 +1,39 @@
 ---
 name: add-dhi-image
-description: Add or change an application image built from a Docker Hardened Images definition, containers/<name>/dhi.yaml, on Docker's hardened Debian 13 packages. Use when asked for a DHI image, or when editing a dhi.yaml.
+description: DHI application image, containers/<name>/dhi.yaml on Docker Hardened Images' Debian 13 packages. Use when adding or changing one, or editing a dhi.yaml.
 ---
 
 # Add a DHI image
+
+Shared rules, versions and the build check: `containers/AGENTS.md`.
 
 A DHI definition is declarative YAML that BuildKit builds with Docker's
 `dhi.io/build` frontend (the `# syntax=` line): packages, build stages,
 accounts, paths, entrypoint. The runtime packages come from Docker's
 **hardened** Debian repository, rebuilt from source by Docker and signed.
 
-The frontend is closed source. The **catalog** is the schema: clone
+The frontend is closed source. The **catalog** is the schema, and the
+**reference image**, since this repository has no DHI image yet: clone
 `github.com/docker-hardened-images/catalog` (`git_clone`), runtime
 definitions in `image/<app>/debian-13/<version>.yaml` (the `-dev` and
 `-compat` files are other variants). Use only fields some catalog
 definition uses, in the shape it uses them. The docs are
 `content/manuals/dhi/how-to/build.md` and `hardened-packages.md` in
-`github.com/docker/docs`. This repository has no DHI image yet: the
-catalog is the **reference image**.
+`github.com/docker/docs`.
 
-Building needs `docker login dhi.io`, with a Docker ID; never commit its
-credentials. CI support (`build-apps.yml` discovery, the `dhi.io` login,
-the SBOM generator) is a separate task (`containers/AGENTS.md`,
+Building needs `docker login dhi.io` with a Docker ID; its credentials
+stay in that login. CI support (`build-apps.yml` discovery, the `dhi.io`
+login, the SBOM generator) is a separate task (`containers/AGENTS.md`,
 "Limits"): this skill's changes stay in `containers/<name>/` and
 `renovate.json5`.
 
-The final image is **shell-less** (`containers/AGENTS.md`): its packages
-are the app's runtime closure, without `bash`, `busybox` or `coreutils`.
+The final image is shell-less: its packages are the app's runtime
+closure, without `bash`, `busybox` or `coreutils`.
 
 ## Unverified until the first build
 
-No DHI image has been built here yet. These rules rest on reading the
-catalog, not on a build; step 6 confirms or fixes each:
+These rules rest on reading the catalog, not on a build; step 6 confirms
+or fixes each:
 
 - `vars` aren't substituted: catalog definitions never reference them,
   so the release is written literally.
@@ -82,17 +84,16 @@ the hardened candidates:
 for arch in amd64 arm64; do curl -fsSL "https://dhi.io/deb/debian/main/dists/trixie/main/binary-${arch}/Packages.gz" | gzip -dc | awk -v RS= -v FS='\n' '$1 ~ /^Package: (<pkg>|<pkg>)$/' | grep -E '^(Package|Architecture|Version):'; done
 ```
 
-Check the packages it lacks in Debian trixie, with the `apt-cache
-policy` command of the `add-dalec-image` skill.
+Check the packages it lacks in Debian trixie with the `apt-cache policy`
+command of the `add-dalec-image` skill.
 
 Done when you name the catalog definition you copy, and every runtime
 dependency has a package on both platforms.
 
 ### 3. Write `containers/<name>/dhi.yaml`
 
-- **`.dockerignore`**: copy another image's, plus a `dhi.yaml` line.
-- **Frontend**: `# syntax=dhi.io/build:2-debian13`, first line. Debian 13
-  only, like every application image.
+- **`.dockerignore`**: also a `dhi.yaml` line.
+- **Frontend**: `# syntax=dhi.io/build:2-debian13`, first line.
 - **Header comment**: what the image is, the build command, what a
   version bump needs beyond Renovate's PR, and the runtime contract:
   UID/GID, volumes, ports, required env or secrets.
@@ -101,7 +102,7 @@ dependency has a package on both platforms.
 - **Versions**: `vars.BASE_VERSION` is the upstream release and the
   image tag (`tags: [<release>]`), for CI to read once it builds DHI
   images. Write the release literally everywhere else it appears (the
-  source URL, `spdx`, ldflags, the package pin). Renovate updates every
+  source URL, `spdx`, ldflags, the package pin): Renovate updates every
   copy (step 4).
 - **Repository**: the hardened one, copied from a catalog definition:
   `deb [signed-by=/usr/share/keyrings/dhi-deb-main.gpg]
@@ -126,8 +127,8 @@ dependency has a package on both platforms.
   - `pipeline` steps: the catalog's `uses:` step for the language,
     upstream's release flags, else `runs:` starting `set -eux -o
     pipefail`
-  - a **server test** step after the build, as the Containerfile skill's:
-    `--version` checked for the release, the server started on
+  - a **server test** step after the build, as in `add-containerfile-image`
+    step 2: `--version` checked for the release, the server started on
     `127.0.0.1`, its health endpoint, one real operation, then killed.
     Its tools (`curl`) are build-stage packages.
   - `outputs`: only the files the image needs, `uid: 0`, `gid: 0`,
@@ -140,8 +141,8 @@ dependency has a package on both platforms.
 - **Metadata**: the catalog's Debian 13 `os-release` block, with
   `home-url` and `bug-report-url` `https://github.com/spnngl/images`.
   `labels` `org.opencontainers.image.{title,version,licenses,source}`,
-  source `https://github.com/spnngl/images`, as the other images:
-  ghcr.io links the package to the repository through it.
+  source `https://github.com/spnngl/images`: ghcr.io links the package to
+  the repository through it.
 - **Runtime**: `entrypoint` the binary's absolute path, `cmd` its default
   arguments pointing config and data at the volumes, `work-dir`,
   `volumes`, `ports`. `environment` for settings that must survive a
@@ -152,19 +153,19 @@ header, and every source is pinned.
 
 ### 4. Track its versions
 
-Application images keep their versions in a `docker-bake.hcl`
-(`containers/AGENTS.md`), but no DHI image exists yet, and whether the
-`dhi.io/build` frontend takes build arguments is untested: until the
-first one settles it, Renovate doesn't read definitions, so add a
-`renovate.json5` custom manager
-for the release under one dependency name, matching `vars.BASE_VERSION`
-and every literal copy. A source build: modeled on sabnzbd's, the tag in
-the source URL and its `checksum` in one match. An APT package: modeled
-on jellyfin's, from upstream's repository. The first DHI image also adds
-a manager for the `# syntax=` line of `containers/[^/]+/dhi\.yaml`, like
-the Dalec frontend's. Add a `packageRules` entry: automerged only when
-the server test covers what a release can break; otherwise
-`prBodyNotes` saying what to check by hand.
+No `docker-bake.hcl` yet: whether the `dhi.io/build` frontend takes build
+arguments is untested, and Renovate doesn't read definitions. Add a
+`renovate.json5` custom manager for the release under one dependency
+name, matching `vars.BASE_VERSION` and every literal copy:
+
+- source build: modeled on sabnzbd's, the tag in the source URL and its
+  `checksum` in one match
+- APT package: modeled on jellyfin's, from upstream's repository
+- the first DHI image also adds a manager for the `# syntax=` line of
+  `containers/[^/]+/dhi\.yaml`, like the Dalec frontend's
+
+Add a `packageRules` entry: automerged only when the server test covers
+what a release can break, else `prBodyNotes` saying what to check by hand.
 
 Done when `renovate-config-validator --strict` passes and every pinned
 version of the definition has a manager.

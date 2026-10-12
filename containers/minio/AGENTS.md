@@ -12,8 +12,8 @@ sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 - No backports and no ignore file for its vulnerabilities: the code
   scanning alerts are the current list.
-- The build stage builds and tests as UID 65532, with Go caches of its
-  own ids; the binary is copied owned by root.
+- The build stage runs as UID 65532, with Go cache ids of their own
+  (`containers/silo` and `containers/mc` reuse them).
 - `--certs-dir /certs` is in the entrypoint; settings that must survive
   a replaced `CMD` go in the entrypoint or the environment.
 - Keep `MINIO_UPDATE=off`.
@@ -28,5 +28,4 @@ rewrite the data for good. Before merging, read what changed
 image's flags and variables (`--certs-dir`, `MINIO_CONSOLE_ADDRESS`,
 `MINIO_UPDATE`) against `cmd/main.go` and `cmd/server-main.go`, and the
 build against the `build` target of the `Makefile`. A checksum-only
-update means upstream moved the tag. The repository was archived after
-the last release.
+update means upstream moved the tag.

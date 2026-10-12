@@ -35,11 +35,8 @@
   `safe.directory` set while root. A cache keeps the owner it was
   created with, so root's (cs-firewall-bouncer) aren't writable: hence
   ids of their own. A root-owned binary can't be rewritten by MinIO.
-- **Server test in the build stage:** a single-drive server with random
-  credentials, a bucket, a 1 MiB object written and read back through
-  the S3 API (`curl --aws-sigv4`), then a graceful stop. Renovate
-  automerges `golang` bumps, and nobody upstream tests this code with a
-  newer Go.
+- **Server test in the build stage:** Renovate automerges `golang`
+  bumps, and nobody upstream tests this code with a newer Go.
 - **The image holds the binary, Debian's CA bundle** (OpenID, LDAP,
   KMS, replication, notification targets), `LICENSE` and `CREDITS`. Not
   distroless: its extras are unused by MinIO, and its Debian release is

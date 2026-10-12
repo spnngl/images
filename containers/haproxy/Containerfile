@@ -5,13 +5,11 @@
 # image needs only glibc (from distroless/base), the HAProxy binary and its
 # Lua modules. One image per release line, see docker-bake.hcl.
 #
-# Runtime contract: UID/GID 99, haproxy's in the Debian packages, not
-# 65532 like the other images: a Kubernetes deployment shares files with
-# an external haproxy (haproxy-ingress) under that user. A config in
-# /etc/haproxy (a volume, none shipped), the master process in the
-# foreground (-db). Ports: 1936 stats, 8080 HTTP, 8443 HTTPS, 9101
+# Runtime contract: UID/GID 99, not 65532 (containers/haproxy/AGENTS.md).
+# A config in /etc/haproxy (a volume, none shipped), the master process
+# in the foreground (-db). Ports: 1936 stats, 8080 HTTP, 8443 HTTPS, 9101
 # Prometheus, as the configs of the deployments use them (documentation
-# only). Distroless has no shell: the health check runs haproxy itself.
+# only). The health check runs haproxy itself: no shell in distroless.
 
 # Versions come from containers/haproxy/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
@@ -19,9 +17,6 @@
 # glibc the binary is linked against.
 FROM docker.io/library/debian:trixie@sha256:913f6706df59a68922d1dd08f78c2476560a8d367897200a6005b00e5f67c2d5 AS build
 
-# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
-# DEBIAN_CODENAME: the release the tag names; DEBIAN_SNAPSHOT_VERSION:
-# Debian's archive for the packages installed below.
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
 ARG DEBIAN_CODENAME
@@ -33,16 +28,14 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV DEBCONF_NOWARNINGS="yes"
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
-# Static libraries (libssl.a, liblua5.4.a...) are in the -dev packages:
-# linked into the binary. lua-json (pure Lua) and its lua-lpeg dependency
+# The -dev packages hold the static libraries (libssl.a, liblua5.4.a...)
+# linked into the binary; lua-json (pure Lua) and its lua-lpeg dependency
 # are copied into the image below.
-# Versions not pinned (DL3008): they follow the snapshot, which Renovate
-# moves (containers/docker-bake.hcl).
-# The checks first: built alone (not with bake), or on another Debian
-# release than the tag names, it fails here.
-# The snapshot: apt-get's --snapshot is not in trixie's apt (3.0.3), so
-# the sources point at snapshot.debian.org. No Valid-Until: snapshot
-# Release files expire.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
 # hadolint ignore=DL3008
 RUN <<EORUN
 : "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
@@ -99,8 +92,7 @@ EORUN
 FROM gcr.io/distroless/base-debian13:nonroot@sha256:a0d70d6a97cd697d9362bc2aae4a6560dd65817e365d0043b07325a97975dc91
 ARG BASE_VERSION
 
-# source: links the ghcr.io package to this repository, as the Dalec
-# specs do.
+# source: links the ghcr.io package to this repository.
 # hadolint ignore=DL3050
 LABEL org.opencontainers.image.title="HAProxy" \
     org.opencontainers.image.description="HAProxy with static OpenSSL, PCRE2 and Lua" \
@@ -133,7 +125,7 @@ COPY --link --from=build /usr/lib/*-linux-gnu/liblua*.so* /usr/lib/
 # has no mkdir or chown.
 COPY --link --from=build --chown=99:99 /rootfs/ /
 
-# Numeric, so Kubernetes' runAsNonRoot can check it.
+# Numeric, so runAsNonRoot can check it.
 USER 99:99
 WORKDIR /var/lib/haproxy
 ENTRYPOINT ["/usr/sbin/haproxy"]
@@ -148,5 +140,4 @@ STOPSIGNAL SIGUSR1
 EXPOSE 1936/tcp 8080/tcp 8443/tcp 9101/tcp
 
 # Smoke test: the binary runs on this platform, with its Lua and SSL.
-# Exec form: distroless has no shell.
 RUN ["/usr/sbin/haproxy", "-vv"]

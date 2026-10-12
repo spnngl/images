@@ -2,15 +2,14 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "description": "Keeps every pinned version current: base images, the k3s release of kubeenv, application images' upstream releases, build tools, GitHub Actions. Base images are pinned to a major release, not a digest: the weekly rebuild (build-bootc.yml) picks up their updates within it.",
     "extends": ["github>spnngl/.github:renovate.default.json5"],
-    // Digests for actions and the application images' FROM lines only (the
+    // Digests for actions and the application images' FROM lines only: the
     // preset's config:best-practices pins every image, and a digest on a
-    // bootc Containerfile's FROM would freeze the base image between
-    // rebuilds, and the dockerfile manager would write it into `ARG
-    // BASE_VERSION`, which is also the image's tag): see the pinDigests
-    // rule below.
+    // bootc Containerfile's FROM would freeze the base between rebuilds and
+    // land in `ARG BASE_VERSION`, the image's tag (see the pinDigests rule
+    // below).
     "ignorePresets": ["docker:pinDigests"],
-    // The day before the weekly rebuild (Sunday 07:00, build-bootc.yml and build-apps.yml), so a
-    // merged update ships with it.
+    // Any time; the Debian snapshot rules below wait for Saturday, the day
+    // before the weekly rebuild.
     "schedule": ["at any time"],
     "automergeSchedule": ["at any time"],
     // dockerfile: FROM lines, with `ARG BASE_VERSION` resolved, so the

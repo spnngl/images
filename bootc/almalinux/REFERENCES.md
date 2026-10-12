@@ -13,11 +13,11 @@
 - **Policies, not zone rules, with `target=CONTINUE`:** traffic not
   dropped still goes through the `public` zone's rules unchanged.
 - **IPv4 only:** IPv6 is disabled on every image.
-- **Baked in, not fetched at runtime:** `ADD` keys its cache on the
-  content's digest, so a build reruns only what changed. Nothing from
-  the stage but the ipsets and the source data reaches the image; the
-  source data (`/usr/share/geoblock/`) traces a blocked IP to its
-  country or feed.
+- **Baked in, not fetched at runtime; `ADD`, not `RUN curl`:** `ADD`
+  keys its cache on the content's digest, so a build reruns only what
+  changed. Nothing from the stage but the ipsets and the source data
+  reaches the image; the source data (`/usr/share/geoblock/`) traces a
+  blocked IP to its country or feed.
 - **Compacted ipsets:** ipdeny's zones aren't aggregated and the feeds
   overlap; networks merge into the fewest covering the same addresses.
   Feed entries inside a blocked country are dropped: `blocklist` never

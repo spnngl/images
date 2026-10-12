@@ -1,19 +1,18 @@
 # What every containers/<name>/docker-bake.hcl uses. Build and update
 # rules: containers/AGENTS.md.
 
-# Debian releases images build on, by version: an image names its own
-# (its matrix's `debian`); a version not here fails the build. A map, so
-# Debian 14 is added while images move one by one. Moving an image means
-# editing its FROM lines too (containerfile_args' codename is checked).
+# Debian releases images build on, by version; an image names its own
+# (its matrix's `debian`). A map, so Debian 14 is added while images move
+# one by one. Moving an image means editing its FROM lines too
+# (containerfile_args' codename is checked).
 variable "DEBIAN" {
   type    = map(object({ codename = string }))
   default = { "13" = { codename = "trixie" } }
 }
 
 # Debian's archive at one point in time, for every Containerfile that
-# installs packages: it points apt at snapshot.debian.org (see garage's
-# Containerfile). Archive-wide, the same for every Debian release.
-# apt-get's --snapshot is not in trixie's apt (3.0.3).
+# installs packages (containers/AGENTS.md). Archive-wide, the same for
+# every Debian release.
 variable "DEBIAN_SNAPSHOT" {
   # renovate: datasource=custom.debian-snapshot depName=debian-snapshot
   default = "20261012T203205Z"
