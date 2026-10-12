@@ -1,7 +1,7 @@
 # syntax=docker.io/docker/dockerfile:1
 
 # Base image major release, also the tag of this image. CI sets it with
-# --build-arg (.github/workflows/build.yml); keep this default in sync.
+# --build-arg (.github/workflows/build-bootc.yml); keep this default in sync.
 # Available tags: https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags
 ARG BASE_VERSION=10
 
@@ -12,7 +12,7 @@ ARG BASE_VERSION=10
 #     -v<Kubernetes minor release>k3s.
 #   - dockerenv (FROM base, the default target): adds Docker.
 #
-# Build commands, same tags as CI (.github/workflows/build.yml):
+# Build commands, same tags as CI (.github/workflows/build-bootc.yml):
 #   podman build --format=docker -f images/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:<BASE_VERSION> images/
 #   podman build --format=docker --target kubeenv -f images/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:<BASE_VERSION>-v<Kubernetes minor release>k3s images/
 #
@@ -229,7 +229,7 @@ EORUN
 FROM base AS kubeenv
 
 # k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
-# with --build-arg (.github/workflows/build.yml); keep this default in sync.
+# with --build-arg (.github/workflows/build-bootc.yml); keep this default in sync.
 ARG INSTALL_K3S_VERSION=v1.37.1+k3s1
 
 # Bind-mounted, not copied: the script stays out of the image.
