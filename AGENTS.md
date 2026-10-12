@@ -19,10 +19,12 @@ pins (`git_clone`). A changed decision updates its reason there.
 ## Every image
 
 - **Pinned versions** (image tag, release, checksum) are each tracked by
-  `renovate.json5`. The dockerfile manager reads `FROM` and `# syntax=`;
-  anything else needs a custom manager matching every place it is
-  written, under one dependency name. Write a version only where
-  Renovate updates it; docs and comments say `<BASE_VERSION>`.
+  Renovate. The dockerfile manager reads `FROM` and `# syntax=`; an
+  application image's versions are in its `docker-bake.hcl`, each after
+  a `# renovate:` comment (`containers/AGENTS.md`); anything else needs a
+  custom manager in `renovate.json5` matching every place it is written,
+  under one dependency name. Write a version only where Renovate updates
+  it; docs and comments say `<BASE_VERSION>`.
 - **Credentials** come from the runtime. Images hold no user, password,
   key or pull secret.
 - **Containerfiles** pass `hadolint` (`.hadolint.yaml`). Ignore a
@@ -43,6 +45,7 @@ pins (`git_clone`). A changed decision updates its reason there.
 git ls-files -z '*.sh' | xargs -0 shellcheck
 docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint bootc/*/Containerfile containers/*/Containerfile
 docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.151.2 renovate-config-validator --strict
+f=(-f containers/docker-bake.hcl); for x in containers/*/docker-bake.hcl; do f+=(-f "${x}"); done; docker buildx bake "${f[@]}" --print '*' > /dev/null
 ```
 
 Then the build check of the image's guide. Report each check as run or

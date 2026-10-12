@@ -6,7 +6,9 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 - `build-bootc.yml`: lint, build, sign and push every bootc image of its
   matrix, each platform on its own runner.
 - `build-apps.yml`: the same for the application images that changed,
-  found, not listed.
+  found in the Bake files, not listed.
+- `renovate.yml`: validates `renovate.json5`, and that Renovate reads
+  every `# renovate:` comment of the Bake files.
 - `shellcheck.yml`: every script.
 - The other workflows call the shared ones of `github.com/spnngl/.github`.
 
@@ -16,7 +18,10 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
   needs buildah 1.41+.
 - Values derived from a pinned version are rewritten with it, in the
   same Renovate replacement (`autoReplaceStringTemplate`).
-- A `packageRules` entry per image says automerged, or what to check by
-  hand (`prBodyNotes`); the image's `AGENTS.md` says why.
+- An application image's versions are in its `docker-bake.hcl`, each
+  after a `# renovate:` comment: no `renovate.json5` entry per image.
+  Its `depType` says automerged or not (`automerge`, `automerge-all`),
+  and its PRs point to the *Updates* section of its `AGENTS.md`. A bootc
+  image has a `packageRules` entry, with `prBodyNotes`.
 - Vulnerability false positives go in `.grype.yaml` and
   `.trivyignore.yaml`, each with its reason.

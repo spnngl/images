@@ -38,15 +38,27 @@
 Same triggers, runners and tags; Docker tooling only: podman can't run
 Dalec, and one way to build, attest and sign is simpler.
 
-- **Found, not listed:** `discover` makes the matrix from
-  `containers/*/spec.yml` (`args.BASE_VERSION`, by `yq`) and
-  `containers/*/Containerfile` (`ARG BASE_VERSION`).
-- **Only what changed:** an image whose folder changed (its docs
+- **Found, not listed:** `discover` makes the matrix from the targets
+  of `docker buildx bake --print '*'` on `containers/docker-bake.hcl`
+  and every `containers/*/docker-bake.hcl`: one item per image, line
+  and Debian release, with its context, file, build arguments and tags.
+  Versions are written there only (`containers/AGENTS.md`).
+- **Only what changed:** a target whose resolved definition differs from
+  the base's (the same `--print`, on a worktree of the base: a bumped
+  version, a new line), or whose folder changed (its docs and Bake file
   excepted), every one when the workflow changed, on the weekly rebuild
   and manual runs. Since a pull request's base, or for a push the
   workflow's last successful run on the branch: a cancelled or failed
   run never pushed, so the next one builds its changes too. No such run:
   every image.
+- **Bake only describes, the workflow builds:** `docker/github-builder`'s
+  Bake workflow pushes before anything else, which leaves no place for
+  the scan on pull requests, and builds one target per call. The item's
+  build arguments go to `docker/build-push-action`, plus
+  `SOURCE_DATE_EPOCH` from the last commit (Bake's file can't hold it: it
+  would change on every commit).
+- **Every tag of an item** goes to one `imagetools create` and gets its
+  own signature; the scan's baseline is the first tag.
 - **`docker/build-push-action`** on a `docker-container` builder (the
   docker driver can't attest). The image sets its own
   `org.opencontainers.image.source` label.
@@ -91,8 +103,20 @@ timezone, labels, semantic commits, action digests and automerge under
   for a broken or malicious release to be pulled, and for CRI-O to
   publish a Kubernetes minor release. Not for images: Renovate gets their
   dates from Docker Hub only, and holds an update without one.
-- **Tags, no digests**, except actions: a digest on `FROM` would freeze
-  the base between rebuilds, and land in `ARG BASE_VERSION`, the tag.
+- **Digests on actions and application images' `FROM`**, tags on bootc
+  bases: a digest there would freeze the base between rebuilds, and land
+  in `ARG BASE_VERSION`, the tag. An application image's version is in
+  its Bake file, so a digest costs nothing: its updates are grouped with
+  the Debian snapshot, weekly, automerged (the images' build and smoke
+  test run on the pull request).
+- **One manager for every Bake file:** a `# renovate:` comment before
+  each version names its datasource and lookup fields; the next line's
+  quoted version and checksum are what Renovate replaces (the checksum
+  as `currentDigest`: a git tag's commit, peeled). Nothing to add to
+  `renovate.json5` for a new image, or a new line; `renovate.yml`'s
+  `extract` job fails on a comment Renovate doesn't pick up. The
+  `debian-snapshot` custom datasource lists `snapshot.debian.org`'s
+  timestamps; Debian's packages follow the weekly bump.
 - **Automerged once CI passes:** actions (grouped), and minor and patch
   releases of what CI exercises (build tools, applications with a server
   test) or the docs only use (hadolint, Renovate's validator). Each
