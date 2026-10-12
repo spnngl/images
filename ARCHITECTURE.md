@@ -9,7 +9,7 @@ Dalec (see each one's section).
 
 For a bootc image there are two stages:
 
-1. **Container image**: `podman build` on `images/<name>/Containerfile`.
+1. **Container image**: `podman build` on `bootc/<name>/Containerfile`.
    This is what hosts boot and update from.
 2. **Disk image**: [image-builder](https://github.com/osbuild/image-builder)
    turns the container image into a qcow2 used for the first install. Later
@@ -30,15 +30,20 @@ For a bootc image there are two stages:
 │       ├── betterleaks-github.yml    # daily: secrets in PRs, issues
 │       └── image-scan.yml      # daily: vulnerabilities of the pushed images
 ├── .hadolint.yaml              # hadolint config for every Containerfile
-├── images/                     # shared build context for every image
+├── bootc/                      # shared build context for every bootc image
 │   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
 │   ├── k3s/                    # shared by every kubeenv stage (not an image)
 │   │   ├── install.sh          # k3s and CRI-O install
 │   │   └── sysroot/...         # CRI-O configuration, kube.slice, swap
-│   └── <name>/                 # one folder per image
+│   └── <name>/                 # one folder per bootc image
+│       ├── Containerfile
+│       └── sysroot/...         # files copied as is into the image root:
+│                               # common/, then <BASE_VERSION>/
+├── images/                     # shared build context for every application image
+│   ├── .containerignore        # same as bootc/'s
+│   └── <name>/                 # one folder per application image
 │       ├── Containerfile       # or spec.yml, for a Dalec image
 │       └── sysroot/...         # files copied as is into the image root
-│                               # (bootc: common/, then <BASE_VERSION>/)
 ├── scripts/
 │   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
 │   ├── sabnzbd-lock.sh         # regenerate images/sabnzbd/requirements.lock
@@ -51,7 +56,7 @@ For a bootc image there are two stages:
 
 ## Images
 
-### `images/fedora`
+### `bootc/fedora`
 
 An image derived from `quay.io/fedora/fedora-bootc:44`, with either
 Docker or k3s. Stages:
@@ -63,7 +68,7 @@ Docker or k3s. Stages:
 - `kubeenv` (`FROM base`, `podman build --target kubeenv`): adds k3s, no
   Docker. Tag `<name>:<version>-v<Kubernetes minor release>k3s`. Every
   image's `kubeenv` runs the
-  same `images/k3s/install.sh`, bind-mounted rather than copied (buildah
+  same `bootc/k3s/install.sh`, bind-mounted rather than copied (buildah
   still keys its cache on the script's content). It installs k3s in
   `/usr`, with a unit per role, both disabled: each host picks its role
   by hand. The k3s release (its tag, `v<Kubernetes release>+k3s<build>`)
@@ -76,7 +81,7 @@ Docker or k3s. Stages:
   `k3s` and `suffix` in one replacement, and the Containerfiles' default,
   in one PR (see "Updates").
   The container runtime is CRI-O (same minor release, with crun),
-  configured by `images/k3s/sysroot/`, copied after the script, which
+  configured by `bootc/k3s/sysroot/`, copied after the script, which
   also puts k3s and CRI-O in `kube.slice`, out of `system.slice`, and
   sets up swap on zram, which pods use through the kubelet's
   `LimitedSwap` (K3S.md, "Swap"). Cilium
@@ -109,12 +114,12 @@ Both images end with `bootc container lint`. The host system:
   installed). See "Firewalld" below for the `firewall-offline-cmd` option
   this needs.
 
-### `images/almalinux`
+### `bootc/almalinux`
 
 An image derived from `quay.io/almalinuxorg/almalinux-bootc:10`,
-close to `images/fedora` (Docker, firewalld, the same TZ and chrony setup),
+close to `bootc/fedora` (Docker, firewalld, the same TZ and chrony setup),
 plus country geo-blocking and threat-feed blocklists on the public
-zone. Same stages, `dockerenv` and `kubeenv`, as `images/fedora`.
+zone. Same stages, `dockerenv` and `kubeenv`, as `bootc/fedora`.
 
 Geo-blocking and blocklists:
 
@@ -127,12 +132,12 @@ Geo-blocking and blocklists:
   that isn't dropped still goes through the existing `public` zone rules
   unchanged.
 - IPv4 only, like the rest of both images: IPv6 is disabled by
-  `images/fedora/sysroot/common/etc/sysctl.d/990-disable-ipv6.conf`. IPv6
+  `bootc/fedora/sysroot/common/etc/sysctl.d/990-disable-ipv6.conf`. IPv6
   entries in the threat feeds are skipped.
 - The country and blocklist data is baked in at build time, not fetched
   at runtime. A build-only stage, `geoblock`, downloads the ipdeny zones
   of every country (one archive) and the feeds with `ADD`, then
-  `images/almalinux/geoblock.nu` turns the blocked countries and the
+  `bootc/almalinux/geoblock.nu` turns the blocked countries and the
   feeds into firewalld ipsets. The stage is the `ghcr.io/nushell/nushell`
   image with nushell as its `SHELL`: its `RUN` is nushell code. Source
   of truth: `github.com/nushell/nushell`, at that image's tag.
@@ -159,7 +164,7 @@ Geo-blocking and blocklists:
   that changed.
 - `firewall-offline-cmd --check-config` does not validate ipset entries,
   so `geoblock.nu` is the only thing that does. Its tests
-  (`images/almalinux/test_geoblock.nu`) run before it processes the real
+  (`bootc/almalinux/test_geoblock.nu`) run before it processes the real
   data, on every build.
 - A reverse proxy such as Caddy must run with `network_mode: host`:
   Docker publishes ports (`-p`) by DNATing before firewalld's policies
@@ -179,12 +184,12 @@ Geo-blocking and blocklists:
   linux/amd64/v2`). bootc has no such option: `bootc upgrade` and
   `bootc switch` always fetch `linux/amd64`. See "Known limits".
 
-### `images/centos`
+### `bootc/centos`
 
 An image derived from `quay.io/centos-bootc/centos-bootc:stream10`,
-the same host system as `images/fedora` with almalinux's packages
+the same host system as `bootc/fedora` with almalinux's packages
 (EPEL, from CentOS' `extras-common` repository), without geo-blocking.
-Same stages, `dockerenv` and `kubeenv`, as `images/fedora`. Docker comes
+Same stages, `dockerenv` and `kubeenv`, as `bootc/fedora`. Docker comes
 from Docker's CentOS repository.
 
 - **`BASE_VERSION` is the CentOS Stream major release (`10`)**, and the
@@ -224,7 +229,7 @@ Source of truth: `github.com/firewalld/firewalld` (`doc/xml` for docs,
   (`INVALID_IPSET`); an invalid address in an ipset is silently ignored,
   and overlapping or empty ipsets are accepted. Anything that loads
   ipset entries from external data has to validate them itself; see
-  `images/almalinux/geoblock.nu`.
+  `bootc/almalinux/geoblock.nu`.
 
 ### `images/cs-firewall-bouncer`
 
@@ -684,24 +689,28 @@ release build, `cmd/` for flags and variables).
 
 ## Design decisions
 
-- **The build context is the shared `images/` folder, not each image's
-  own folder.** `scripts/build.sh` passes `-f images/<name>/Containerfile`
-  with context `images/`. This is what lets
-  `images/almalinux/Containerfile` do `COPY --link ./fedora/sysroot/common/ /`
+- **bootc images in `bootc/`, application images in `images/`.** They
+  share no build input: different builders (podman, `docker buildx`),
+  workflows and rules (AGENTS.md). The folder says which kind an image
+  is, and which workflow builds it.
+- **The build context is the shared `bootc/` or `images/` folder, not
+  each image's own folder.** `scripts/build.sh` passes `-f
+  bootc/<name>/Containerfile` with context `bootc/`. This is what lets
+  `bootc/almalinux/Containerfile` do `COPY --link ./fedora/sysroot/common/ /`
   to reuse fedora's base configuration instead of duplicating it. Each
-  image's own files live in `images/<name>/sysroot/`, which mirrors the
+  image's own files live in `<name>/sysroot/`, which mirrors the
   root filesystem. A bootc image's `sysroot/` has a `common/` folder,
   then a folder per base release (`sysroot/<BASE_VERSION>/`), copied
   after it, for the files that differ (`policy.json`): almalinux builds
   9 and 10 from one Containerfile, and a base upgrade adds a folder
   instead of editing the one the running release uses. One
-  `.containerignore` at `images/` (buildah only reads it from the
+  `.containerignore` per build context (buildah only reads it from the
   context root, or through `--ignorefile`) keeps every
   `Containerfile` out of `COPY . /`; there is no need for a copy per
   image folder.
 - **`COPY` rather than `ADD`.** `ADD` also downloads URLs and unpacks
   archives, which we don't want for plain files. Exception:
-  `images/almalinux`'s build-only `geoblock` stage uses `ADD <url>` on
+  `bootc/almalinux`'s build-only `geoblock` stage uses `ADD <url>` on
   purpose, for its content-digest build cache.
 - **Content goes in `/usr`, `/var` stays empty.** When deployed, `/usr` is
   read-only and replaced on every update. `/etc` is merged three ways on
@@ -714,7 +723,7 @@ release build, `cmd/` for flags and variables).
 - **The base image is pinned to a major release, `ARG BASE_VERSION`.**
   `latest` would jump to the next Fedora release without warning. The
   same value is the image's own tag, so a host tracking
-  `images/fedora:<version>` gets every rebuild through `bootc upgrade`,
+  `ghcr.io/spnngl/images/fedora:<version>` gets every rebuild through `bootc upgrade`,
   and only moves to the next release with `bootc switch`. The Containerfile default
   is for local builds; CI passes it from its matrix.
 - **`bootc container lint` without `--fatal-warnings`.** Errors fail the
@@ -771,15 +780,13 @@ Container images only: disk images need `config.toml`.
   image and package updates, fresh almalinux geo-blocking data) and
   manual dispatch all push. Pull requests only lint and build. Pushes
   and pull requests only run it when a bootc image's input changed
-  (`paths`: `images/fedora/`, `images/almalinux/`, `images/centos/`,
-  `images/k3s/`, the
-  files at the root of `images/`, the workflow), and then rebuild every
+  (`paths`: `bootc/`, the workflow), and then rebuild every
   bootc image: they share most of their files, and one rule is simpler
   than tracking which folder each Containerfile reads. A failed push is
   retried by the next bootc change or the weekly rebuild.
 - **The matrix is the list of images**, each with its base version,
   passed as `--build-arg BASE_VERSION`. A new bootc image goes there
-  too, and in `paths`; Renovate bumps the versions. The `push` job
+  too; Renovate bumps the versions. The `push` job
   reuses it through a YAML anchor.
 - **Jobs run on `ubuntu-26.04` and `ubuntu-26.04-arm`, not
   `ubuntu-latest`.** They ship Podman
@@ -787,7 +794,7 @@ Container images only: disk images need `config.toml`.
   Containerfiles use `COPY --link` (buildah 1.41+). Builds use the
   runner's rootless podman, where `build.sh` uses rootful podman.
 - **Same `podman build` flags as `build.sh`** (`--format=docker`, context
-  `images/`), plus an `org.opencontainers.image.source` label that links
+  `bootc/`), plus an `org.opencontainers.image.source` label that links
   the ghcr.io package to the repository, and `--platform` set to the
   runner's own.
 - **Each platform builds natively, on its own runner:** no QEMU, so
@@ -815,9 +822,8 @@ podman: it can't run Dalec, and one way to build, attest and sign every
 application image is simpler). The differences:
 
 - **Images are found, not listed**: a `discover` job makes the matrix
-  from every `images/<name>/spec.yml` and every `images/<name>/Containerfile`
-  that doesn't run `bootc container lint` (a bootc image's), its
-  version being the spec's `args.BASE_VERSION` (read with `yq`) or the
+  from every `images/<name>/spec.yml` and every `images/<name>/Containerfile`,
+  its version being the spec's `args.BASE_VERSION` (read with `yq`) or the
   Containerfile's `ARG BASE_VERSION` default. A new application image
   needs no workflow change.
 - **Only the images that changed**: those whose folder changed, or
@@ -859,7 +865,7 @@ application image is simpler). The differences:
 
 spnngl/.github's `scan-image` action runs Grype and Trivy on an image.
 Both: Trivy has no Fedora vulnerability data (it skips the packages of
-`images/fedora`), Grype has; their other sources differ too.
+`bootc/fedora`), Grype has; their other sources differ too.
 
 - **Pull requests:** each build job scans its image and platform (an
   OCI layout: `podman save --format oci-dir`, buildx `type=oci`), and
@@ -925,7 +931,7 @@ commits, action digests, automerge under `.github/`).
   use (hadolint, Renovate's
   validator). Every Silo and pgsty/mc release, major included: they are
   versioned by date, a new year is a major update. A Kubernetes minor release fails CI until CRI-O publishes its
-  repository for it (`images/k3s/install.sh`): re-run the PR's checks then.
+  repository for it (`bootc/k3s/install.sh`): re-run the PR's checks then.
 - **Reviewed by hand**, each PR saying what to check: base images (CI
   fail until their `sysroot/<BASE_VERSION>/` is added, see "Signing"),
   SABnzbd and uv (regenerate the lock), cs-firewall-bouncer and
@@ -947,7 +953,7 @@ a local build upgrades from CI's signed images.
 - **Keys:** the private key is the `COSIGN_PRIVATE_KEY` repository secret,
   never in git. It has no passphrase (CI passes an empty one).
   With one, add a secret and write it to the `--sign-passphrase-file`. The public key is
-  `images/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub`,
+  `bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub`,
   in `/usr` so that it updates with the image.
 - **`podman push --sign-by-sigstore-private-key`, not `cosign sign`.**
   bootc verifies through containers/image (skopeo), which reads sigstore
@@ -978,7 +984,7 @@ a local build upgrades from CI's signed images.
   CentOS Stream 10, which `/etc`'s overrides), since `policy.json` has
   no drop-in directory.
   When a base image changes its `policy.json`, port the change: before
-  replacing it, the Containerfiles check with `images/fedora/policy.jq`
+  replacing it, the Containerfiles check with `bootc/fedora/policy.jq`
   that ours is still the base's plus those changes, and fail the build
   otherwise. A new base release fails it until its folder is added; so
   does a change within a release, at the weekly rebuild.
@@ -1004,7 +1010,7 @@ a local build upgrades from CI's signed images.
 QEMU with HVF acceleration, the `virt` machine and the Homebrew aarch64 UEFI
 firmware. The serial console is in the terminal (`Ctrl-a x` quits) and SSH
 is forwarded from `localhost:${SSH_PORT:-2222}` to the guest sshd port
-42022, set by `images/fedora`. `-snapshot` throws away
+42022, set by `bootc/fedora`. `-snapshot` throws away
 disk changes on exit.
 
 It only supports macOS on Apple Silicon, and says so when run anywhere else.

@@ -1,7 +1,8 @@
 # Build the application images (see ARCHITECTURE.md): Dalec images
-# (images/<name>/spec.yml) and Containerfile ones (images/<name>/Containerfile,
-# not bootc), those that changed since the last build, every one on the
-# weekly rebuild and manual runs (see the discover job). Then push them to
+# (images/<name>/spec.yml) and Containerfile ones (images/<name>/Containerfile;
+# bootc images: bootc/, build-bootc.yml), those that changed since the last
+# build, every one on the weekly rebuild and manual runs (see the discover
+# job). Then push them to
 # ghcr.io/spnngl/images/<name>:<version>, <version> being the upstream
 # release (the spec's args.BASE_VERSION, the Containerfile's ARG
 # BASE_VERSION default). Pull requests only lint and build (which runs
@@ -41,8 +42,8 @@ defaults:
 
 jobs:
   # The images to build. Found, not listed: every folder of images/ with a
-  # spec.yml or a Containerfile, bootc ones excepted, its version being
-  # where Renovate updates it, the only place it is written.
+  # spec.yml or a Containerfile, its version being where Renovate updates
+  # it, the only place it is written.
   # Only those that changed: a file of the image's folder, or every image
   # for a file at the root of images/ (the shared build context) or this
   # workflow.
@@ -94,8 +95,7 @@ jobs:
 
       # nullglob: no image gives [], not the pattern. yq -e fails on a spec
       # without BASE_VERSION, the version check on a Containerfile without
-      # an ARG BASE_VERSION default. A Containerfile running bootc container
-      # lint is a bootc image's (AGENTS.md): build-bootc.yml builds it.
+      # an ARG BASE_VERSION default.
       # Dalec images: their target is the minimal image, from scratch (see
       # the specs). Containerfiles: the last stage.
       - id: find
@@ -109,7 +109,6 @@ jobs:
               jq -cn --arg file "${file}" --arg version "${version}" '{file: $file, version: $version, target: "trixie/container"}'
             done
             for file in images/*/Containerfile; do
-              grep -q '^RUN bootc container lint' "${file}" && continue
               version="$(sed -n 's/^ARG BASE_VERSION=//p' "${file}")"
               [[ -n "${version}" ]] || { echo "::error file=${file}::no ARG BASE_VERSION=<version>"; exit 1; }
               jq -cn --arg file "${file}" --arg version "${version}" '{file: $file, version: $version, target: ""}'
@@ -205,8 +204,8 @@ jobs:
       # dates the image with it.
       - run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "${GITHUB_ENV}"
 
-      # Context is images/, as in build-bootc.yml. target: none ("") for a
-      # Containerfile, its last stage.
+      # Context is images/, the application images' shared build context.
+      # target: none ("") for a Containerfile, its last stage.
       # Attestations, attached to the image in its index
       # (https://docs.docker.com/build/metadata/attestations/):
       # - provenance mode=max: also the build args and each step's
@@ -345,5 +344,5 @@ jobs:
         run: |-
           mapfile -t digests < <(docker buildx imagetools inspect --raw "${TAG}" | jq -r '.manifests[].digest')
           for digest in "${DIGEST}" "${digests[@]}"; do
-            cosign verify --key images/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub --insecure-ignore-tlog=true "${IMAGE}@${digest}" > /dev/null
+            cosign verify --key bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub --insecure-ignore-tlog=true "${IMAGE}@${digest}" > /dev/null
           done

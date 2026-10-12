@@ -42,7 +42,7 @@
             "description": "centos-bootc major releases: the build-bootc.yml matrix and the Containerfile's ARG BASE_VERSION, one dependency. Not the dockerfile manager's (disabled for it in packageRules): the base image tag is stream<BASE_VERSION>, which it can't write back into the ARG. Only the stream<n> tags count, as <n>.",
             "managerFilePatterns": [
                 "/^\\.github/workflows/build-bootc\\.yml$/",
-                "/^images/centos/Containerfile$/"
+                "/^bootc/centos/Containerfile$/"
             ],
             "matchStrings": [
                 "- name: centos\\n\\s+version: \"(?<currentValue>[^\"]+)\"",
@@ -68,7 +68,7 @@
         {
             "customType": "regex",
             "description": "k3s release of kubeenv: the Containerfiles' ARG INSTALL_K3S_VERSION default (same dependency as the build-bootc.yml matrix, same PR).",
-            "managerFilePatterns": ["/^images/[^/]+/Containerfile$/"],
+            "managerFilePatterns": ["/^bootc/[^/]+/Containerfile$/"],
             "matchStrings": ["ARG INSTALL_K3S_VERSION=(?<currentValue>\\S+)"],
             "depNameTemplate": "k3s",
             "packageNameTemplate": "k3s-io/k3s",
@@ -236,7 +236,7 @@
             ]
         },
         {
-            "description": "k3s: automerge (k3s builds, Kubernetes patch and minor releases: there is no 2.x). A minor release fails CI until CRI-O publishes its repository (images/k3s/install.sh); re-run the PR's checks then. Patch releases get their own PR meanwhile.",
+            "description": "k3s: automerge (k3s builds, Kubernetes patch and minor releases: there is no 2.x). A minor release fails CI until CRI-O publishes its repository (bootc/k3s/install.sh); re-run the PR's checks then. Patch releases get their own PR meanwhile.",
             "matchDepNames": ["k3s"],
             "automerge": true,
             "separateMinorPatch": true
@@ -250,20 +250,20 @@
             ]
         },
         {
-            "description": "Base images: never automerged, a new major release changes the image tag. CI fails until its sysroot/<BASE_VERSION>/ (policy.json) is added: images/fedora/policy.jq.",
+            "description": "Base images: never automerged, a new major release changes the image tag. CI fails until its sysroot/<BASE_VERSION>/ (policy.json) is added: bootc/fedora/policy.jq.",
             "matchDepNames": [
                 "quay.io/fedora/fedora-bootc",
                 "quay.io/almalinuxorg/almalinux-bootc"
             ],
             "prBodyNotes": [
-                "Before merging, add `images/<name>/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's `/etc/containers/policy.json` plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:{{{currentValue}}} cat /etc/containers/policy.json) <(podman run --rm {{{depName}}}:{{{newValue}}} cat /etc/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
+                "Before merging, add `bootc/<name>/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's `/etc/containers/policy.json` plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:{{{currentValue}}} cat /etc/containers/policy.json) <(podman run --rm {{{depName}}}:{{{newValue}}} cat /etc/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
             ]
         },
         {
-            "description": "CentOS Stream: the same as the base images above, but the base image tag is stream<BASE_VERSION>, and its policy.json is in /usr/share/containers (images/centos/Containerfile).",
+            "description": "CentOS Stream: the same as the base images above, but the base image tag is stream<BASE_VERSION>, and its policy.json is in /usr/share/containers (bootc/centos/Containerfile).",
             "matchDepNames": ["quay.io/centos-bootc/centos-bootc"],
             "prBodyNotes": [
-                "Before merging, add `images/centos/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's policy.json plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:stream{{{currentValue}}} cat /usr/share/containers/policy.json) <(podman run --rm {{{depName}}}:stream{{{newValue}}} cat /usr/share/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
+                "Before merging, add `bootc/centos/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's policy.json plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:stream{{{currentValue}}} cat /usr/share/containers/policy.json) <(podman run --rm {{{depName}}}:stream{{{newValue}}} cat /usr/share/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
             ]
         },
         {

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build the bootc container image from images/<name>/, then turn it into a
+# Build the bootc container image from bootc/<name>/, then turn it into a
 # qcow2 disk image with image-builder.
 #
 # Usage: scripts/build.sh [name]    (default: fedora)
@@ -23,20 +23,17 @@ die() {
     exit 1
 }
 
-containerfile="images/${name}/Containerfile"
-[[ -f ${containerfile} ]] || die "${containerfile} not found"
+containerfile="bootc/${name}/Containerfile"
+# Application images (images/<name>/) have no disk image to build.
+[[ -f ${containerfile} ]] || die "${containerfile} not found: not a bootc image"
 version="$(sed -n -E 's/^ARG BASE_VERSION=([^[:space:]]+).*/\1/p' "${containerfile}")"
 [[ -n ${version} ]] || die "${containerfile} has no ARG BASE_VERSION=<version>"
 tag="ghcr.io/spnngl/images/${name}:${version}"
-# An application image (no bootc lint, see AGENTS.md) has no disk image to
-# build: image-builder would only fail late, after the build.
-grep -q '^RUN bootc container lint' "${containerfile}" ||
-    die "${containerfile} is not a bootc image, build it with: podman build --format=docker -f ${containerfile} -t ${tag} images/"
 [[ -f config.toml ]] || die "config.toml not found, start from: cp config.example.toml config.toml"
 [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == false ]] ||
     die "podman is rootless, on macOS run: podman machine stop; podman machine set --rootful; podman machine start"
 
-podman build --format=docker -f "${containerfile}" -t "${tag}" "images/"
+podman build --format=docker -f "${containerfile}" -t "${tag}" "bootc/"
 
 # --privileged and label=type:unconfined_t: image-builder relabels files and
 # sets up loop devices, which a confined container is not allowed to do.
