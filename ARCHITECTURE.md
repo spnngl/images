@@ -511,11 +511,10 @@ Source of truth: `github.com/minio/minio` at the `BASE_VERSION` tag
   dependencies are frozen at the tag's versions (`amqp091-go`, `grpc`,
   `golang.org/x/crypto`, `golang.org/x/net`...), with fixes they will
   never get. The scanners' code scanning alerts are the current list;
-  no ignore file hides them. Kept over the maintained
-  [pgsty/silo](https://github.com/pgsty/silo) fork (hundreds of commits
-  on top of MinIO, renamed, unaffiliated) and over backports of our own
-  (a fork to maintain). Only on a network where every client is
-  trusted, never exposed; `images/garage` is the maintained S3 store.
+  no ignore file hides them. No backports of ours: a fork to maintain.
+  Only on a network where every client is trusted, never
+  exposed: `images/silo` is the maintained MinIO, `images/garage` the
+  other maintained S3 store.
 - **The commit is pinned** (`ADD --checksum`): MinIO holds the data, and
   the tag is all that is left to trust. buildah ignores `--checksum` for
   git and its docker-client backend refuses `--keep-git-dir`: CI's
@@ -566,6 +565,54 @@ Source of truth: `github.com/minio/minio` at the `BASE_VERSION` tag
   Probes: `GET /minio/health/live` and `/minio/health/ready` on 9000.
 - **Updates:** Renovate follows the repository's tags, never automerged:
   a release can rewrite the data for good, back up `/data` first.
+
+### `images/silo`
+
+[Silo](https://github.com/pgsty/silo) (S3-compatible object storage, Go),
+the community fork of the MinIO server published by Pigsty, built from
+source like `images/minio`: same build, user, layout and runtime
+contract, read that section. Only the differences are here.
+
+Source of truth: `github.com/pgsty/silo` at the `BASE_VERSION` tag
+(`.github/workflows/release.yml` and `.github/goreleaser.yml` for the
+release build, `cmd/` for flags and variables, `Dockerfile.distroless`
+for upstream's image); docs: <https://silo.pgsty.com>.
+
+- **Why a fork:** MinIO Inc. wound down MinIO's community edition: the
+  console cut back to a stub, no binaries or images, then the repository
+  archived, with known vulnerabilities and frozen dependencies
+  (`images/minio`). Silo forks the open-source server under the same
+  license (AGPL-3.0-or-later, no CLA) and maintains it: security fixes
+  with a public advisory each, dependency and Go updates, a release
+  every one or two months, the full console back
+  (`github.com/pgsty/silo-console`), MinIO's telemetry and update checks
+  removed. Not affiliated with MinIO Inc.
+- **Compatible with MinIO**, by contract: the `MINIO_*` variables,
+  `/minio/*` routes, `x-minio-*` headers, `minio_*` metrics and the
+  on-disk format (`.minio.sys`) are kept, so MinIO's docs, clients and
+  `/data` apply. The binary is `silo` (no `minio` alias), its default
+  config folder `~/.silo`.
+- **Next to `images/minio`, not instead of it:** `images/minio` is
+  MinIO's last release as upstream tagged it, without a third party's
+  commits (hundreds on top of MinIO); Silo is the maintained one, the
+  choice for anything new. Moving from MinIO is a change of image on the
+  same `/data` (back it up: moving back is not promised).
+- **`HEALTHCHECK`, upstream's:** `silo healthcheck ready`, built into
+  the binary, so it runs on `scratch`. It probes `/minio/health/ready`
+  on `MINIO_ADDRESS` (`:9000` by default; a `--address` flag in `CMD`
+  is invisible to it), over HTTPS when `/certs` holds a key pair
+  (`--certs-dir` repeated: a `HEALTHCHECK` doesn't go through the
+  entrypoint). Kubernetes ignores it: same probes as `images/minio`.
+- **No `MINIO_UPDATE`:** Silo removed in-place updates and warns when
+  it is set.
+- **`NOTICE` too** in `/usr/share/doc/silo/`, with `LICENSE` and
+  `CREDITS`: upstream ships the three.
+- **Smoke tests:** `images/minio`'s, plus the `HEALTHCHECK`'s command
+  against the test server.
+- **Updates:** Renovate follows the repository's tags (MinIO's
+  versioning), automerged once CI passes: the build stage tests the
+  server, and Silo keeps the data format by contract. Back up `/data`
+  anyway: a release can't be rolled back once it has written to it.
 
 ## Design decisions
 
@@ -805,7 +852,8 @@ commits, action digests, automerge under `.github/`).
   of the build tools and applications CI exercises (golang, Rust,
   nushell, Dalec frontend, par2cmdline-turbo, Garage) or the docs only
   use (hadolint, Renovate's
-  validator). A Kubernetes minor release fails CI until CRI-O publishes its
+  validator). Every Silo release, major included: it is versioned by
+  date, a new year is a major update. A Kubernetes minor release fails CI until CRI-O publishes its
   repository for it (`images/k3s/install.sh`): re-run the PR's checks then.
 - **Reviewed by hand**, each PR saying what to check: base images (CI
   fail until their `sysroot/<BASE_VERSION>/` is added, see "Signing"),
