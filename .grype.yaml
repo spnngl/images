@@ -1,0 +1,10 @@
+# Grype's false positives, for every image (spnngl/.github's scan-image
+# action). One rule per finding, with why it doesn't apply:
+#
+#   - vulnerability: CVE-YYYY-NNNNN
+#     package:
+#       name: <package>
+#     reason: <why it doesn't apply>
+#
+# Rule fields: IgnoreRule in github.com/anchore/grype, grype/match/ignore.go.
+ignore: []

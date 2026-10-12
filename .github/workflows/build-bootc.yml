@@ -11,14 +11,14 @@ name: build-bootc
 on:
   # Only when a bootc image's input changed, and then every bootc image:
   # they share most of their files. bootc/*.sh: the local scripts
-  # (build.sh, run.sh), not build inputs.
+  # (build.sh, run.sh), and *.md, the docs: not build inputs.
   push:
     branches:
       - main
     paths: &paths
       - bootc/**
       - "!bootc/*.sh"
-      - "!bootc/*.md"
+      - "!bootc/**/*.md"
       - .github/workflows/build-bootc.yml
   pull_request:
     paths: *paths
@@ -172,7 +172,7 @@ jobs:
           podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${NAME}/Containerfile" bootc/
       # Pull requests: fail on a Critical vulnerability with a fix that the
       # pushed image doesn't have, before the merge pushes it (spnngl/.github's
-      # scan-image action; see ARCHITECTURE.md, "Vulnerability scanning").
+      # scan-image action; see .github/REFERENCES.md, "Vulnerability scanning").
       # The pushed images are scanned daily (image-scan.yml). Given as an
       # OCI layout: both scanners read it, not both podman's storage.
       - if: github.event_name == 'pull_request'
@@ -279,7 +279,7 @@ jobs:
           echo "digest=$(< "${RUNNER_TEMP}/digest")" >> "${GITHUB_OUTPUT}"
       # SLSA build provenance (workflow, commit, run) for the manifest list,
       # pushed next to the image as an OCI referrer. Hosts don't read it
-      # (see ARCHITECTURE.md, "Signing"); check it with
+      # (see bootc/REFERENCES.md, "Signing"); check it with
       # gh attestation verify oci://<tag> -R <owner>/<repo>.
       # No storage record: it needs an organization-owned repository.
       - uses: actions/attest-build-provenance@v4

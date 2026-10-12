@@ -1,7 +1,7 @@
 # The Fedora base image sets no default root filesystem type, so without this
 # `bootc install to-disk` needs `--filesystem`. Higher-numbered files win.
-# image-builder reads it too. mkfs.btrfs comes from btrfs-progs, installed in
-# the Containerfile.
+# image-builder reads it too. xfs, not btrfs: the CentOS kernel has no btrfs,
+# and every image shares this file.
 #
 # See https://bootc.dev/bootc/bootc-install.html
 [install.filesystem.root]

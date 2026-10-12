@@ -91,7 +91,7 @@ COPY --link ./fedora/sysroot/${BASE_VERSION}/ /
 
 
 # Kubernetes environment: k3s, without Docker. Steps and reasons in
-# bootc/k3s/install.sh, shared by every image; setup in K3S.md.
+# bootc/k3s/install.sh, shared by every image; setup in bootc/K3S.md.
 FROM base AS kubeenv
 
 # k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
