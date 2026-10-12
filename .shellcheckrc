@@ -1,0 +1,4 @@
+# Read by shellcheck from every script's folder up (shellcheck(1), RC
+# FILES): editors and CI apply the same rules.
+# SC2250: ${var} braces everywhere, one style for every expansion.
+enable=require-variable-braces
