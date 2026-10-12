@@ -119,6 +119,17 @@
         },
         {
             "customType": "regex",
+            "description": "Jellyfin release: the spec's args.BASE_VERSION, from the jellyfin-server package of Jellyfin's trixie repository (<version>+deb13), not GitHub: the spec repackages it, so a PR only comes once it is installable. amd64's index: both architectures are published together. build-dalec.yml reads the version from the spec.",
+            "managerFilePatterns": ["/^images/jellyfin/spec\\.yml$/"],
+            "matchStrings": ["BASE_VERSION: \"(?<currentValue>[^\"]+)\""],
+            "depNameTemplate": "jellyfin-server",
+            "datasourceTemplate": "deb",
+            "registryUrlTemplate": "https://repo.jellyfin.org/debian?suite=trixie&components=main&binaryArch=amd64",
+            "extractVersionTemplate": "^(?<version>\\d+\\.\\d+(?:\\.\\d+)?)\\+deb13$",
+            "versioningTemplate": "loose"
+        },
+        {
+            "customType": "regex",
             "description": "Dalec frontend of the specs (# syntax= line, which the dockerfile manager only reads in Containerfiles).",
             "managerFilePatterns": ["/^images/[^/]+/spec\\.yml$/"],
             "matchStrings": [
@@ -231,6 +242,13 @@
             "matchDepNames": ["metal-stack/nftables-exporter"],
             "prBodyNotes": [
                 "Before merging, port upstream's option changes to `images/nftables-exporter/nftables_exporter.yaml`: https://github.com/metal-stack/nftables-exporter/compare/v{{{currentValue}}}...v{{{newValue}}} (`options.go`). If CI fails with `go.mod requires go >= ...`, bump `golang-<version>-go` in the spec. A checksum-only update means the tag was moved upstream."
+            ]
+        },
+        {
+            "description": "Jellyfin: never automerged, a release migrates the database and settings for good.",
+            "matchDepNames": ["jellyfin-server"],
+            "prBodyNotes": [
+                "Before merging, read the release notes (https://github.com/jellyfin/jellyfin/releases/tag/v{{{newValue}}}) and back up `/config`: the new version migrates the database and settings, the old one can't read them any more. Check the spec's command-line options against upstream's `Jellyfin.Server/StartupOptions.cs`."
             ]
         },
         {

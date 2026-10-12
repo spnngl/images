@@ -1,0 +1,183 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.1
+#
+# Jellyfin media server, without its web client, built with Dalec
+# (https://project-dalec.github.io/dalec/): one Debian trixie package, the
+# server repackaged from Jellyfin's own trixie repository, installed into
+# the minimal image of the trixie/container target with jellyfin-ffmpeg8
+# from the same repository. That image is built from scratch out of the
+# package's dependency closure: no shell, no apt, but a dpkg database
+# scanners can read.
+#
+# Build (from the repo root):
+#   docker buildx build -f images/jellyfin/spec.yml --target trixie/container \
+#     -t ghcr.io/spnngl/images/jellyfin:<BASE_VERSION> images/
+#
+# Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
+# (database, settings, metadata, logs) and /cache (transcodes, images,
+# temporary files: TMPDIR) must be writable by it, media mounted wherever
+# the libraries point (read-only is enough). The root filesystem can be
+# read-only. /cache is rebuilt as needed: on Kubernetes, an emptyDir (on
+# disk, not medium: Memory; transcodes are large) is enough. API on
+# 8096/tcp, client discovery on 7359/udp. Probes: GET /health on 8096
+# ("Healthy"; Dalec images have no HEALTHCHECK). No web client
+# (--nowebclient): clients are the apps and Seerr; the first-run wizard
+# must be done through the API (/Startup) or a client that runs it.
+# Hardware transcoding, with the drivers jellyfin-ffmpeg bundles:
+# - Intel (amd64: VA-API, QSV, Vulkan), AMD (VA-API, Vulkan), Rockchip
+#   (arm64: MPP, RGA): pass /dev/dri (Rockchip: also its /dev/mpp_service,
+#   /dev/rga) and add the GID owning the devices (--group-add, or
+#   Kubernetes supplementalGroups).
+# - NVIDIA: the NVIDIA Container Toolkit injects the driver; request the
+#   GPU (--gpus, CDI or the device plugin's nvidia.com/gpu).
+# No Intel OpenCL (intel-opencl-icd isn't in trixie) nor Rockchip libmali:
+# HDR tone mapping on Intel uses VPP only, none on Rockchip.
+#
+# Renovate (renovate.json5) bumps BASE_VERSION (CI reads it from here) once
+# the server is in Jellyfin's trixie repository.
+
+args:
+  # Releases: https://github.com/jellyfin/jellyfin/releases, built for
+  # trixie in https://repo.jellyfin.org/debian (jellyfin-server
+  # <BASE_VERSION>+deb13).
+  BASE_VERSION: "12.2"
+
+name: jellyfin
+description: Jellyfin, the Free Software Media System (server only)
+website: https://jellyfin.org
+license: GPL-2.0-only
+packager: spnngl/images
+vendor: spnngl/images
+version: ${BASE_VERSION}
+revision: 1
+
+dependencies:
+  build:
+    # Jellyfin's own build (the .NET runtime included, self-contained), from
+    # their repository (extra_repos), copied below: repackaged, not built.
+    # Exact version, so a BASE_VERSION without a package fails the build.
+    # Installed in the build container, where its maintainer scripts
+    # (bash, adduser, systemd) can run; the image never runs them.
+    jellyfin-server:
+      version:
+        - = ${BASE_VERSION}+deb13
+  runtime:
+    # The ffmpeg fork Jellyfin requires (8.x for Jellyfin 12), with its own
+    # VA-API, QSV and Vulkan drivers. Not pinned, like Debian's packages: a
+    # rebuild picks up its fixes.
+    jellyfin-ffmpeg8: {}
+    # What jellyfin-server depends on, and the .NET runtime loads (ICU for
+    # globalization, OpenSSL for TLS, CA certificates for metadata
+    # providers, tzdata for TimeZoneInfo).
+    libicu76: {}
+    libssl3t64: {}
+    ca-certificates: {}
+    tzdata: {}
+    # SkiaSharp (images, posters) and ffmpeg's subtitle burn-in find fonts
+    # through fontconfig. Noto: Latin and most scripts, CJK.
+    libfontconfig1: {}
+    fonts-noto-core: {}
+    fonts-noto-cjk: {}
+    # Upstream preloads it (deb and Docker image): lower memory use than
+    # glibc's malloc. See image.env.
+    libjemalloc2: {}
+  extra_repos:
+    # Jellyfin's repository: jellyfin-server for the build,
+    # jellyfin-ffmpeg8 for the image. Dalec only takes the one-line format
+    # (it names the file *.list); the key is at
+    # /usr/share/keyrings/<key name>.
+    - keys:
+        # .asc: ASCII armored, apt ignores the key otherwise.
+        jellyfin.asc:
+          http:
+            url: https://repo.jellyfin.org/jellyfin_team.gpg.key
+            digest: sha256:a0cde241ae297fa6f0265c0bf15ce9eb9ee97c008904a59ab367a67d59532839
+            permissions: 0o644
+      config:
+        jellyfin:
+          inline:
+            file:
+              contents: |
+                deb [signed-by=/usr/share/keyrings/jellyfin.asc] https://repo.jellyfin.org/debian trixie main
+      envs:
+        - build
+        - install
+
+build:
+  env:
+    # No jellyfin-dbgsym package: the image would install it.
+    DEB_BUILD_OPTIONS: noautodbgsym
+  steps:
+    # The server as jellyfin-server installs it: .NET's dotnet publish
+    # output, the jellyfin executable included.
+    - command: cp -a /usr/lib/jellyfin/bin jellyfin
+
+artifacts:
+  # Upstream's binaries as they ship them: their deb build can't strip
+  # libpdfium.so (8-byte build ID), and the .NET ones are already stripped.
+  disable_strip: true
+  libs:
+    # Installed as /usr/lib/jellyfin.
+    jellyfin: {}
+
+image:
+  entrypoint: /usr/lib/jellyfin/jellyfin
+  # Upstream Docker image's layout: data and settings in /config, cache
+  # (transcodes, images) in /cache. --ffmpeg: jellyfin-ffmpeg isn't on the
+  # PATH.
+  cmd: >-
+    --datadir /config --configdir /config/config --logdir /config/log
+    --cachedir /cache --ffmpeg /usr/lib/jellyfin-ffmpeg/ffmpeg --nowebclient
+  env:
+    # No /etc/passwd entry for the user: ~ would not resolve.
+    - HOME=/config
+    # fontconfig's cache, written at first use.
+    - XDG_CACHE_HOME=/cache
+    # Temporary files (Jellyfin's in $TMPDIR/jellyfin, ASP.NET's key ring
+    # writes) on a writable volume: with a read-only root filesystem /tmp
+    # isn't, and Docker and Kubernetes mount no tmpfs there. A folder that
+    # exists: .NET doesn't create it. On disk, not in memory.
+    - TMPDIR=/cache
+    # No slash: ld.so searches the library path, so one value for every
+    # architecture.
+    - LD_PRELOAD=libjemalloc.so.2
+    # The toolkit's default (utility, compute) lacks video: no NVENC/NVDEC.
+    - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+  # Not root, numeric so Kubernetes' runAsNonRoot can check it. The image has
+  # no such user: the mounted folders must be writable by this UID/GID.
+  user: "65532:65532"
+  working_dir: /config
+  volumes:
+    /config: {}
+    /cache: {}
+  labels:
+    org.opencontainers.image.title: jellyfin
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: GPL-2.0-only
+    org.opencontainers.image.source: https://github.com/spnngl/images
+    # API on 8096/tcp, discovery on 7359/udp: Dalec has no EXPOSE
+    # equivalent.
+
+tests:
+  - name: jellyfin-ffmpeg runs
+    steps:
+      - command: /usr/lib/jellyfin-ffmpeg/ffmpeg -hide_banner -version
+        stdout:
+          contains:
+            - Jellyfin
+      - command: /usr/lib/jellyfin-ffmpeg/ffprobe -hide_banner -version
+        stdout:
+          contains:
+            - Jellyfin
+  - name: Jellyfin starts
+    steps:
+      # Not --version: it prints the version but exits 1 (Program.cs sends
+      # --version and --help to its parse error path). MigrateSystem starts
+      # the server (.NET runtime, SQLite, plugins), migrates an empty
+      # database and exits 0.
+      - command: >-
+          /usr/lib/jellyfin/jellyfin --mode MigrateSystem --nowebclient
+          --datadir /tmp/config --cachedir /tmp/cache
+        stdout:
+          contains:
+            - "Jellyfin version: ${BASE_VERSION}"
+            - jellyfin.db optimized successfully
