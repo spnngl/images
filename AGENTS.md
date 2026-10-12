@@ -5,7 +5,7 @@ each choice. Before a change, read the sections it touches:
 
 - `images/<name>/`: "`images/<name>`", "Design decisions" and "Known
   limits"
-- firewall of fedora or almalinux: "Firewalld (both images)"
+- firewall of a bootc image: "Firewalld (bootc images)"
 - `.github/workflows/`: "CI: ..." and "Vulnerability scanning"
 - `renovate.json5`, or a pinned version: "Updates"
 - `policy.json`, signing keys: "Signing"
@@ -53,7 +53,8 @@ Built with podman by `scripts/build.sh` and
 - buildah (Containerfiles under podman): `github.com/containers/buildah`
 - Base image tags:
   <https://quay.io/repository/fedora/fedora-bootc?tab=tags>,
-  <https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags>
+  <https://quay.io/repository/almalinuxorg/almalinux-bootc?tab=tags>,
+  <https://quay.io/repository/centos-bootc/centos-bootc?tab=tags>
 
 Rules:
 

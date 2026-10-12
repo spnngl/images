@@ -11,5 +11,5 @@ trustedRegistries:
   - docker.io
   - gcr.io
   - ghcr.io
-  # Base images: fedora-bootc, almalinux-bootc
+  # Base images: fedora-bootc, almalinux-bootc, centos-bootc
   - quay.io

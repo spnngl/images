@@ -39,6 +39,22 @@
         },
         {
             "customType": "regex",
+            "description": "centos-bootc major releases: the build-bootc.yml matrix and the Containerfile's ARG BASE_VERSION, one dependency. Not the dockerfile manager's (disabled for it in packageRules): the base image tag is stream<BASE_VERSION>, which it can't write back into the ARG. Only the stream<n> tags count, as <n>.",
+            "managerFilePatterns": [
+                "/^\\.github/workflows/build-bootc\\.yml$/",
+                "/^images/centos/Containerfile$/"
+            ],
+            "matchStrings": [
+                "- name: centos\\n\\s+version: \"(?<currentValue>[^\"]+)\"",
+                "ARG BASE_VERSION=(?<currentValue>\\S+)"
+            ],
+            "depNameTemplate": "quay.io/centos-bootc/centos-bootc",
+            "datasourceTemplate": "docker",
+            "versioningTemplate": "docker",
+            "extractVersionTemplate": "^stream(?<version>\\d+)$"
+        },
+        {
+            "customType": "regex",
             "description": "k3s release of kubeenv in the build-bootc.yml matrix (its tag, v<x.y.z>+k3s<n>), with the -v<Kubernetes minor release>k3s tag suffix on the line above it: one replacement, so both always change together. Versioning: the k3s tag's (workarounds:k3sKubernetesVersioning, in config:recommended).",
             "managerFilePatterns": ["/^\\.github/workflows/build-bootc\\.yml$/"],
             "matchStrings": [
@@ -242,6 +258,19 @@
             "prBodyNotes": [
                 "Before merging, add `images/<name>/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's `/etc/containers/policy.json` plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:{{{currentValue}}} cat /etc/containers/policy.json) <(podman run --rm {{{depName}}}:{{{newValue}}} cat /etc/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
             ]
+        },
+        {
+            "description": "CentOS Stream: the same as the base images above, but the base image tag is stream<BASE_VERSION>, and its policy.json is in /usr/share/containers (images/centos/Containerfile).",
+            "matchDepNames": ["quay.io/centos-bootc/centos-bootc"],
+            "prBodyNotes": [
+                "Before merging, add `images/centos/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's policy.json plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:stream{{{currentValue}}} cat /usr/share/containers/policy.json) <(podman run --rm {{{depName}}}:stream{{{newValue}}} cat /usr/share/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
+            ]
+        },
+        {
+            "description": "centos-bootc: the custom regex manager's (customManagers), not the dockerfile manager's: it would read stream<BASE_VERSION> and fail to write it back.",
+            "matchManagers": ["dockerfile"],
+            "matchDepNames": ["quay.io/centos-bootc/centos-bootc"],
+            "enabled": false
         },
         {
             "description": "Fedora releases from endoflife.date, not from the image's tags: quay.io/fedora/fedora-bootc tags the branched release and rawhide with their number months before release.",

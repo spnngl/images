@@ -179,7 +179,34 @@ Geo-blocking and blocklists:
   linux/amd64/v2`). bootc has no such option: `bootc upgrade` and
   `bootc switch` always fetch `linux/amd64`. See "Known limits".
 
-### Firewalld (both images)
+### `images/centos`
+
+An image derived from `quay.io/centos-bootc/centos-bootc:stream10`,
+the same host system as `images/fedora` with almalinux's packages
+(EPEL, from CentOS' `extras-common` repository), without geo-blocking.
+Same stages, `dockerenv` and `kubeenv`, as `images/fedora`. Docker comes
+from Docker's CentOS repository.
+
+- **`BASE_VERSION` is the CentOS Stream major release (`10`)**, and the
+  image's tag (`centos:10`), like the other images; the base image tags
+  it `stream10` (`FROM ...:stream${BASE_VERSION}`). Renovate's dockerfile
+  manager can't write that back into the `ARG`: a custom regex manager
+  updates it instead (see "Updates").
+- **The base's `policy.json` is in `/usr/share/containers`**
+  (containers-common 6), the fallback when `/etc/containers/policy.json`
+  doesn't exist. Ours still goes to `/etc` and is checked against the
+  `/usr/share` one (see "Signing").
+- **subscription-manager's dnf plugins are disabled**
+  (`subscription-manager`, `product-id`): the base image ships them, they
+  are useless without a Red Hat subscription, and they write
+  `/var/lib/rhsm` and `/run/rhsm` on every dnf run.
+- **amd64 is x86-64-v3 only**, the CentOS Stream 10 baseline: the base
+  image has no `v2` variant. Older CPUs use `almalinux:9`.
+- **xfs root filesystem only:** the CentOS kernel has no btrfs
+  (`CONFIG_BTRFS_FS` is not set), so `btrfs-progs` (from EPEL) can't
+  mount one; the shared `50-rootfs.toml` picks xfs.
+
+### Firewalld (bootc images)
 
 Source of truth: `github.com/firewalld/firewalld` (`doc/xml` for docs,
 `src/firewall/core` for behaviour).
@@ -744,7 +771,8 @@ Container images only: disk images need `config.toml`.
   image and package updates, fresh almalinux geo-blocking data) and
   manual dispatch all push. Pull requests only lint and build. Pushes
   and pull requests only run it when a bootc image's input changed
-  (`paths`: `images/fedora/`, `images/almalinux/`, `images/k3s/`, the
+  (`paths`: `images/fedora/`, `images/almalinux/`, `images/centos/`,
+  `images/k3s/`, the
   files at the root of `images/`, the workflow), and then rebuild every
   bootc image: they share most of their files, and one rule is simpler
   than tracking which folder each Containerfile reads. A failed push is
@@ -874,7 +902,9 @@ commits, action digests, automerge under `.github/`).
   kubeenv `suffix` from the matrix's `k3s` on the next line.
 - **Major base releases:** `BASE_VERSION` is the base image's major tag
   (`44`, `10`), which the weekly rebuild follows through point releases.
-  Renovate only proposes the next major release.
+  Renovate only proposes the next major release. CentOS Stream's base
+  tag is `stream<BASE_VERSION>`: a custom manager, not the dockerfile
+  one, updates its `ARG` and matrix, from its `stream<n>` tags only.
 - **3 days before a GitHub release or tag is proposed** (actions, k3s,
   upstream sources, `minimumReleaseAge`): time for a broken or malicious
   release to be pulled, and for CRI-O to publish a new Kubernetes minor
@@ -944,7 +974,9 @@ a local build upgrades from CI's signed images.
   for Red Hat's registries, 10 uses sigstore): the base image's file,
   plus `"default": reject` (below) and a `sigstoreSigned` requirement
   for `ghcr.io/spnngl/images`. It replaces the file shipped by
-  `containers-common`, since `policy.json` has no drop-in directory.
+  `containers-common` (in `/etc`, or `/usr/share/containers` for
+  CentOS Stream 10, which `/etc`'s overrides), since `policy.json` has
+  no drop-in directory.
   When a base image changes its `policy.json`, port the change: before
   replacing it, the Containerfiles check with `images/fedora/policy.jq`
   that ours is still the base's plus those changes, and fail the build
