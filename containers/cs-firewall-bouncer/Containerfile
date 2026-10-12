@@ -1,11 +1,10 @@
 # syntax=docker.io/docker/dockerfile:1
 
-# Versions come from containers/cs-firewall-bouncer/docker-bake.hcl: build
-# with `docker buildx bake` (containers/AGENTS.md).
+# Build with `docker buildx bake`: it passes the versions (containers/AGENTS.md).
 FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
 
-# BASE_VERSION: the upstream release; BASE_CHECKSUM: its tag's commit.
-# DEBIAN_CODENAME: the release the tag names.
+# BASE_CHECKSUM: the commit of the BASE_VERSION tag. DEBIAN_CODENAME: the
+# release the golang tag names.
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
 ARG DEBIAN_CODENAME
@@ -42,8 +41,8 @@ ARG BASE_VERSION
 LABEL org.opencontainers.image.version="${BASE_VERSION}" \
     org.opencontainers.image.licenses="MIT" \
     org.opencontainers.image.source="https://github.com/spnngl/images"
-# Binary in /usr/bin, config in /etc/crowdsec/bouncers/: the upstream RPM's paths,
-# so upstream docs, including the .yaml.local override, apply as is.
+# The upstream RPM's paths, so upstream docs, the .yaml.local override
+# included, apply as is.
 COPY --link --from=build /src/crowdsec-firewall-bouncer /usr/bin/
 COPY --link ./sysroot/ /
 
@@ -55,7 +54,5 @@ ENTRYPOINT ["/usr/bin/crowdsec-firewall-bouncer"]
 CMD ["-c", "/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml"]
 
 # Smoke test: the binary runs on this platform and the shipped config parses.
-# Exec form: scratch has no shell. -T only reads and prints the config. Not -t:
-# it still creates the nftables tables and deletes them on exit, which would
-# also delete the running bouncer's (so no HEALTHCHECK on it either).
+# Exec form: scratch has no shell. -T, not -t (AGENTS.md, Rules).
 RUN ["/usr/bin/crowdsec-firewall-bouncer", "-c", "/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml", "-T"]

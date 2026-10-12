@@ -1,6 +1,6 @@
 # k3s
 
-The `<name>:<version>-v<Kubernetes minor release>k3s` images (`kubeenv` stage,
+The `<name>:<BASE_VERSION>-v<Kubernetes minor>k3s` images (`kubeenv` stage,
 which runs `bootc/k3s/install.sh`) ship k3s for both roles, with the
 same binary:
 
@@ -11,9 +11,9 @@ same binary:
 Both are disabled in the image: each host picks its role once, by hand.
 `k3s`, `kubectl` and `crictl` are in `/usr/bin`, the units in
 `/usr/lib/systemd/system`: read-only and updated with the image. No
-uninstall script: switch to
-another image (`bootc switch`), then remove k3s' state: `/etc/rancher`,
-`/var/lib/rancher`, `/var/lib/kubelet`, `/var/lib/crio`, `/var/opt/cni`.
+uninstall script: switch to another image (`bootc switch`), then remove
+k3s' state: `/etc/rancher`, `/var/lib/rancher`, `/var/lib/kubelet`,
+`/var/lib/crio`, `/var/opt/cni`.
 
 Upgrades: `bootc upgrade` brings Kubernetes patch releases and new k3s
 builds (same tag). A minor release is a new tag: `bootc switch` to it,
@@ -36,9 +36,11 @@ resource limits. The kubelet puts pods in `kubepods.slice`, next to it,
 and CRI-O each container's conmon in its pod's cgroup.
 
 Short image names (`coredns/coredns`) resolve to docker.io only, as with
-containerd (`bootc/fedora/sysroot/common/etc/containers/registries.conf.d/99-myregistries.conf`):
-images from other registries need full names. CRI-O pulls with the host's pull secret, `/etc/ostree/auth.json`, and its
-own signature policy, `/etc/crio/policy.json` (accepts anything), not
+containerd
+(`bootc/fedora/sysroot/common/etc/containers/registries.conf.d/99-myregistries.conf`):
+images from other registries need full names. CRI-O pulls with the
+host's pull secret, `/etc/ostree/auth.json`, and its own signature
+policy, `/etc/crio/policy.json` (accepts anything), not
 `/etc/containers/policy.json`. Its default capabilities have no
 `NET_RAW`: `ping` fails in pods that don't add it.
 
@@ -64,8 +66,8 @@ no swap readahead: `bootc/k3s/sysroot/usr/lib/sysctl.d/60-zram.conf`).
 
 The kernel tracks pressure stall information (`psi=1`,
 `bootc/k3s/sysroot/usr/lib/bootc/kargs.d/10-psi.toml`), which AlmaLinux
-and CentOS kernels build disabled: node-exporter's `node_pressure_*` metrics and the
-kubelet's PSI metrics need it.
+and CentOS kernels build disabled: node-exporter's `node_pressure_*`
+metrics and the kubelet's PSI metrics need it.
 
 ## Control-plane
 
@@ -123,13 +125,15 @@ cilium install \
 
 The image's firewall expects these. Tunnel mode is mandatory: the nodes
 are on different providers with no shared L2 and no BGP, so nothing routes
-the pod CIDRs between them (native routing cannot work). The pod CIDR is k3s' own, rather than Cilium's default
-`10.0.0.0/8`, which holds k3s' service CIDR (`10.43.0.0/16`).
-`cni.binPath`: Cilium's default, `/opt/cni/bin`, is read-only on bootc;
-CRI-O looks for CNI plugins in `/var/opt/cni/bin`
-(`bootc/k3s/sysroot/etc/crio/crio.conf.d/20-k3s.conf`). The CNI
-configuration stays in both defaults, `/etc/cni/net.d`, and CRI-O picks
-it up without a restart.
+the pod CIDRs between them (native routing cannot work: cilium
+`Documentation/network/concepts/routing.rst`, "Requirements on the
+network"). The pod CIDR is
+k3s' own, rather than Cilium's default `10.0.0.0/8`, which holds k3s'
+service CIDR (`10.43.0.0/16`). `cni.binPath`: Cilium's default,
+`/opt/cni/bin`, is read-only on bootc; CRI-O looks for CNI plugins in
+`/var/opt/cni/bin` (`bootc/k3s/sysroot/etc/crio/crio.conf.d/20-k3s.conf`).
+The CNI configuration stays in both defaults, `/etc/cni/net.d`, and
+CRI-O picks it up without a restart.
 
 ## Add-ons
 

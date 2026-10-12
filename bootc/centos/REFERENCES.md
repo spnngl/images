@@ -15,6 +15,6 @@
   subscription, and they write `/var/lib/rhsm` and `/run/rhsm` on every
   dnf run.
 - **x86-64-v3 only:** the CentOS Stream 10 baseline; the base has no
-  `v2` variant.
+  `v2` variant. Older CPUs use `almalinux:9`.
 - **xfs:** the CentOS kernel has no btrfs (`CONFIG_BTRFS_FS` is not
   set), so EPEL's `btrfs-progs` can't mount one.

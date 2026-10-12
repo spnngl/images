@@ -8,11 +8,8 @@
 #         pushes (.github/workflows/build-bootc.yml). Not pushed.
 # Output: output/<name>/<name>.qcow2
 #
-# Requirements:
-#   - rootful podman: image-builder reads the image from the rootful storage.
-#     On macOS: podman machine stop; podman machine set --rootful; podman machine start
-#   - ./config.toml: image-builder blueprint with at least one user
-#     (cp bootc/config.example.toml config.toml, then edit it).
+# Needs rootful podman (image-builder reads the image from its storage) and
+# ./config.toml, the image-builder blueprint.
 set -euo pipefail
 
 name="${1:-fedora}"

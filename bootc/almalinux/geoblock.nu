@@ -23,10 +23,9 @@
 # Both ipsets are compacted: the fewest networks covering the same
 # addresses, so the smallest sets for the kernel.
 #
-# `firewall-offline-cmd --check-config` does not validate ipset entries: an
-# invalid entry is silently ignored, and overlapping or empty sets are
-# accepted (firewalld only rejects overlaps at runtime). This script is
-# therefore the only thing that validates the data.
+# This script is the only check of the data: `firewall-offline-cmd
+# --check-config` does not validate ipset entries (bootc/REFERENCES.md,
+# "Firewalld"), and firewalld only rejects overlaps at runtime.
 #
 # Networks are records {start: int, len: int}: the network address as an
 # integer, and the prefix length.

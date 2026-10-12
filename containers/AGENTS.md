@@ -1,25 +1,28 @@
 # Application images
 
-An upstream app run as a container, not a host, one per
-`containers/<name>/`. Every version is written once, in the image's
-`docker-bake.hcl`; `.github/workflows/build-apps.yml` reads the targets
-of all of them (`docker buildx bake --print`) and builds the Containerfile
-and Dalec ones: a new image needs no workflow change. BuildKit's source:
-`github.com/moby/buildkit` (`frontend/dockerfile/docs`); Bake's:
-`github.com/docker/buildx` (`bake/`).
+An upstream app run as a container, one per `containers/<name>/`.
+`.github/workflows/build-apps.yml` reads the targets of every
+`docker-bake.hcl` (`docker buildx bake --print`) and builds the
+Containerfile and Dalec ones: a new image needs no workflow change.
+BuildKit's source: `github.com/moby/buildkit`
+(`frontend/dockerfile/docs`); Bake's: `github.com/docker/buildx`
+(`bake/`).
 
 ## Versions: `docker-bake.hcl`
 
-`containers/docker-bake.hcl` is shared: the Debian releases (`DEBIAN`,
-with the codename), the Debian snapshot (`DEBIAN_SNAPSHOT`) and the
-functions that make tags and build arguments. Each image's
-`docker-bake.hcl` has one `target` whose `matrix` lists what to build:
+Every version is written once, in the image's `docker-bake.hcl`, never
+in a Containerfile or spec. `containers/docker-bake.hcl` holds what all
+images share: the Debian releases (`DEBIAN`), the Debian snapshot
+(`DEBIAN_SNAPSHOT`) and the functions that make tags and build
+arguments. Each image's `docker-bake.hcl` has one `target` whose
+`matrix` lists what to build:
 
 - `debian`: the Debian releases (`["13"]`; a second one doubles the
-  images, and the tag's suffix tells them apart);
+  images, the tag's suffix tells them apart);
 - `base`: `{ version, checksum }`, the upstream release (`BASE_VERSION`,
   also the tag) and its commit (`BASE_CHECKSUM`, checked by `ADD
-  --checksum`). Several entries build several release lines (haproxy);
+  --checksum`: a moved tag fails the build). Several entries build
+  several release lines (haproxy);
 - one entry per other pinned source (`PAR2_VERSION`, `UV_VERSION`).
 
 Each version is preceded by a `# renovate: datasource=... depName=...`
@@ -65,9 +68,8 @@ By what the app needs at runtime; name that need in the image's
   files. Its `.dockerignore` (copied from another image) keeps the
   Containerfile, `spec.yml`, docs and scripts out: BuildKit reads only
   `.dockerignore`, never `.containerignore`.
-- **Versions** are written once, in `docker-bake.hcl`, never in a
-  Containerfile or spec (above). The `FROM` images keep their digest in
-  the Containerfile: Renovate's dockerfile manager updates them.
+- **`FROM` digests** stay in the Containerfile: Renovate's dockerfile
+  manager updates them.
 - **Shell-less**: the final image has no shell, so everything it runs is
   exec form, with absolute paths.
 - **User** `65532:65532`, numeric so `runAsNonRoot` can check it. Root
@@ -80,7 +82,7 @@ By what the app needs at runtime; name that need in the image's
 
 DHI images (`dhi.yaml`) are built locally only: `build-apps.yml` finds
 `spec.yml` and `Containerfile` alone and has no `dhi.io` login, which
-the `dhi.io/build` frontend needs. CI support will also pick the SBOM
+the `dhi.io/build` frontend needs. CI support also has to pick the SBOM
 generator (`dhi.io/scout-sbom-indexer`, as the DHI docs, or BuildKit's)
 and give Renovate `dhi.io` credentials for the frontend's tags.
 

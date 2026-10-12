@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # k3s for the kubeenv stage of every image: firewall, binaries and units of
 # both roles (k3s server, k3s agent), all disabled. Run by the Containerfiles
-# from a bind mount of this folder; never copied into the image. See bootc/K3S.md.
+# from a bind mount of this folder, never copied into the image. See bootc/K3S.md.
 #
 # The CNI is Cilium, installed on the cluster, hence no flannel, kube-proxy
 # or network policy controller. The container runtime is CRI-O with crun
@@ -13,10 +13,9 @@
 # CentOS base images).
 set -xeuo pipefail
 
-# k3s release, its tag (v<Kubernetes release>+k3s<build>), also the tag of
-# its install script: the Containerfiles' ARG INSTALL_K3S_VERSION (CI
-# passes it, .github/workflows/build-bootc.yml).
-# https://github.com/k3s-io/k3s/releases
+# k3s release (v<Kubernetes release>+k3s<build>), also the tag of its install
+# script: the Containerfiles' ARG INSTALL_K3S_VERSION, set by CI
+# (.github/workflows/build-bootc.yml). https://github.com/k3s-io/k3s/releases
 # Named after the install script's variable, which reads it from the
 # environment: a K3S_* name would end up in the units' .env files, where
 # the script copies every K3S_* variable.
@@ -55,13 +54,11 @@ rm /etc/containers/registries.conf.d/crio.conf
 # Used ports
 # - 6443: k3s supervisor and Kubernetes API server
 # - 51871/udp: Cilium WireGuard tunnel between nodes.
-# - 6081/udp: Cilium Geneve overlay (routing-mode tunnel, tunnel-protocol
-#   geneve). Nodes sit on different providers with no shared L2, so native
-#   routing is impossible (cilium Documentation/network/concepts/routing.rst,
-#   "Requirements on the network"). Pod-to-pod Geneve runs inside WireGuard,
-#   but node-to-node encryption opts control-plane nodes out, so Geneve
-#   between a k3s server and an agent node (host <-> remote pod) is plain and
-#   needs the port. 8472/udp (VXLAN) stays closed.
+# - 6081/udp: Cilium Geneve overlay (tunnel mode, bootc/K3S.md). Pod-to-pod
+#   Geneve runs inside WireGuard, but node-to-node encryption opts
+#   control-plane nodes out, so Geneve between a k3s server and an agent node
+#   (host <-> remote pod) is plain and needs the port. 8472/udp (VXLAN)
+#   stays closed.
 #   https://docs.cilium.io/en/stable/operations/system_requirements/#firewall-rules
 # - 4240/tcp: cilium-health HTTP probes between nodes. Cilium uses ICMP *and*
 #   TCP 4240; without the port every node reports its peers unreachable
@@ -101,9 +98,9 @@ firewall-offline-cmd --check-config
 #
 # Of k3s' packaged manifests (/var/lib/rancher/k3s/server/manifests), only
 # ccm, local-storage and rolebindings are deployed; rolebindings can't be
-# disabled, ccm has its own flag. CoreDNS, metrics-server, traefik and the
-# runtime classes are deployed separately (bootc/K3S.md). --disable also deletes
-# them from a server that already deployed them.
+# disabled, ccm has its own flag. The rest is deployed separately (bootc/K3S.md,
+# "Add-ons"). --disable also deletes them from a server that already deployed
+# them.
 # servicelb, k3s' LoadBalancer controller (in the cloud controller, no
 # manifest), is disabled too: LoadBalancer Services are up to the cluster.
 curl -sfLo /tmp/k3s-install.sh "https://raw.githubusercontent.com/k3s-io/k3s/${INSTALL_K3S_VERSION}/install.sh"
@@ -141,7 +138,7 @@ for unit in /usr/lib/systemd/system/k3s.service /usr/lib/systemd/system/k3s-agen
     fi
 done
 
-# Cleanup
+# /var ships empty.
 dnf -y autoremove
 dnf clean all
 # /var/lib/crio: from the package, CRI-O creates it at startup.

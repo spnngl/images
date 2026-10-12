@@ -10,15 +10,11 @@ Upstream sources and the reason for each choice:
 
 ## Rules
 
-- `ENTRYPOINT ["/garage"]`, `CMD ["server"]`: arguments are Garage's
-  (`docker run <image> server --single-node`). A `command:` copied from
-  upstream's docs drops its leading `/garage`.
+- `ENTRYPOINT ["/garage"]`: arguments are Garage's. A `command:` copied
+  from upstream's docs drops its leading `/garage`.
 - Cargo features follow upstream's release set, `nix/compile.nix`.
-- The build stage compiles and tests as UID 65532; only packages and
-  the musl target install as root. Its caches have ids ending in
-  `-65532`.
-- The build stage's server test uses `smoke-test.toml` (not in the
-  image); the final stage only runs `--version`.
+- The build stage compiles and tests as UID 65532 (only packages and the
+  musl target install as root): its cache ids end in `-65532`.
 - Probe: `GET /health` on the admin API (`[admin]` in the config), no
   token: a readiness probe only, as it answers 503 during a cluster-wide
   outage.

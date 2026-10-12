@@ -33,8 +33,8 @@
   updates.
 - **`COPY` after the package install:** editing a config file doesn't
   rerun dnf. **`COPY`, not `ADD`**, which also downloads and unpacks;
-  except almalinux's build-only `geoblock` stage, for `ADD <url>`'s
-  content-digest cache.
+  except almalinux's build-only `geoblock` stage
+  (`bootc/almalinux/REFERENCES.md`).
 - **Base pinned to a major release:** `latest` would jump releases
   without warning. Hosts on `<name>:<BASE_VERSION>` get every rebuild
   through `bootc upgrade` and change release only with `bootc switch`.
@@ -128,16 +128,8 @@ signed: a host installed from one upgrades from CI's signed images.
   default target, so an installed host upgrades from CI's images.
   Default target only, never pushed.
 
-## Running: `run.sh`
-
-QEMU with HVF, the `virt` machine and Homebrew's aarch64 UEFI firmware.
-Serial console in the terminal (`Ctrl-a x` quits); SSH forwarded from
-`localhost:${SSH_PORT:-2222}` to the guest's sshd on 42022.
-`-snapshot` drops disk changes on exit.
-
 ## Known limits
 
-- `run.sh` only supports macOS on Apple Silicon.
 - Only qcow2 is built: other formats change the image type in
   `build.sh` (`anaconda-iso`, `raw`, `vmdk`).
 - `build.sh` builds for the host architecture only. x86_64 on an arm

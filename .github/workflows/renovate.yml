@@ -2,7 +2,7 @@
 # reports an invalid config in an issue, after it was merged. The
 # validator and its Renovate image live in spnngl/.github.
 #
-# And check that Renovate picks up every version of the Bake files
+# It also checks that Renovate picks up every version of the Bake files
 # (containers/**/docker-bake.hcl): their one custom manager reads a
 # `# renovate:` comment before each version, and a mistyped comment is
 # silently ignored, which freezes that version for good.

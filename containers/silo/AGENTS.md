@@ -17,8 +17,6 @@ for each choice: [REFERENCES.md](REFERENCES.md).
   `--certs-dir`, since a `HEALTHCHECK` doesn't go through the entrypoint.
 - No `MINIO_UPDATE`: Silo removed in-place updates and warns when it is
   set.
-- The server test is `containers/minio`'s plus the `HEALTHCHECK`'s
-  command.
 
 ## Updates
 

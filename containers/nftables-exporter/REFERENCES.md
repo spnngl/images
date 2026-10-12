@@ -26,5 +26,5 @@
   `CAP_NET_ADMIN`, and a non-root process loses it when it execs nft.
   Checked: as UID 65532 with `NET_ADMIN`, `nftables_up` is 0. The
   spec's header has the full reasoning.
-- **Upstream's unit tests in the build** (no network or nft needed):
-  with the spec's tests, the only check of an automerged Go update.
+- **Upstream's unit tests in the build:** with the spec's tests, the
+  only check of an automerged Go update.

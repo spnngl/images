@@ -11,13 +11,9 @@ choice: [REFERENCES.md](REFERENCES.md).
 - `install.sh` installs k3s in `/usr` with one unit per role, both
   disabled: each host picks its role by hand.
 - The k3s release (`v<Kubernetes release>+k3s<build>`) is the stage's
-  `ARG INSTALL_K3S_VERSION`, set by CI from the matrix's `k3s`. Tag
-  `<name>:<BASE_VERSION>-v<Kubernetes minor>k3s`: the matrix's `suffix`,
-  rewritten by Renovate with `k3s` in one replacement.
-- Container runtime CRI-O, same minor release as Kubernetes, with crun,
-  configured by `sysroot/`. CNI Cilium.
-- k3s and CRI-O run in `kube.slice`; swap on zram, used by pods through
-  the kubelet's `LimitedSwap`.
+  `ARG INSTALL_K3S_VERSION`, set by CI from the matrix's `k3s`. The tag
+  suffix is the matrix's `suffix`; Renovate rewrites both with `k3s` in
+  one replacement.
 
 ## Updates
 

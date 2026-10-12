@@ -1,14 +1,8 @@
 # haproxy: what to build and with which versions (containers/AGENTS.md).
-# One image per release line, each tagged with its version and its line
-# (haproxy:3.2.25-debian13, haproxy:3.2-debian13): the lines in support
-# are listed in https://www.haproxy.org/download/ (2.8 and 3.0 are LTS
-# lines in their last years). Adding or dropping a line is a line of this
-# list, the Containerfile adapts by version (see the case on
-# BASE_VERSION).
-# Each line has its own git repository: the tags are
-# https://git.haproxy.org/git/haproxy-<line>.git, v<version>, annotated:
-# the checksum is the commit (peeled: "git ls-remote <repository>
-# refs/tags/v<version>^{}"). extractVersion keeps Renovate within its line.
+# One image per release line, tagged with its version and its line
+# (haproxy:3.2.25-debian13, haproxy:3.2-debian13); lines in support:
+# https://www.haproxy.org/download/. Adding or dropping a line is an
+# entry of this list: containers/haproxy/AGENTS.md (Updates).
 target "haproxy" {
   name       = "haproxy-${replace(line(base.version), ".", "-")}-debian${debian}"
   context    = "containers/haproxy"

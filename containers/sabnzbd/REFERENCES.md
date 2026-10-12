@@ -22,10 +22,8 @@
   `requirements.txt` without notify2 (desktop notifications), every
   module pinned with its hashes; uv installs it (`--require-hashes`, the
   build's only network access) into `/usr/lib/sabnzbd/site-packages`,
-  found through a `.pth` file. Bytecode compiled at build time
-  (`unchecked-hash`: the user can't write `/usr/lib`, and dpkg clamps
-  mtimes). Regenerating the lock also updates the unpinned modules
-  (cryptography).
+  found through a `.pth` file. Bytecode is compiled at build time (the
+  user can't write `/usr/lib`).
 - **par2cmdline-turbo from source:** SABnzbd's recommended par2; trixie
   only has par2cmdline 0.8.1. unrar from trixie's `non-free`, for the
   image only.
@@ -38,7 +36,3 @@
 - **Downloads in `/downloads/{incomplete,complete}`**, patched into
   SABnzbd's defaults (`downloads-dir.patch`): otherwise they land in
   `/config/Downloads/`, and no option or variable moves them.
-- **Post-processing scripts must be Python** (no shell, no
-  `/usr/bin/env`, no `nice`/`ionice`): executable, with
-  `#!/usr/bin/python3` or no shebang (SABnzbd then runs them with its
-  own Python). Upstream's `Sample-PostProc.sh` can't run.

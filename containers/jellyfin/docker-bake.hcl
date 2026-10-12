@@ -2,9 +2,8 @@
 # Dalec spec: no containerfile_args, Dalec fails on an undeclared one.
 # Releases: https://github.com/jellyfin/jellyfin/releases, built for
 # trixie in https://repo.jellyfin.org/debian (jellyfin-server
-# <version>+deb13): Renovate reads that repository, so a PR only comes
-# once the package is installable (amd64's index: both architectures are
-# published together).
+# <version>+deb13). Renovate reads amd64's index: both architectures are
+# published together.
 target "jellyfin" {
   name       = "jellyfin-debian${debian}"
   context    = "containers/jellyfin"

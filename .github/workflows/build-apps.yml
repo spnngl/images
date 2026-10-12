@@ -1,24 +1,20 @@
-# Build the application images (see .github/REFERENCES.md): Dalec images
+# Build the application images (.github/REFERENCES.md): Dalec ones
 # (containers/<name>/spec.yml) and Containerfile ones
-# (containers/<name>/Containerfile; bootc images: bootc/,
-# build-bootc.yml), those that changed since the last build, every one on
-# the weekly rebuild and manual runs (see the discover job). Then push
-# them to the tags of their Bake target (containers/<name>/docker-bake.hcl,
-# containers/AGENTS.md): ghcr.io/spnngl/images/<name>:<version>-debian<N>,
-# <version> being the upstream release. Pull requests only lint and build
-# (which runs the spec's tests, the Containerfile's smoke test), they never
-# push.
+# (containers/<name>/Containerfile), those that changed since the last
+# build (every one on the weekly rebuild and manual runs: see discover),
+# and push them to the tags of their Bake target (containers/AGENTS.md):
+# ghcr.io/spnngl/images/<name>:<version>-debian<N>, <version> being the
+# upstream release. Pull requests lint and build (running the spec's
+# tests, the Containerfile's smoke test), never push.
+# bootc images: build-bootc.yml.
 #
 # Not in build-bootc.yml: Dalec is a BuildKit frontend (the spec's #
-# syntax= line), which podman/buildah can't run. Docker tooling only:
-# buildx builds, pushes and merges, cosign signs. Application
-# Containerfiles too: one way to build, attest and sign every application
-# image.
+# syntax= line) that podman/buildah can't run. Docker tooling for every
+# application image: one way to build, attest and sign.
 #
-# Bake only describes what to build (its resolved targets, `bake --print`):
-# the builds stay build-push-action's, one job per target and platform,
-# because they are scanned before anything is pushed (docker/github-builder
-# pushes first).
+# Bake only describes what to build (`bake --print`); the builds stay
+# build-push-action's, one job per target and platform, scanned before
+# anything is pushed (docker/github-builder pushes first).
 name: build-apps
 
 on:
@@ -47,10 +43,9 @@ defaults:
     shell: bash
 
 jobs:
-  # The images to build. Found, not listed: the targets of the Bake files
-  # (containers/docker-bake.hcl, containers/*/docker-bake.hcl), their
-  # versions being where Renovate updates them, the only place they are
-  # written.
+  # The images to build, found not listed: the targets of the Bake files
+  # (containers/docker-bake.hcl, containers/*/docker-bake.hcl), where
+  # versions are written once and Renovate updates them.
   # Only those that changed: a target whose resolved definition differs
   # from the base's (a version, a tag, an argument...), one with a file of
   # its folder (its build context) changed but its docs (*.md, kept out by
@@ -75,9 +70,9 @@ jobs:
       #   runs are skipped: their commit isn't the branch's.
       # - schedule, workflow_dispatch, or no base (first run, history
       #   rewritten: fetching it fails): nothing.
-      # checkout fetches one commit: the comparison needs the two trees,
-      # no history between them. It is a checkout of the base, in a
-      # worktree, to resolve its Bake files too.
+      # checkout fetches one commit: the comparison needs both trees, not
+      # the history between them; the base goes in a worktree, to resolve
+      # its Bake files.
       - id: changes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -246,9 +241,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # What the target says (see the discover job): its context (the
-      # image's own folder), file, target (none for a Containerfile) and
-      # args.
+      # The discover item's fields; no target for a Containerfile (its
+      # last stage).
       # Attestations, attached to the image in its index
       # (https://docs.docker.com/build/metadata/attestations/):
       # - provenance mode=max: also the build args and each step's
@@ -347,8 +341,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Each platform's index (image and attestations) goes into the list,
-      # attestations included. A missing platform fails here.
+      # Each platform's index (image and attestations) goes into the list.
+      # A missing platform fails here.
       - id: merge
         run: |-
           read -r -a arches <<< "${ARCHES}"

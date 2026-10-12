@@ -3,15 +3,9 @@
 # Jellyfin media server, without its web client, built with Dalec
 # (https://project-dalec.github.io/dalec/): one Debian trixie package, the
 # server repackaged from Jellyfin's own trixie repository, installed into
-# the minimal image of the trixie/container target with jellyfin-ffmpeg8
-# from the same repository. That image is built from scratch out of the
-# package's dependency closure: no shell, no apt, but a dpkg database
-# scanners can read.
-#
-# Build (from the repo root; the version is in docker-bake.hcl, which
-# passes the arg below):
-#   docker buildx bake -f containers/docker-bake.hcl \
-#     -f containers/jellyfin/docker-bake.hcl
+# the minimal image of the trixie/container target (see
+# containers/sabnzbd/spec.yml) with jellyfin-ffmpeg8 from the same
+# repository.
 #
 # Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
 # (database, settings, metadata, logs) and /cache (transcodes, images,
@@ -30,14 +24,13 @@
 #   Kubernetes supplementalGroups).
 # - NVIDIA: the NVIDIA Container Toolkit injects the driver; request the
 #   GPU (--gpus, CDI or the device plugin's nvidia.com/gpu).
-# No Intel OpenCL (intel-opencl-icd isn't in trixie) nor Rockchip libmali:
-# HDR tone mapping on Intel uses VPP only, none on Rockchip.
+# No Intel OpenCL nor Rockchip libmali (REFERENCES.md): HDR tone mapping
+# on Intel uses VPP only, none on Rockchip.
 #
-# Renovate bumps the version in docker-bake.hcl once the server is in
-# Jellyfin's trixie repository.
+# Renovate bumps the version in docker-bake.hcl (AGENTS.md, Updates).
 
-# Set by docker-bake.hcl. Dalec needs it declared, empty here: a build
-# without it fails.
+# Set by docker-bake.hcl; empty here, Dalec needs it declared
+# (containers/AGENTS.md).
 args:
   # Jellyfin's release, built for trixie in
   # https://repo.jellyfin.org/debian (jellyfin-server <BASE_VERSION>+deb13).
@@ -54,11 +47,11 @@ revision: 1
 
 dependencies:
   build:
-    # Jellyfin's own build (the .NET runtime included, self-contained), from
-    # their repository (extra_repos), copied below: repackaged, not built.
-    # Exact version, so a BASE_VERSION without a package fails the build.
-    # Installed in the build container, where its maintainer scripts
-    # (bash, adduser, systemd) can run; the image never runs them.
+    # Jellyfin's own build (the .NET runtime included), from their
+    # repository (extra_repos), copied below: repackaged, not built
+    # (REFERENCES.md). Exact version, so a BASE_VERSION without a package
+    # fails the build. Installed in the build container only, where its
+    # maintainer scripts can run.
     jellyfin-server:
       version:
         - = ${BASE_VERSION}+deb13
@@ -135,9 +128,8 @@ image:
     # fontconfig's cache, written at first use.
     - XDG_CACHE_HOME=/cache
     # Temporary files (Jellyfin's in $TMPDIR/jellyfin, ASP.NET's key ring
-    # writes) on a writable volume: with a read-only root filesystem /tmp
-    # isn't, and Docker and Kubernetes mount no tmpfs there. A folder that
-    # exists: .NET doesn't create it. On disk, not in memory.
+    # writes) on a writable volume, for a read-only root filesystem
+    # (REFERENCES.md). A folder that exists: .NET doesn't create it.
     - TMPDIR=/cache
     # No slash: ld.so searches the library path, so one value for every
     # architecture.

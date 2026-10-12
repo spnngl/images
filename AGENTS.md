@@ -25,19 +25,18 @@ pins (`git_clone`). A changed decision updates its reason there.
   custom manager in `renovate.json5` matching every place it is written,
   under one dependency name. Write a version only where Renovate updates
   it; docs and comments say `<BASE_VERSION>`.
-- **Credentials** come from the runtime. Images hold no user, password,
-  key or pull secret.
-- **Containerfiles** pass `hadolint` (`.hadolint.yaml`). Ignore a
-  finding only with a comment saying why.
+- **Credentials** come from the runtime: no user, password, key or pull
+  secret in an image.
+- **Containerfiles** pass `hadolint` (`.hadolint.yaml`); each ignore
+  carries a comment giving its reason.
 - **Comments** give the *why* of every significant step, with a doc link
   when useful.
 
 ## Scripts
 
-- Bash, `set -euo pipefail`; they `cd` to the repo root, so they run
-  from any folder.
-- Requirements checked first, each failure naming the command that fixes
-  it.
+Bash, `set -euo pipefail`, `cd` to the repo root (they run from any
+folder). Requirements are checked first, each failure naming the command
+that fixes it.
 
 ## Checks
 
