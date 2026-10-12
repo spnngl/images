@@ -9,7 +9,7 @@ each choice. Before a change, read the sections it touches:
 - `.github/workflows/`: "CI: ..." and "Vulnerability scanning"
 - `renovate.json5`, or a pinned version: "Updates"
 - `policy.json`, signing keys: "Signing"
-- `scripts/`: "Disk images" and "Running"
+- `bootc/build.sh`, `bootc/run.sh`: "Disk images" and "Running"
 
 ## Sources of truth
 
@@ -44,7 +44,7 @@ memory. An image's upstream is named in its ARCHITECTURE.md section.
 
 ## bootc images
 
-Built with podman by `scripts/build.sh` and
+Built with podman by `bootc/build.sh` and
 `.github/workflows/build-bootc.yml`. Sources of truth:
 
 - bootc: `github.com/bootc-dev/bootc` (`docs/src`, lint rules in
@@ -82,7 +82,7 @@ Rules:
 An upstream app run as a container, not a host. `BASE_VERSION` is the
 upstream release and the image's tag, written once (CI reads it).
 `.github/workflows/build-apps.yml` finds and builds them with `docker
-buildx`: no workflow change. `scripts/build.sh` refuses them.
+buildx`: no workflow change. `bootc/build.sh` refuses them.
 
 Pick the build by what the app needs at runtime, and name that need:
 
@@ -93,6 +93,8 @@ Pick the build by what the app needs at runtime, and name that need:
 
 ## Scripts
 
+`bootc/*.sh` for bootc images, `scripts/` for the others.
+
 - Bash, `set -euo pipefail`, run from any folder (they `cd` to the repo
   root).
 - Must pass `shellcheck`, including SC2250 (`${var}` braces).
@@ -102,11 +104,11 @@ Pick the build by what the app needs at runtime, and name that need:
 ## Verifying changes
 
 ```sh
-scripts/build.sh <name>   # bootc; needs rootful podman and ./config.toml
-scripts/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
+bootc/build.sh <name>   # bootc; needs rootful podman and ./config.toml
+bootc/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
 docker buildx build -f images/<name>/Containerfile images/   # application image
 docker buildx build -f images/<name>/spec.yml --target trixie/container images/   # Dalec image
-shellcheck scripts/*.sh
+shellcheck bootc/*.sh scripts/*.sh
 docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint bootc/*/Containerfile images/*/Containerfile
 docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.151.2 renovate-config-validator --strict
 ```

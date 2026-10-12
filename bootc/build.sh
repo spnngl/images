@@ -2,7 +2,7 @@
 # Build the bootc container image from bootc/<name>/, then turn it into a
 # qcow2 disk image with image-builder.
 #
-# Usage: scripts/build.sh [name]    (default: fedora)
+# Usage: bootc/build.sh [name]    (default: fedora)
 # Image:  ghcr.io/spnngl/images/<name>:<version>, <version> being
 #         the Containerfile's ARG BASE_VERSION default: the same name CI
 #         pushes (.github/workflows/build-bootc.yml). Not pushed.

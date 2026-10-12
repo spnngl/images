@@ -31,7 +31,9 @@ For a bootc image there are two stages:
 │       └── image-scan.yml      # daily: vulnerabilities of the pushed images
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── bootc/                      # shared build context for every bootc image
-│   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
+│   ├── .containerignore        # keeps every Containerfile, and the scripts, out of `COPY . /`
+│   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
+│   ├── run.sh [name]           # boot the qcow2 in QEMU (macOS Apple Silicon)
 │   ├── k3s/                    # shared by every kubeenv stage (not an image)
 │   │   ├── install.sh          # k3s and CRI-O install
 │   │   └── sysroot/...         # CRI-O configuration, kube.slice, swap
@@ -40,14 +42,12 @@ For a bootc image there are two stages:
 │       └── sysroot/...         # files copied as is into the image root:
 │                               # common/, then <BASE_VERSION>/
 ├── images/                     # shared build context for every application image
-│   ├── .containerignore        # same as bootc/'s
+│   ├── .containerignore        # keeps every Containerfile out of `COPY . /`
 │   └── <name>/                 # one folder per application image
 │       ├── Containerfile       # or spec.yml, for a Dalec image
 │       └── sysroot/...         # files copied as is into the image root
 ├── scripts/
-│   ├── build.sh [name]         # container image, then output/<name>/<name>.qcow2
-│   ├── sabnzbd-lock.sh         # regenerate images/sabnzbd/requirements.lock
-│   └── run.sh [name]           # boot the qcow2 in QEMU (macOS Apple Silicon)
+│   └── sabnzbd-lock.sh         # regenerate images/sabnzbd/requirements.lock
 ├── config.example.toml         # template for config.toml (git-ignored)
 ├── K3S.md                      # setting up k3s hosts (kubeenv images)
 ├── renovate.json5              # Saturday updates of every pinned version
@@ -247,7 +247,7 @@ engine that decides the bans) is not part of this repository.
   binary run in exec form with `-T` (prints the merged config, no
   netlink, no capability). That `RUN` leaves empty `/dev`, `/proc` and
   `/sys` folders in the image: harmless, the runtime mounts over them.
-  `scripts/build.sh` refuses it: there is no disk image to build.
+  `bootc/build.sh` refuses it: there is no disk image to build.
 - **`BASE_VERSION` is the bouncer release**, also the tag. The name is
   kept because CI reads the tag from it, as from a Dalec spec's
   `args.BASE_VERSION` (`build-apps.yml`). Renovate bumps it in the
@@ -311,7 +311,7 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
 - **Only `docker buildx` builds it** (Dalec is a BuildKit frontend, the
   spec's `# syntax=` line; buildah ignores it): `docker buildx build -f
   images/sabnzbd/spec.yml --target trixie/container images/`, and CI's
-  `build-apps.yml`. `scripts/build.sh` refuses it (no Containerfile).
+  `build-apps.yml`. `bootc/build.sh` refuses it (no Containerfile).
 - **Sources pinned by commit**: Dalec checks that the sabnzbd and
   par2cmdline-turbo tags resolve to the commits in the spec.
 - **Python modules from PyPI, not Debian**: Debian's are older than
@@ -694,7 +694,7 @@ release build, `cmd/` for flags and variables).
   workflows and rules (AGENTS.md). The folder says which kind an image
   is, and which workflow builds it.
 - **The build context is the shared `bootc/` or `images/` folder, not
-  each image's own folder.** `scripts/build.sh` passes `-f
+  each image's own folder.** `bootc/build.sh` passes `-f
   bootc/<name>/Containerfile` with context `bootc/`. This is what lets
   `bootc/almalinux/Containerfile` do `COPY --link ./fedora/sysroot/common/ /`
   to reuse fedora's base configuration instead of duplicating it. Each
@@ -738,7 +738,7 @@ release build, `cmd/` for flags and variables).
 
 ## Disk images: image-builder
 
-`scripts/build.sh` runs a pinned `ghcr.io/osbuild/image-builder-cli`
+`bootc/build.sh` runs a pinned `ghcr.io/osbuild/image-builder-cli`
 (which includes the former bootc-image-builder) with:
 
 - **`--privileged` and `--security-opt label=type:unconfined_t`:**
@@ -780,7 +780,7 @@ Container images only: disk images need `config.toml`.
   image and package updates, fresh almalinux geo-blocking data) and
   manual dispatch all push. Pull requests only lint and build. Pushes
   and pull requests only run it when a bootc image's input changed
-  (`paths`: `bootc/`, the workflow), and then rebuild every
+  (`paths`: `bootc/` but its scripts, the workflow), and then rebuild every
   bootc image: they share most of their files, and one rule is simpler
   than tracking which folder each Containerfile reads. A failed push is
   retried by the next bootc change or the weekly rebuild.
@@ -1005,7 +1005,7 @@ a local build upgrades from CI's signed images.
   with `REGISTRY_AUTH_FILE=~/.docker/config.json`. Application images carry
   BuildKit's provenance and SBOM instead (`build-apps.yml` section).
 
-## Running: `scripts/run.sh`
+## Running: `bootc/run.sh`
 
 QEMU with HVF acceleration, the `virt` machine and the Homebrew aarch64 UEFI
 firmware. The serial console is in the terminal (`Ctrl-a x` quits) and SSH
