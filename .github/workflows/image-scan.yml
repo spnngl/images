@@ -1,0 +1,22 @@
+# Vulnerabilities of the pushed images, daily: a new one shows up without
+# any change here. Findings in code scanning, it never fails on one. The
+# images: every tag pushed in the last 8 days, which the weekly rebuilds
+# of build-bootc.yml and build-apps.yml cover (spnngl/.github's
+# image-scan.yml). Pull requests are scanned by the build workflows.
+name: image-scan
+
+on:
+  schedule:
+    - cron: "12 8 * * *"
+      timezone: Europe/Paris
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  image-scan:
+    permissions:
+      contents: read
+      packages: read
+      security-events: write
+    uses: spnngl/.github/.github/workflows/image-scan.yml@main
