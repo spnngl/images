@@ -21,7 +21,7 @@
 # The last release. Tags: https://github.com/minio/minio/tags
 ARG BASE_VERSION=RELEASE.2025-10-15T17-29-55Z
 # Debian trixie: its ca-certificates is the CA bundle copied below.
-FROM docker.io/library/golang:1.27 AS build
+FROM docker.io/library/golang:1.27-trixie AS build
 
 ARG BASE_VERSION
 # HOME for the build user below, with no passwd entry: git and go read

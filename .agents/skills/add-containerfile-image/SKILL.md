@@ -45,8 +45,9 @@ Done when every item has an answer and a source file.
 - **Version**: `ARG BASE_VERSION=<release>` before `FROM`, its tags URL
   in a comment.
 - **Build stage**: the toolchain's official image on Debian trixie
-  (`golang:<minor>`, `rust:<minor>-trixie`); its `ca-certificates` is the
-  bundle the final image copies. Order: `ARG`, `ENV`, then
+  (`golang:<minor>-trixie`, `rust:<minor>-trixie`: the Debian release
+  named, not the tag's default, which moves with Debian); its
+  `ca-certificates` is the bundle the final image copies. Order: `ARG`, `ENV`, then
   `SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]` after the stage's last
   `ENV` or `ARG`: hadolint 2.15.1 checks the `RUN`s after either as
   `/bin/sh`.
