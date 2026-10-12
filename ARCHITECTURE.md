@@ -22,8 +22,8 @@ For a bootc image there are two stages:
 .
 ├── .github/
 │   └── workflows/
-│       ├── build.yml           # CI: lint, build, push every Containerfile image
-│       ├── build-dalec.yml     # CI: build, push every Dalec image (spec.yml)
+│       ├── build-bootc.yml     # CI: lint, build, push the bootc images
+│       ├── build-apps.yml      # CI: lint, build, push the changed application images
 │       │                       # the next four call spnngl/.github's:
 │       ├── renovate.yml        # CI: validate renovate.json5
 │       ├── conventional-commits.yml  # CI: commit messages of a PR
@@ -215,15 +215,16 @@ engine that decides the bans) is not part of this repository.
   `/sys` folders in the image: harmless, the runtime mounts over them.
   `scripts/build.sh` refuses it: there is no disk image to build.
 - **`BASE_VERSION` is the bouncer release**, also the tag. The name is
-  kept because `build.sh` and CI pass that build arg to every image.
-  Renovate bumps it in the Containerfile and in the workflow matrix;
-  before merging, diff upstream's `config/crowdsec-firewall-bouncer.yaml`
+  kept because CI reads the tag from it, as from a Dalec spec's
+  `args.BASE_VERSION` (`build-apps.yml`). Renovate bumps it in the
+  Containerfile; before merging, diff upstream's `config/crowdsec-firewall-bouncer.yaml`
   between tags.
 - **The sources come from `ADD <git url>#v<BASE_VERSION>`.** The commit
   is not pinned: a tag can move, and this binary runs as root with
   `NET_ADMIN` in the host network namespace, so the build trusts upstream
-  (buildah ignores `ADD --checksum` for git anyway). buildah runs the
-  host's `git` for it, which a podman machine must have. The source has
+  (buildah ignores `ADD --checksum` for git anyway). CI builds it with
+  BuildKit, like the Dalec images; a local podman build runs the host's
+  `git` for it, which a podman machine must have. The source has
   no `.git`, so the build passes `BUILD_VERSION` and `BUILD_TAG` to the
   Makefile.
 - **Runtime contract (podman, rootful, documented in the
@@ -276,7 +277,7 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
 - **Only `docker buildx` builds it** (Dalec is a BuildKit frontend, the
   spec's `# syntax=` line; buildah ignores it): `docker buildx build -f
   images/sabnzbd/spec.yml --target trixie/container images/`, and CI's
-  `build-dalec.yml`. `scripts/build.sh` refuses it (no Containerfile).
+  `build-apps.yml`. `scripts/build.sh` refuses it (no Containerfile).
 - **Sources pinned by commit**: Dalec checks that the sabnzbd and
   par2cmdline-turbo tags resolve to the commits in the spec.
 - **Python modules from PyPI, not Debian**: Debian's are older than
@@ -315,7 +316,7 @@ out of the package's dependency closure (python3.13, unrar, 7zip, libc,
   its own Python); upstream's `Sample-PostProc.sh` can't run.
 - **`BASE_VERSION` is the SABnzbd release**, also the tag. Renovate
   bumps it in the spec (with the sabnzbd checksum), where
-  `build-dalec.yml` reads it; push the regenerated lock to its PR.
+  `build-apps.yml` reads it; push the regenerated lock to its PR.
 
 ### `images/nftables-exporter`
 
@@ -499,10 +500,10 @@ same name CI pushes for the default target, so an installed host upgrades
 from CI's images. `build.sh` only builds the default target
 (`dockerenv`) and never pushes.
 
-## CI: `.github/workflows/build.yml`
+## CI: `.github/workflows/build-bootc.yml`
 
-Runs hadolint on each Containerfile (findings uploaded to code scanning as
-SARIF), then builds each image of its matrix (`name`, `version`, and
+Runs hadolint on each bootc Containerfile (findings uploaded to code
+scanning as SARIF), then builds each image of its matrix (`name`, `version`, and
 for a multi-stage Containerfile `target`, tag `suffix` and, for
 kubeenv, `k3s`) for every platform, and pushes it to
 `ghcr.io/spnngl/images/<name>:<version><suffix>`, one manifest list
@@ -511,11 +512,17 @@ Container images only: disk images need `config.toml`.
 
 - **Triggers:** push to `main`, every Sunday 07:00 Europe/Paris (base
   image and package updates, fresh almalinux geo-blocking data) and
-  manual dispatch all push. Pull requests only lint and build.
+  manual dispatch all push. Pull requests only lint and build. Pushes
+  and pull requests only run it when a bootc image's input changed
+  (`paths`: `images/fedora/`, `images/almalinux/`, `images/k3s/`, the
+  files at the root of `images/`, the workflow), and then rebuild every
+  bootc image: they share most of their files, and one rule is simpler
+  than tracking which folder each Containerfile reads. A failed push is
+  retried by the next bootc change or the weekly rebuild.
 - **The matrix is the list of images**, each with its base version,
-  passed as `--build-arg BASE_VERSION` (for cs-firewall-bouncer, the
-  upstream release). A new image goes there too; Renovate bumps the
-  versions. The `push` job reuses it through a YAML anchor.
+  passed as `--build-arg BASE_VERSION`. A new bootc image goes there
+  too, and in `paths`; Renovate bumps the versions. The `push` job
+  reuses it through a YAML anchor.
 - **Jobs run on `ubuntu-26.04` and `ubuntu-26.04-arm`, not
   `ubuntu-latest`.** They ship Podman
   5.7 / Buildah 1.42; `ubuntu-latest` (24.04) has buildah 1.33, and the
@@ -538,28 +545,43 @@ Container images only: disk images need `config.toml`.
   broken image doesn't hold back the others. Pull requests build every
   platform but upload nothing.
 - **Pushed images are signed**, then pulled back with the image's own
-  `policy.json` to check the signature. See "Signing". An application
-  image ships none: the check uses fedora's, the policy of the hosts that
-  pull it.
+  `policy.json` to check the signature. See "Signing".
 
-## CI: `.github/workflows/build-dalec.yml`
+## CI: `.github/workflows/build-apps.yml`
 
-The same for Dalec images: same triggers, runners and tags as
-`build.yml`, Docker tooling only (no podman). The differences:
+The same for application images, Dalec and Containerfile ones: same
+triggers, runners and tags as `build-bootc.yml`, Docker tooling only (no
+podman: it can't run Dalec, and one way to build, attest and sign every
+application image is simpler). The differences:
 
 - **Images are found, not listed**: a `discover` job makes the matrix
-  from every `images/<name>/spec.yml`, its version being the spec's
-  `args.BASE_VERSION` (read with `yq`). A new Dalec image needs no
-  workflow change.
+  from every `images/<name>/spec.yml` and every `images/<name>/Containerfile`
+  that doesn't run `bootc container lint` (a bootc image's), its
+  version being the spec's `args.BASE_VERSION` (read with `yq`) or the
+  Containerfile's `ARG BASE_VERSION` default. A new application image
+  needs no workflow change.
+- **Only the images that changed**: those whose folder changed, or
+  every one when a file at the root of `images/` or the workflow
+  changed, or on the weekly rebuild and manual runs. Changed since what:
+  a pull request's base, or for a push the workflow's last successful
+  run on the branch, not the previous push: a run cancelled by a newer
+  one (`concurrency`) or failed never pushed its images, so the next run
+  builds its changes too. No successful run to compare with: every
+  image.
+- **hadolint for the Containerfiles to build**, as in `build-bootc.yml`.
+  Code scanning keeps the others' alerts from their last analysis.
 - **`docker/build-push-action`**, with a `docker-container` builder
   (the docker driver can't add attestations). Building also runs the
-  spec's tests on each platform.
+  spec's tests, or the Containerfile's smoke test, on each platform. A
+  Containerfile sets its own `org.opencontainers.image.source` label, as
+  a spec does: no `--label` here.
 - **Attestations from BuildKit**
   (<https://docs.docker.com/build/metadata/attestations/>), in each
   platform's index: SLSA provenance (`mode=max`, `version=v1`: also the
-  build args; the spec has no secrets) and an SPDX SBOM. BuildKit's syft
-  scanner runs on the final image whatever the frontend, so it lists the
-  Debian packages (dpkg database) and the Python ones (`dist-info`).
+  build args; no secrets) and an SPDX SBOM. BuildKit's syft scanner
+  runs on the final image whatever the frontend, so it lists the Debian
+  packages (dpkg database), the Python ones (`dist-info`) and a Go
+  binary's modules.
   Read them with `docker buildx imagetools inspect <tag> --format
   '{{ json .Provenance }}'` (or `.SBOM`). No
   `actions/attest-build-provenance`: it would be a second provenance.
@@ -569,7 +591,6 @@ The same for Dalec images: same triggers, runners and tags as
 - **Signed by `cosign sign`**, with the same key and in the same
   attachment format as podman's (see "Signing"), then checked with
   `cosign verify`.
-- **No lint job**: hadolint is for Containerfiles.
 
 ## Updates: `renovate.json5`
 
@@ -641,9 +662,9 @@ a local build upgrades from CI's signed images.
   containers/image can't see. podman writes the attachment format and
   takes cosign keys (`ENCRYPTED SIGSTORE PRIVATE KEY`). No Rekor
   transparency log entry is made; the policy doesn't ask for one.
-  Dalec images, built without podman, use `cosign sign` with cosign 3's
+  Application images, built without podman, use `cosign sign` with cosign 3's
   deprecated legacy flags, which write the same attachments
-  (`build-dalec.yml` explains each flag). `--sign-container-identity`
+  (`build-apps.yml` explains each flag). `--sign-container-identity`
   makes it claim the tag, as podman does: otherwise a tag pull is
   rejected.
 - **Not keyless**: containers/image's policy matches a Fulcio
@@ -671,15 +692,16 @@ a local build upgrades from CI's signed images.
   other registry, still accepts anything as before, so podman keeps working
   (`containers-storage` is also how image-builder installs a local build).
 - **Rotating the key:** ship the new public key alongside the old one
-  (`keyPaths`), let hosts upgrade, then switch the CI secret.
+  (`keyPaths`), let hosts upgrade, then switch the CI secret and run
+  both build workflows by hand: a push only re-signs what it rebuilds.
 - **Build provenance, on top:** `actions/attest-build-provenance`
   attests which workflow, commit and run built each manifest list. It is
   a sigstore bundle behind OCI referrers, like cosign 3's, so hosts
   don't read it: the signature above is what they check. Check it with
   `gh attestation verify oci://ghcr.io/spnngl/images/<name>:<tag> -R spnngl/images`.
   The action only reads Docker's credential file, so CI logs podman in
-  with `REGISTRY_AUTH_FILE=~/.docker/config.json`. Dalec images carry
-  BuildKit's provenance and SBOM instead (`build-dalec.yml` section).
+  with `REGISTRY_AUTH_FILE=~/.docker/config.json`. Application images carry
+  BuildKit's provenance and SBOM instead (`build-apps.yml` section).
 
 ## Running: `scripts/run.sh`
 

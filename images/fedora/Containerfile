@@ -7,7 +7,7 @@
 #     -v<Kubernetes minor release>k3s.
 #   - dockerenv (FROM base, the default target): adds Docker.
 #
-# Build commands, same tags as CI (.github/workflows/build.yml):
+# Build commands, same tags as CI (.github/workflows/build-bootc.yml):
 #   podman build --format=docker -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:<BASE_VERSION> images/
 #   podman build --format=docker --target kubeenv -f images/fedora/Containerfile -t ghcr.io/spnngl/images/fedora:<BASE_VERSION>-v<Kubernetes minor release>k3s images/
 #
@@ -18,7 +18,7 @@
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
 # Base image major release, also the tag of this image. CI sets it with
-# --build-arg (.github/workflows/build.yml); keep this default in sync.
+# --build-arg (.github/workflows/build-bootc.yml); keep this default in sync.
 # Available tags: https://quay.io/repository/fedora/fedora-bootc?tab=tags
 ARG BASE_VERSION=44
 
@@ -82,7 +82,7 @@ EORUN
 ARG BASE_VERSION
 RUN --mount=type=bind,source=fedora,target=/tmp/fedora \
     jq -e --slurpfile ours "/tmp/fedora/sysroot/${BASE_VERSION}/etc/containers/policy.json" \
-        -f /tmp/fedora/policy.jq /etc/containers/policy.json
+    -f /tmp/fedora/policy.jq /etc/containers/policy.json
 
 # Copy static configuration files: shared ones, then the release's
 # (policy.json).
@@ -95,7 +95,7 @@ COPY --link ./fedora/sysroot/${BASE_VERSION}/ /
 FROM base AS kubeenv
 
 # k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
-# with --build-arg (.github/workflows/build.yml); keep this default in sync.
+# with --build-arg (.github/workflows/build-bootc.yml); keep this default in sync.
 ARG INSTALL_K3S_VERSION=v1.37.1+k3s1
 
 # Bind-mounted, not copied: the script stays out of the image.

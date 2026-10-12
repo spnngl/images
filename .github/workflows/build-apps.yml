@@ -1,12 +1,18 @@
-# Build every Dalec image (each images/<name>/spec.yml, see
-# ARCHITECTURE.md), then push it to ghcr.io/spnngl/images/<name>:<version>,
-# <version> being the upstream release (the spec's args.BASE_VERSION).
-# Pull requests only build (which runs the spec's tests), they never push.
+# Build the application images (see ARCHITECTURE.md): Dalec images
+# (images/<name>/spec.yml) and Containerfile ones (images/<name>/Containerfile,
+# not bootc), those that changed since the last build, every one on the
+# weekly rebuild and manual runs (see the discover job). Then push them to
+# ghcr.io/spnngl/images/<name>:<version>, <version> being the upstream
+# release (the spec's args.BASE_VERSION, the Containerfile's ARG
+# BASE_VERSION default). Pull requests only lint and build (which runs
+# the spec's tests, the Containerfile's smoke test), they never push.
 #
-# Not in build.yml: Dalec is a BuildKit frontend (the spec's # syntax=
-# line), which podman/buildah can't run. Docker tooling only: buildx
-# builds, pushes and merges, cosign signs.
-name: build-dalec
+# Not in build-bootc.yml: Dalec is a BuildKit frontend (the spec's #
+# syntax= line), which podman/buildah can't run. Docker tooling only:
+# buildx builds, pushes and merges, cosign signs. Application
+# Containerfiles too: one way to build, attest and sign every application
+# image.
+name: build-apps
 
 on:
   push:
@@ -20,7 +26,8 @@ on:
   workflow_dispatch:
 
 # Every run on main pushes the same tags: cancel the older run so it can't
-# overwrite the newer one's images.
+# overwrite the newer one's images. The newer one also builds the changes
+# of the cancelled one (see the discover job).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -33,33 +40,133 @@ defaults:
     shell: bash
 
 jobs:
-  # The images to build: every folder of images/ with a spec.yml, and its
-  # args.BASE_VERSION, the spec being the only place it is written.
+  # The images to build. Found, not listed: every folder of images/ with a
+  # spec.yml or a Containerfile, bootc ones excepted, its version being
+  # where Renovate updates it, the only place it is written.
+  # Only those that changed: a file of the image's folder, or every image
+  # for a file at the root of images/ (the shared build context) or this
+  # workflow.
   discover:
     runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # gh run list, below.
+      actions: read
     outputs:
       images: ${{ steps.find.outputs.images }}
+      containerfiles: ${{ steps.find.outputs.containerfiles }}
     steps:
       - uses: actions/checkout@v7
-      # nullglob: no spec gives [], not the pattern. yq -e fails on a spec
-      # without BASE_VERSION.
+
+      # The changed files, as a JSON array, or null to build every image:
+      # - pull request: its changes, against its base.
+      # - push: those since this workflow's last successful run on the
+      #   branch, not since the previous push: a cancelled or failed run
+      #   never pushed its images, so the next one builds its changes too.
+      #   Pull requests' runs are skipped: their commit isn't the
+      #   branch's.
+      # - schedule, workflow_dispatch, or no base (first run, history
+      #   rewritten: fetching it fails): null.
+      # checkout fetches one commit: diff compares two trees, it needs no
+      # history between them. --no-renames: a renamed file changes the
+      # image it left too.
+      - id: changes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |-
+          base=""
+          case "${GITHUB_EVENT_NAME}" in
+            pull_request)
+              base="${PR_BASE}"
+              ;;
+            push)
+              base="$(gh run list --workflow build-apps.yml --branch "${GITHUB_REF_NAME}" --status success --limit 20 --json headSha,event --jq 'map(select(.event != "pull_request"))[0].headSha // empty')"
+              ;;
+            *) ;;
+          esac
+          if [[ -n "${base}" ]] && git fetch --quiet --depth=1 origin "${base}"; then
+            echo "files=$(git diff --name-only --no-renames "${base}" HEAD | jq -Rcn '[inputs]')" >> "${GITHUB_OUTPUT}"
+          else
+            echo "files=null" >> "${GITHUB_OUTPUT}"
+          fi
+
+      # nullglob: no image gives [], not the pattern. yq -e fails on a spec
+      # without BASE_VERSION, the version check on a Containerfile without
+      # an ARG BASE_VERSION default. A Containerfile running bootc container
+      # lint is a bootc image's (AGENTS.md): build-bootc.yml builds it.
+      # Dalec images: their target is the minimal image, from scratch (see
+      # the specs). Containerfiles: the last stage.
       - id: find
+        env:
+          FILES: ${{ steps.changes.outputs.files }}
         run: |-
           shopt -s nullglob
-          for spec in images/*/spec.yml; do
-            name="$(basename "$(dirname "${spec}")")"
-            version="$(yq -e '.args.BASE_VERSION' "${spec}")"
-            jq -cn --arg name "${name}" --arg version "${version}" '{name: $name, version: $version}'
-          done | jq -cs . > "${RUNNER_TEMP}/images.json"
+          {
+            for file in images/*/spec.yml; do
+              version="$(yq -e '.args.BASE_VERSION' "${file}")"
+              jq -cn --arg file "${file}" --arg version "${version}" '{file: $file, version: $version, target: "trixie/container"}'
+            done
+            for file in images/*/Containerfile; do
+              grep -q '^RUN bootc container lint' "${file}" && continue
+              version="$(sed -n 's/^ARG BASE_VERSION=//p' "${file}")"
+              [[ -n "${version}" ]] || { echo "::error file=${file}::no ARG BASE_VERSION=<version>"; exit 1; }
+              jq -cn --arg file "${file}" --arg version "${version}" '{file: $file, version: $version, target: ""}'
+            done
+          } | jq -cs --argjson files "${FILES}" '
+            map(.name = (.file | split("/")[1]))
+            | if $files == null or any($files[]; . == ".github/workflows/build-apps.yml" or test("^images/[^/]+$")) then .
+              else map(select(.name as $name | any($files[]; startswith("images/\($name)/"))))
+              end' > "${RUNNER_TEMP}/images.json"
           echo "images=$(< "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
+          echo "containerfiles=$(jq -c 'map(.file | select(endswith("/Containerfile")))' "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
+
+  # Same as build-bootc.yml's, for the Containerfiles to build only: code
+  # scanning keeps the others' alerts, from their last analysis.
+  hadolint:
+    needs: discover
+    if: needs.discover.outputs.containerfiles != '[]'
+    runs-on: ubuntu-26.04
+    strategy:
+      fail-fast: false
+      matrix:
+        containerfile: ${{ fromJSON(needs.discover.outputs.containerfiles) }}
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.5.0
+        with:
+          dockerfile: ${{ matrix.containerfile }}
+          format: sarif
+          output-file: hadolint-results.sarif
+          failure-threshold: warning
+
+      - name: Upload Hadolint results
+        uses: github/codeql-action/upload-sarif@v4
+        with:
+          sarif_file: hadolint-results.sarif
+          # Code scanning tracks alerts per category: keep it stable per
+          # file so fixed findings close.
+          category: hadolint-${{ matrix.containerfile }}
+        if: always()
 
   # One job per image and platform, each on a runner of that platform:
   # native builds and tests, no QEMU. The push job below merges them into
   # one manifest list per image.
   build:
     name: build ${{ matrix.image.name }}:${{ matrix.image.version }} ${{ matrix.platform.arch }}
-    needs: discover
-    if: needs.discover.outputs.images != '[]'
+    needs:
+      - discover
+      - hadolint
+    # Also when hadolint is skipped (no Containerfile to build), not when
+    # it failed.
+    if: >-
+      !cancelled() && !failure() && needs.discover.outputs.images != '[]'
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -92,20 +199,21 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # The last commit's time, as in build.yml: Dalec exports it to the
-      # build (packaging tools clamp the package's file times to it), and
-      # BuildKit dates the image with it.
+      # The last commit's time, as in build-bootc.yml: Dalec exports it to
+      # the build (packaging tools clamp the package's file times to it),
+      # the Containerfiles read it (ARG SOURCE_DATE_EPOCH), and BuildKit
+      # dates the image with it.
       - run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "${GITHUB_ENV}"
 
-      # trixie/container: the minimal image, from scratch (see the spec).
-      # Context is images/, as in build.yml.
+      # Context is images/, as in build-bootc.yml. target: none ("") for a
+      # Containerfile, its last stage.
       # Attestations, attached to the image in its index
       # (https://docs.docker.com/build/metadata/attestations/):
       # - provenance mode=max: also the build args and each step's
-      #   details (the spec has no secrets); version=v1, SLSA 1.x.
+      #   details (no secrets); version=v1, SLSA 1.x.
       # - sbom: BuildKit scans the final image for any frontend, Dalec
-      #   included: the Debian packages (dpkg database) and the Python
-      #   ones (dist-info).
+      #   included: the Debian packages (dpkg database), the Python ones
+      #   (dist-info), a Go binary's modules.
       # outputs: pushed by digest, untagged (not on pull requests); the push
       # job tags the manifest list. rewrite-timestamp: BuildKit also clamps
       # the layers' file times to SOURCE_DATE_EPOCH, otherwise they keep the
@@ -114,8 +222,8 @@ jobs:
         uses: docker/build-push-action@v7
         with:
           context: images
-          file: images/${{ matrix.image.name }}/spec.yml
-          target: trixie/container
+          file: ${{ matrix.image.file }}
+          target: ${{ matrix.image.target }}
           platforms: linux/${{ matrix.platform.arch }}
           build-args: SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
           provenance: mode=max,version=v1

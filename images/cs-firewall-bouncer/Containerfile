@@ -24,9 +24,12 @@ EORUN
 FROM scratch
 ARG BASE_VERSION
 
+# source: links the ghcr.io package to this repository, as the Dalec
+# specs do.
 # hadolint ignore=DL3050
 LABEL org.opencontainers.image.version="${BASE_VERSION}" \
-    org.opencontainers.image.licenses="MIT"
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
 # Binary in /usr/bin, config in /etc/crowdsec/bouncers/: the upstream RPM's paths,
 # so upstream docs, including the .yaml.local override, apply as is.
 COPY --link --from=build /src/crowdsec-firewall-bouncer /usr/bin/

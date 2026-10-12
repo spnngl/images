@@ -51,7 +51,7 @@ Check the source rather than blog posts or memory:
   credentials go in `config.toml` (git-ignored). See `config.example.toml`.
 - Pin the base image to a major release with `ARG BASE_VERSION=<version>`
   before `FROM`. It is also the image's tag. CI passes it from the
-  `.github/workflows/build.yml` matrix: Renovate bumps both in one PR.
+  `.github/workflows/build-bootc.yml` matrix: Renovate bumps both in one PR.
   The build fails until `sysroot/<BASE_VERSION>/` exists, with the new
   base's `/etc/containers/policy.json` plus our changes (see
   ARCHITECTURE.md, "Signing").
@@ -60,7 +60,9 @@ Check the source rather than blog posts or memory:
   anything else needs a custom manager matching every place it is
   written, under one dependency name. Write versions only where Renovate
   updates them: use placeholders (`<BASE_VERSION>`) in comments and docs.
-- New image: add it to both workflow matrices too (`hadolint` and `build`).
+- New bootc image: add it to `build-bootc.yml` too (`paths`, and both
+  matrices, `hadolint` and `build`). Application images need no workflow
+  change: `build-apps.yml` finds them.
 - Must pass `hadolint` (config: `.hadolint.yaml`). Fix findings; ignore
   one only with a comment saying why.
 - bootc images: the last instruction must be `RUN bootc container lint`.
@@ -70,11 +72,15 @@ Check the source rather than blog posts or memory:
   `images/cs-firewall-bouncer/`): static binary on `scratch`, no bootc
   lint; the last instruction is an exec-form smoke test
   (`RUN ["<binary>", ...]`) that needs no capability. `BASE_VERSION` is
-  the upstream release. `scripts/build.sh` refuses them.
+  the upstream release, its `ARG` default the only place it is written
+  (CI reads it). Built with `docker buildx` by
+  `.github/workflows/build-apps.yml`, like Dalec images: the
+  Containerfile sets its own `org.opencontainers.image.source` label.
+  `scripts/build.sh` refuses them.
 - Dalec images (`images/sabnzbd/`): `images/<name>/spec.yml` instead of
   a `Containerfile`, target `trixie/container`, built with `docker
-  buildx` by `.github/workflows/build-dalec.yml` (it finds every
-  `spec.yml`; don't add them to `build.yml`). `args.BASE_VERSION` is the upstream
+  buildx` by `.github/workflows/build-apps.yml` (it finds every
+  `spec.yml`). `args.BASE_VERSION` is the upstream
   release; pin git sources with `checksum`; the spec's `tests` replace
   the smoke test. The Containerfile rules above don't apply.
 - Comment every significant step with *why*, and link docs when useful.
