@@ -21,4 +21,5 @@ Containerfile's header. Upstream sources and the reason for each choice:
 
 Renovate follows the repository's tags, automerged once CI passes, major
 included (versioned by date): mc holds no data, the previous image
-undoes a bad release.
+undoes a bad release. What changed:
+`https://github.com/pgsty/mc/compare/<old>...<new>`.
