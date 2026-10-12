@@ -3,8 +3,8 @@
 [ARCHITECTURE.md](ARCHITECTURE.md) explains the design and the reason for
 each choice. Before a change, read the sections it touches:
 
-- `images/<name>/`: "`images/<name>`", "Design decisions" and "Known
-  limits"
+- `bootc/<name>/` or `images/<name>/`: its own section, "Design
+  decisions" and "Known limits"
 - firewall of a bootc image: "Firewalld (bootc images)"
 - `.github/workflows/`: "CI: ..." and "Vulnerability scanning"
 - `renovate.json5`, or a pinned version: "Updates"
@@ -23,11 +23,12 @@ memory. An image's upstream is named in its ARCHITECTURE.md section.
 
 ## Every image
 
-- One folder per image, `images/<name>/`. The build context is the
-  shared `images/` folder, so an image can `COPY` another's files (`COPY
-  ./fedora/sysroot/common/ /`); the one `.containerignore` at `images/`
-  covers every image. `images/k3s/` is not an image: every `kubeenv`
-  stage runs its `install.sh` and copies its `sysroot/`.
+- One folder per image: `bootc/<name>/` for a bootc image,
+  `images/<name>/` for an application image. The build context is the
+  shared `bootc/` or `images/` folder, so an image can `COPY` another's
+  files (`COPY ./fedora/sysroot/common/ /`); the one `.containerignore`
+  at its root covers every image. `bootc/k3s/` is not an image: every
+  `kubeenv` stage runs its `install.sh` and copies its `sysroot/`.
 - Every pinned version (image tag, release, checksum) is tracked by
   `renovate.json5`: the dockerfile manager reads `FROM` and `# syntax=`;
   anything else needs a custom manager matching every place it is
@@ -58,7 +59,7 @@ Built with podman by `scripts/build.sh` and
 
 Rules:
 
-- Files sit in `images/<name>/sysroot/`, at their path in the image,
+- Files sit in `bootc/<name>/sysroot/`, at their path in the image,
   copied with `COPY --link`: `sysroot/common/`, then
   `sysroot/<BASE_VERSION>/` for the files that differ between base
   releases (`policy.json`).
@@ -72,8 +73,8 @@ Rules:
   fails until `sysroot/<BASE_VERSION>/` holds the new base's
   `/etc/containers/policy.json` plus our changes (ARCHITECTURE.md,
   "Signing").
-- A new image is added to `build-bootc.yml`: `paths`, and both
-  matrices, `hadolint` and `build`.
+- A new image is added to both `build-bootc.yml` matrices, `hadolint`
+  and `build`.
 - The last instruction is `RUN bootc container lint`.
 
 ## Application images
@@ -106,7 +107,7 @@ scripts/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localh
 docker buildx build -f images/<name>/Containerfile images/   # application image
 docker buildx build -f images/<name>/spec.yml --target trixie/container images/   # Dalec image
 shellcheck scripts/*.sh
-docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint images/*/Containerfile
+docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint bootc/*/Containerfile images/*/Containerfile
 docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.151.2 renovate-config-validator --strict
 ```
 

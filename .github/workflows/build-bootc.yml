@@ -10,16 +10,12 @@ name: build-bootc
 
 on:
   # Only when a bootc image's input changed, and then every bootc image:
-  # they share most of their files. images/*: the files at the root of
-  # the build context (.containerignore).
+  # they share most of their files.
   push:
     branches:
       - main
     paths: &paths
-      - images/fedora/**
-      - images/almalinux/**
-      - images/centos/**
-      - images/k3s/**
+      - bootc/**
       - .github/workflows/build-bootc.yml
   pull_request:
     paths: *paths
@@ -49,9 +45,9 @@ jobs:
       fail-fast: false
       matrix:
         containerfile:
-          - images/fedora/Containerfile
-          - images/almalinux/Containerfile
-          - images/centos/Containerfile
+          - bootc/fedora/Containerfile
+          - bootc/almalinux/Containerfile
+          - bootc/centos/Containerfile
     permissions:
       contents: read
       security-events: write
@@ -131,7 +127,7 @@ jobs:
             suffix: *kubeenv
             k3s: *k3s
           # CentOS Stream major release: the base image's tag is
-          # stream<version> (images/centos/Containerfile).
+          # stream<version> (bootc/centos/Containerfile).
           - name: centos
             version: "10"
             target: dockerenv
@@ -160,7 +156,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # Same flags as scripts/build.sh: context is images/, and
+      # Same flags as scripts/build.sh: context is bootc/, and
       # --format=docker because the OCI format drops SHELL. --platform is
       # the runner's own: without QEMU, a runner of another platform fails
       # instead of building the wrong one. The source label links the
@@ -170,7 +166,7 @@ jobs:
       # See: https://oneuptime.com/blog/post/2026-03-18-use-podman-reproducible-builds/view
       - run: |-
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "images/${NAME}/Containerfile" images/
+          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --build-arg "BASE_VERSION=${VERSION}" ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${NAME}/Containerfile" bootc/
       # Pull requests: fail on a Critical vulnerability with a fix that the
       # pushed image doesn't have, before the merge pushes it (spnngl/.github's
       # scan-image action; see ARCHITECTURE.md, "Vulnerability scanning").
@@ -253,8 +249,8 @@ jobs:
       # push only writes sigstore signatures where registries.d enables them,
       # and the check below reads the key from the path policy.json names.
       - run: |-
-          sudo install -D -m 0644 -t /etc/containers/registries.d/ images/fedora/sysroot/common/etc/containers/registries.d/spnngl-images.yaml
-          sudo install -D -m 0644 -t /usr/share/pki/containers/ images/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ bootc/fedora/sysroot/common/etc/containers/registries.d/spnngl-images.yaml
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub
       # Only CI signs: local builds (scripts/build.sh) are never pushed.
       # podman, not cosign: cosign 3 stores signatures as a sigstore bundle
       # (OCI referrers), which containers/image (bootc, podman, skopeo) can't
@@ -293,7 +289,7 @@ jobs:
       # if the signing key doesn't match the committed public key, which
       # would make hosts refuse every upgrade.
       - run: |-
-          policy="images/${NAME}/sysroot/${VERSION}/etc/containers/policy.json"
+          policy="bootc/${NAME}/sysroot/${VERSION}/etc/containers/policy.json"
           read -r -a arches <<< "${ARCHES}"
           for arch in "${arches[@]}"; do
             podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${TAG}"

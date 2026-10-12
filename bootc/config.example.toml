@@ -10,9 +10,9 @@ home = "/var/home/coucou"
 shell = "/bin/bash"
 
 # Optional registry pull secret, read by bootc and, through
-# images/fedora/usr/lib/tmpfiles.d/container-auth.conf, by root's podman and
-# docker. Keep only the registries you log in to: an invalid entry breaks
-# pulls from that registry. "auth" is base64 of "user:token":
+# bootc/fedora/sysroot/common/usr/lib/tmpfiles.d/container-auth.conf, by
+# root's podman and docker. Keep only the registries you log in to: an
+# invalid entry breaks pulls from that registry. "auth" is base64 of "user:token":
 #   printf '%s' 'user:token' | base64
 # Docker Hub must use the "https://index.docker.io/v1/" key, the only one
 # docker reads (podman accepts it too).
