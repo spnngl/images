@@ -16,8 +16,8 @@ ARG BASE_VERSION=10
 #   podman build --format=docker -f bootc/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:<BASE_VERSION> bootc/
 #   podman build --format=docker --target kubeenv -f bootc/almalinux/Containerfile -t ghcr.io/spnngl/images/almalinux:<BASE_VERSION>-v<Kubernetes minor release>k3s bootc/
 #
-# scripts/build.sh does the first one (default target only) and also builds a
-# qcow2 disk image; scripts/run.sh boots it in QEMU.
+# bootc/build.sh does the first one (default target only) and also builds a
+# qcow2 disk image; bootc/run.sh boots it in QEMU.
 #
 # NB: This image ships no users, passwords or SSH keys.
 # Docs: https://bootc.dev/bootc/building/guidance.html

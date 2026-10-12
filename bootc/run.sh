@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Boot output/<name>/<name>.qcow2, built by scripts/build.sh, in QEMU.
+# Boot output/<name>/<name>.qcow2, built by bootc/build.sh, in QEMU.
 # Supports macOS on Apple Silicon only (HVF acceleration, Homebrew qemu).
 #
-# Usage: [SSH_PORT=2222] scripts/run.sh [name]    (default: fedora)
+# Usage: [SSH_PORT=2222] bootc/run.sh [name]    (default: fedora)
 #
 # Console: this terminal, quit with Ctrl-a x.
 # SSH:     ssh -p 2222 <user from config.toml>@localhost (guest sshd port 42022)
@@ -19,7 +19,7 @@ die() {
 }
 
 disk="output/${name}/${name}.qcow2"
-[[ -f ${disk} ]] || die "${disk} not found, run: scripts/build.sh ${name}"
+[[ -f ${disk} ]] || die "${disk} not found, run: bootc/build.sh ${name}"
 [[ "$(uname -s)/$(uname -m)" == Darwin/arm64 ]] || die "only macOS on Apple Silicon is supported"
 
 firmware="$(brew --prefix qemu)/share/qemu/edk2-aarch64-code.fd"

@@ -184,7 +184,11 @@
         {
             "customType": "regex",
             "description": "Images run by the scripts and the commands in the docs (image-builder-cli, hadolint...).",
-            "managerFilePatterns": ["/^scripts/[^/]+\\.sh$/", "/^[^/]+\\.md$/"],
+            "managerFilePatterns": [
+                "/^scripts/[^/]+\\.sh$/",
+                "/^bootc/[^/]+\\.sh$/",
+                "/^[^/]+\\.md$/"
+            ],
             "matchStrings": [
                 "(?<depName>(?:docker|ghcr|quay)\\.io/[a-z0-9._/-]+):(?<currentValue>v?\\d[\\w.-]*)"
             ],
