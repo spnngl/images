@@ -83,7 +83,7 @@
         },
         {
             "customType": "regex",
-            "description": "MinIO and its fork (minio/minio, pgsty/silo): a Containerfile's ARG BASE_VERSION=RELEASE.<date>T<time>Z with the --checksum of its source (the tag's commit, one match so both change together), the repository from the ADD URL that follows. Any image of that form is picked up. Tags: minio/minio publishes no GitHub releases. Versioning: by date then time (the seconds left out: regex versioning has five parts). build-apps.yml reads the version from the Containerfile.",
+            "description": "MinIO and its forks (minio/minio, pgsty/silo, pgsty/mc): a Containerfile's ARG BASE_VERSION=RELEASE.<date>T<time>Z with the --checksum of its source (the tag's commit, one match so both change together), the repository from the ADD URL that follows. Any image of that form is picked up. Tags: minio/minio publishes no GitHub releases. Versioning: by date then time (the seconds left out: regex versioning has five parts). build-apps.yml reads the version from the Containerfile.",
             "managerFilePatterns": ["/^images/[^/]+/Containerfile$/"],
             "matchStrings": [
                 "ARG BASE_VERSION=(?<currentValue>RELEASE\\.\\S+)\\n[\\s\\S]*?--checksum=(?<currentDigest>[0-9a-f]{40})[\\s\\\\]+https://github\\.com/(?<depName>[\\w.-]+/[\\w.-]+?)\\.git#"
@@ -211,8 +211,8 @@
             "automerge": true
         },
         {
-            "description": "Silo: every release automerged once CI is green (its build stage runs a server through the S3 API). Major too: the versioning is by date, so a new year is a major update, not a breaking change. Not digest updates: a moved tag. The note keeps what changed in the merged PR.",
-            "matchDepNames": ["pgsty/silo"],
+            "description": "Silo and pgsty/mc: every release automerged once CI is green (the build stage tests it: Silo's runs a server through the S3 API). Major too: the versioning is by date, so a new year is a major update, not a breaking change. Not digest updates: a moved tag. The note keeps what changed in the merged PR.",
+            "matchDepNames": ["pgsty/silo", "pgsty/mc"],
             "matchUpdateTypes": ["major", "minor", "patch"],
             "automerge": true,
             "prBodyNotes": [
