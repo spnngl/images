@@ -3,10 +3,10 @@
 This repository builds [bootc](https://bootc.dev/bootc/) images: bootable
 operating systems shipped as OCI container images. A bootc host boots from
 an image and updates by pulling a newer one (`bootc upgrade`), the same way
-a container is updated. Three folders are not bootc images but
+a container is updated. Four folders are not bootc images but
 application images, containers the hosts run: `images/cs-firewall-bouncer`,
-`images/sabnzbd` and `images/nftables-exporter`, the last two built with
-Dalec, not a Containerfile (see their sections).
+`images/sabnzbd`, `images/nftables-exporter` and `images/jellyfin`, the
+last three built with Dalec, not a Containerfile (see their sections).
 
 For a bootc image there are two stages:
 
@@ -38,7 +38,7 @@ For a bootc image there are two stages:
 │   └── <name>/                 # one folder per image (bootc, or application
 │       │                       # image: cs-firewall-bouncer)
 │       ├── Containerfile       # or spec.yml, for a Dalec image: sabnzbd,
-│       │                       # nftables-exporter
+│       │                       # nftables-exporter, jellyfin
 │       └── sysroot/...         # files copied as is into the image root
 │                               # (bootc: common/, then <BASE_VERSION>/)
 ├── scripts/
@@ -368,6 +368,62 @@ trixie package, the exporter, installed with Debian's `nftables`.
   publishes no GitHub releases). Renovate bumps it with the source
   checksum; check upstream's `options.go` for new options.
 
+### `images/jellyfin`
+
+[Jellyfin](https://jellyfin.org) (media server, C#/.NET), server only,
+built with Dalec from `images/jellyfin/spec.yml`, as `images/sabnzbd`
+(same reasons, same `docker buildx` build). One Debian trixie package,
+the server, installed with `jellyfin-ffmpeg8`.
+
+- **Repackaged, not built from source**: the package copies
+  `/usr/lib/jellyfin/bin` from upstream's `jellyfin-server` deb
+  (Jellyfin's trixie repository, an `extra_repos` with its key pinned by
+  digest). trixie has no .NET SDK and Dalec no NuGet generator, so a
+  source build would download the SDK and every NuGet package unpinned
+  (upstream has no `packages.lock.json`). The deb is a build dependency
+  pinned to `${BASE_VERSION}+deb13`: its maintainer scripts (bash,
+  `adduser`) run in the build container, never in the image, and the
+  same pin works for both architectures. Upstream's binaries are kept as
+  is (`disable_strip`: their own build can't strip `libpdfium.so`).
+- **`jellyfin-ffmpeg8` from the same repository, not pinned** (like
+  Debian's packages, the weekly rebuild picks up its fixes): the ffmpeg
+  fork Jellyfin needs, bundling its hardware drivers: Intel (amd64:
+  VA-API, QSV, Vulkan), AMD (VA-API, Vulkan), Rockchip (arm64: MPP,
+  RGA). Not added: Intel OpenCL (`intel-opencl-icd` isn't in trixie,
+  upstream's Docker image installs GitHub debs, amd64 only; HDR tone
+  mapping on Intel falls back to VPP) and Rockchip's libmali.
+- **No web client** (`--nowebclient`): clients are the apps (Android,
+  TV) and Seerr. jellyfin-web would need Node.js 24 to build, trixie
+  has 20. The first-run wizard is done through the API (`/Startup`) or a
+  client that runs it.
+- **Upstream's Docker layout**: data in `/config`, cache in `/cache`,
+  `LD_PRELOAD` of jemalloc (as upstream's deb and image), CJK fonts
+  (posters and burnt-in subtitles), NVIDIA capabilities including
+  `video` (NVENC/NVDEC).
+- **Temporary files in `/cache`** (`TMPDIR`): the root filesystem can be
+  read-only, and Docker and Kubernetes mount no tmpfs on `/tmp` (Podman
+  does). Without it, ASP.NET's key ring writes fail (`Read-only file
+  system : '/tmp/'`). On disk rather than in memory: Jellyfin extracts
+  attachments and subtitles there.
+- **Runtime contract:** UID/GID 65532 without a passwd entry (`HOME` is
+  `/config`), `/config` and `/cache` writable by it, media read-only,
+  read-only root filesystem possible. `/cache` is rebuilt as needed: on
+  Kubernetes, an `emptyDir` on disk (not `medium: Memory`, transcodes
+  are large). 8096/tcp (API), 7359/udp (client discovery, same network
+  only). Probes: `GET /health` on 8096 (`Healthy`). Hardware
+  transcoding: `/dev/dri` (Rockchip: also `/dev/mpp_service`,
+  `/dev/rga`) with the devices' GID as a supplementary group, or the
+  NVIDIA Container Toolkit.
+- **Tests**: ffmpeg and ffprobe run, and the server starts with `--mode
+  MigrateSystem` (.NET runtime, SQLite, plugins, an empty database's
+  migrations, then exit 0). Not `--version`: it exits 1.
+- **`BASE_VERSION` is the server's release**, followed by Renovate in
+  the repository's `jellyfin-server` package (deb datasource), not in
+  GitHub's tags: a PR only comes once the package exists. Never
+  automerged: a release migrates the database for good, back up
+  `/config` first. The repository key's digest isn't followed: if
+  upstream rotates it, the build fails on the digest.
+
 ## Design decisions
 
 - **The build context is the shared `images/` folder, not each image's
@@ -558,7 +614,8 @@ commits, action digests, automerge under `.github/`).
 - **Reviewed by hand**, each PR saying what to check: base images (CI
   fail until their `sysroot/<BASE_VERSION>/` is added, see "Signing"),
   SABnzbd and uv (regenerate the lock), cs-firewall-bouncer and
-  nftables-exporter (port upstream's config changes), image-builder-cli,
+  nftables-exporter (port upstream's config changes), Jellyfin (database
+  migrations), image-builder-cli,
   and every major
   release.
 - **A new base major or Kubernetes minor release changes the image
