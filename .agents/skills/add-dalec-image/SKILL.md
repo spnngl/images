@@ -1,6 +1,6 @@
 ---
 name: add-dalec-image
-description: Add or change an application image built with Dalec from containers/<name>/spec.yml: an app needing distro packages at runtime (interpreter, shared libraries, tools it execs). Use when an app needs packages, or when editing a spec.yml.
+description: Dalec application image, for apps needing distro packages at runtime (interpreter, shared libraries, tools it execs). Use when adding one, or editing a containers/*/spec.yml.
 ---
 
 # Add a Dalec image
@@ -12,9 +12,9 @@ copy its shape. ARCHITECTURE.md, "`containers/sabnzbd`" and "CI:
 
 Dalec builds one Debian package, then installs it into an image built from
 scratch out of that package's dependency **closure**: only what the spec
-names exists at runtime. The image is **shell-less**: no shell, no apt, so
-anything a shell would run (wrapper scripts, `sh -c`, `$VAR` in the
-entrypoint) fails.
+names exists at runtime. The image is **shell-less**
+(`containers/AGENTS.md`), and has no apt: wrapper scripts, `sh -c` and
+`$VAR` in the entrypoint fail.
 
 ## Steps
 
@@ -47,8 +47,7 @@ Done when every item has a home on both platforms.
 
 ### 2. Write `containers/<name>/spec.yml`
 
-- **`.dockerignore`**: copy another image's; the folder is the build
-  context (BuildKit ignores `.containerignore`).
+- **`.dockerignore`**: copy another image's.
 - **Frontend**: `# syntax=` with the same frontend tag as the other specs.
   Read Dalec at that tag (`git_clone` `github.com/project-dalec/dalec`):
   `website/content/` for docs, `docs/spec.schema.json` and the Go `yaml:`
@@ -67,9 +66,7 @@ Done when every item has a home on both platforms.
   the build: git with `commit: <tag>` and `checksum: <commit sha>`, http
   with `digest`.
 - **Repo files** (patches, locks): a `context: {}` source with
-  `includes:`. The build context is the image's own folder,
-  `containers/<name>/`.
-  Patches go under `patches.<source>`, each with a comment saying why.
+  `includes:`. Patches go under `patches.<source>`, each with a comment saying why.
 - **Build tools** trixie lacks: an `image:` source with `path:` to the
   binary, as the reference image does for `uv`.
 - **Metadata**: `packager` and `vendor` `spnngl/images`, `revision: 1`,
@@ -79,11 +76,10 @@ Done when every item has a home on both platforms.
   from the folder holding one folder per source: a `cd` ends with its step.
   `network_mode: sandbox` only for a hash-pinned lock.
 - **Image**: absolute paths in `entrypoint`; `cmd` points config and data
-  at the volumes. `user: "65532:65532"`, numeric so `runAsNonRoot` can
-  check it; with no passwd entry, set `HOME` to a volume. `working_dir`,
+  at the volumes. `user: "65532:65532"`; with no passwd entry, set `HOME`
+  to a volume. `working_dir`,
   `volumes`, labels `org.opencontainers.image.{title,version,licenses,source}`.
   Dalec has no `EXPOSE`: state the port in a comment.
-- **Why-comments** on every non-obvious line (AGENTS.md).
 
 Closure pitfalls, each hit by the reference image:
 
@@ -136,8 +132,7 @@ for each pinned version, modeled on sabnzbd's (a git source's version and
 entry saying whether it automerges, with `prBodyNotes` for what its PR
 needs by hand.
 
-Done when `renovate-config-validator --strict` passes (AGENTS.md) and
-every pinned version of the spec has a manager.
+Done when `renovate-config-validator --strict` passes and every pinned version of the spec has a manager.
 
 ### 6. Document it
 
@@ -160,4 +155,4 @@ contract says (port published, volumes writable by 65532), and check the
 app starts and serves.
 
 Done when the build is green and the container serves with its volumes
-mounted. Without docker, report that the build was not run.
+mounted.
