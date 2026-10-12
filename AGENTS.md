@@ -3,7 +3,7 @@
 [ARCHITECTURE.md](ARCHITECTURE.md) explains the design and the reason for
 each choice. Before a change, read the sections it touches:
 
-- `bootc/<name>/` or `images/<name>/`: its own section, "Design
+- `bootc/<name>/` or `containers/<name>/`: its own section, "Design
   decisions" and "Known limits"
 - firewall of a bootc image: "Firewalld (bootc images)"
 - `.github/workflows/`: "CI: ..." and "Vulnerability scanning"
@@ -24,11 +24,16 @@ memory. An image's upstream is named in its ARCHITECTURE.md section.
 ## Every image
 
 - One folder per image: `bootc/<name>/` for a bootc image,
-  `images/<name>/` for an application image. The build context is the
-  shared `bootc/` or `images/` folder, so an image can `COPY` another's
-  files (`COPY ./fedora/sysroot/common/ /`); the one `.containerignore`
-  at its root covers every image. `bootc/k3s/` is not an image: every
-  `kubeenv` stage runs its `install.sh` and copies its `sysroot/`.
+  `containers/<name>/` for an application image.
+- bootc build context: the shared `bootc/` folder, so an image can
+  `COPY` another's files (`COPY ./fedora/sysroot/common/ /`); the one
+  `bootc/.containerignore` covers every image. `bootc/k3s/` is not an
+  image: every `kubeenv` stage runs its `install.sh` and copies its
+  `sysroot/`.
+- Application build context: the image's own folder,
+  `containers/<name>/`, with its own `.dockerignore` (BuildKit ignores
+  `.containerignore`); copy another image's. It sees no other image's
+  files.
 - Every pinned version (image tag, release, checksum) is tracked by
   `renovate.json5`: the dockerfile manager reads `FROM` and `# syntax=`;
   anything else needs a custom manager matching every place it is
@@ -93,7 +98,8 @@ Pick the build by what the app needs at runtime, and name that need:
 
 ## Scripts
 
-`bootc/*.sh` for bootc images, `scripts/` for the others.
+In the folder of what they serve: `bootc/*.sh` for every bootc image,
+`containers/<name>/*.sh` for one application image.
 
 - Bash, `set -euo pipefail`, run from any folder (they `cd` to the repo
   root).
@@ -106,10 +112,10 @@ Pick the build by what the app needs at runtime, and name that need:
 ```sh
 bootc/build.sh <name>   # bootc; needs rootful podman and ./config.toml
 bootc/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
-docker buildx build -f images/<name>/Containerfile images/   # application image
-docker buildx build -f images/<name>/spec.yml --target trixie/container images/   # Dalec image
-shellcheck bootc/*.sh scripts/*.sh
-docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint bootc/*/Containerfile images/*/Containerfile
+docker buildx build -f containers/<name>/Containerfile containers/<name>/   # application image
+docker buildx build -f containers/<name>/spec.yml --target trixie/container containers/<name>/   # Dalec image
+shellcheck bootc/*.sh containers/*/*.sh
+docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint bootc/*/Containerfile containers/*/Containerfile
 docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.151.2 renovate-config-validator --strict
 ```
 

@@ -24,7 +24,7 @@ die() {
 }
 
 containerfile="bootc/${name}/Containerfile"
-# Application images (images/<name>/) have no disk image to build.
+# Application images (containers/<name>/) have no disk image to build.
 [[ -f ${containerfile} ]] || die "${containerfile} not found: not a bootc image"
 version="$(sed -n -E 's/^ARG BASE_VERSION=([^[:space:]]+).*/\1/p' "${containerfile}")"
 [[ -n ${version} ]] || die "${containerfile} has no ARG BASE_VERSION=<version>"

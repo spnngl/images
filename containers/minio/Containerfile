@@ -1,23 +1,25 @@
 # syntax=docker.io/docker/dockerfile:1
 #
-# Silo server (S3-compatible object storage) built from source, on scratch.
-# Silo is the maintained, community fork of the MinIO server (Pigsty,
-# AGPL), compatible with its data, variables and API: upstream MinIO is
-# archived, with known vulnerabilities it will never fix. Upstream's
-# release as tagged, with no patch. See ARCHITECTURE.md (images/silo).
+# MinIO server (S3-compatible object storage) built from source, on scratch.
+# Upstream is archived and source-only (no binaries or images after its last
+# release): this is that release, with no patch.
+#
+# Known vulnerabilities, unfixed and accepted: in MinIO's code (among them
+# unauthenticated object writes, CVE-2026-40344 and CVE-2026-41145) and in
+# its frozen dependencies. Only for networks where every client is trusted.
+# See ARCHITECTURE.md (containers/minio).
 #
 # Runtime contract: UID/GID 65532 (no passwd entry); /data writable by it;
 # S3 API on 9000/tcp, console on 9001/tcp; MINIO_ROOT_USER and
-# MINIO_ROOT_PASSWORD (or their *_FILE variants) set, or Silo uses the
+# MINIO_ROOT_PASSWORD (or their *_FILE variants) set, or MinIO uses the
 # well-known minioadmin:minioadmin. TLS: public.crt and private.key, and
-# CAs/ for the private CAs Silo must trust, mounted in /certs. A non-default
-# S3 address goes in MINIO_ADDRESS, not --address: the HEALTHCHECK reads
-# it. Runs with a read-only root filesystem, no capability and
-# no-new-privileges: Silo only writes to /data.
-# https://silo.pgsty.com
+# CAs/ for the private CAs MinIO must trust, mounted in /certs. Runs with
+# a read-only root filesystem, no capability and no-new-privileges: MinIO
+# only writes to /data.
+# https://github.com/minio/docs/blob/main/source/operations/deployments/baremetal-deploy-minio-as-a-container.rst
 
-# Tags: https://github.com/pgsty/silo/tags
-ARG BASE_VERSION=RELEASE.2026-09-16T00-00-00Z
+# The last release. Tags: https://github.com/minio/minio/tags
+ARG BASE_VERSION=RELEASE.2025-10-15T17-29-55Z
 # Debian trixie: its ca-certificates is the CA bundle copied below.
 FROM docker.io/library/golang:1.27-trixie AS build
 
@@ -34,23 +36,27 @@ WORKDIR /src
 # --keep-git-dir: gen-ldflags.go reads the commit ID with git.
 ADD --link \
     --keep-git-dir=true \
-    --checksum=2a4d51406b7ed87af5fe6fe0f801f3290f96eb3c \
-    https://github.com/pgsty/silo.git#${BASE_VERSION} /src
+    --checksum=9e49d5e7a648f00e26f2246f4dc28e6b07f8c84a \
+    https://github.com/minio/minio.git#${BASE_VERSION} /src
 
 # git refuses a repository another user owns: trust this one, while root.
 RUN git config --system --add safe.directory /src
 
-# Build and test as the image's user, not root, as images/minio does.
-# WORKDIR creates its folder owned by USER: /out takes the build output.
+# Build and test as the image's user, not root: neither upstream's code
+# (gen-ldflags.go, the server) nor the test get root, the test runs MinIO
+# as the image does, and the source stays root's. WORKDIR creates its
+# folder owned by USER: /out takes the build output.
 USER 65532:65532
 WORKDIR /out
 WORKDIR /src
 
-# Upstream's release build (.github/workflows/release.yml and
-# .github/goreleaser.yml), version included: gen-ldflags.go takes the tag's
-# time in RFC 3339 (<date>T<hh:mm:ss>Z for RELEASE.<date>T<hh-mm-ss>Z) and
-# MINIO_RELEASE as the tag's prefix. Without them, the binary is a
-# DEVELOPMENT.GOGET build. Caches: images/minio's ids, the same user.
+# Upstream's release build (Makefile's build target), version included:
+# gen-ldflags.go takes the tag's time in RFC 3339 (<date>T<hh:mm:ss>Z for
+# RELEASE.<date>T<hh-mm-ss>Z) and MINIO_RELEASE as the tag's prefix.
+# Without them, the binary is a DEVELOPMENT.GOGET build.
+# Caches: uid sets the owner of a new cache only, and one is shared by
+# every build that uses its id (the target by default): ids of their own,
+# root's caches (cs-firewall-bouncer) aren't writable by this user.
 # DL3062: `go run` of a file in the checkout, not of a remote module.
 # hadolint ignore=DL3062
 RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
@@ -61,28 +67,28 @@ clock="${version#*T}"
 version="${version%%T*}T${clock//-/:}"
 CGO_ENABLED=0 go build -tags kqueue -trimpath \
     -ldflags "$(MINIO_RELEASE=RELEASE go run buildscripts/gen-ldflags.go "${version}")" \
-    -o /out/silo
+    -o /out/minio
 mkdir /out/data
 EORUN
 
 # Server smoke test, here because scratch has no shell to run it. Renovate
-# automerges Silo releases and golang bumps on this test. A single-drive
-# server, the HEALTHCHECK's command, a bucket, a 1 MiB object written and
-# read back through the S3 API, then a graceful stop. Random throwaway
-# credentials: none in the repository.
+# automerges golang bumps on this test, and nobody upstream tests this
+# archived code with a newer Go. A single-drive server, a bucket, a
+# 1 MiB object written and read back through the S3 API, then a graceful
+# stop. Random throwaway credentials: none in the repository.
 # kill (DL3001) stops the server this step started, not a container's.
 # hadolint ignore=DL3001
 RUN <<EORUN
-/out/silo --version | grep -F "silo version ${BASE_VERSION} (commit-id="
+/out/minio --version | grep -F "minio version ${BASE_VERSION} (commit-id="
 hex() { od -An -vtx1 -N16 /dev/urandom | tr -d ' \n'; }
 MINIO_ROOT_USER="$(hex)"
 MINIO_ROOT_PASSWORD="$(hex)"
-export MINIO_ROOT_USER MINIO_ROOT_PASSWORD MINIO_ADDRESS=127.0.0.1:9000
-/out/silo --certs-dir /tmp/certs server --console-address 127.0.0.1:9001 /tmp/data &
+export MINIO_ROOT_USER MINIO_ROOT_PASSWORD MINIO_UPDATE=off
+/out/minio --certs-dir /tmp/certs server --address 127.0.0.1:9000 \
+    --console-address 127.0.0.1:9001 /tmp/data &
 server=$!
 # 503 until the drive is formatted: curl retries it.
 curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:9000/minio/health/ready
-/out/silo --certs-dir /tmp/certs healthcheck ready
 head -c 1M /dev/urandom > /tmp/object
 s3=(curl -fsS --aws-sigv4 aws:amz:us-east-1:s3 --user "${MINIO_ROOT_USER}:${MINIO_ROOT_PASSWORD}")
 "${s3[@]}" -X PUT http://127.0.0.1:9000/smoke-test
@@ -93,9 +99,9 @@ wait "${server}"
 rm -r /tmp/certs /tmp/data /tmp/object
 EORUN
 
-# Silo only execs itself (restart) and has no C library: the binary, the CA
-# bundle for its outbound TLS (OpenID, LDAP, KMS, replication, notification
-# targets), and the licenses (AGPL: the source is upstream's tag).
+# MinIO execs nothing and has no C library: the binary, the CA bundle for its
+# outbound TLS (OpenID, LDAP, KMS, replication, notification targets), and
+# the licenses (AGPL: the source is upstream's tag).
 FROM scratch
 ARG BASE_VERSION
 
@@ -107,35 +113,30 @@ LABEL org.opencontainers.image.version="${BASE_VERSION}" \
     org.opencontainers.image.source="https://github.com/spnngl/images"
 
 COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --link --from=build /src/LICENSE /src/NOTICE /src/CREDITS /usr/share/doc/silo/
-# Owned by root, not by the build's user: Silo can't rewrite its binary.
-COPY --link --from=build --chown=0:0 /out/silo /usr/bin/
+COPY --link --from=build /src/LICENSE /src/CREDITS /usr/share/doc/minio/
+# Owned by root, not by the build's user: MinIO can't rewrite its binary.
+COPY --link --from=build --chown=0:0 /out/minio /usr/bin/
 # Owned by the user: a new Docker volume on /data takes this ownership.
 COPY --link --from=build --chown=65532:65532 /out/data /data
 
 # Not root, numeric so Kubernetes' runAsNonRoot can check it.
 USER 65532:65532
-# A variable, not a flag, so that it stays when CMD is replaced (several
-# drives, distributed setup); a random port without it. No MINIO_UPDATE:
-# Silo removed in-place updates and warns when it is set.
-ENV MINIO_CONSOLE_ADDRESS=:9001
+# Variables, not flags, so that they stay when CMD is replaced (several
+# drives, distributed setup). MINIO_CONSOLE_ADDRESS: a random port without
+# it. MINIO_UPDATE=off: no update check against dl.min.io at each start,
+# and in-place updates (`mc admin update`) refused: the image is the update.
+ENV MINIO_CONSOLE_ADDRESS=:9001 \
+    MINIO_UPDATE=off
 
 EXPOSE 9000/tcp 9001/tcp
 VOLUME ["/data"]
 
-# Upstream's (Dockerfile.distroless): the binary probes
-# /minio/health/ready, on MINIO_ADDRESS (:9000 by default), over HTTPS when
-# /certs holds a key pair. --certs-dir: the HEALTHCHECK doesn't go through
-# the entrypoint. Kubernetes ignores it: probe /minio/health/ready there.
-HEALTHCHECK --interval=30s --timeout=10s --start-period=2m --start-interval=2s --retries=3 \
-    CMD ["/usr/bin/silo", "--certs-dir", "/certs", "healthcheck", "ready"]
-
 # --certs-dir in the entrypoint, so that it stays when CMD is replaced.
-# The default, ~/.silo/certs, depends on HOME: / without a passwd entry.
+# The default, ~/.minio/certs, depends on HOME: / without a passwd entry.
 # A global flag, before the command.
-ENTRYPOINT ["/usr/bin/silo", "--certs-dir", "/certs"]
+ENTRYPOINT ["/usr/bin/minio", "--certs-dir", "/certs"]
 CMD ["server", "/data"]
 
 # Smoke test: the binary runs on this platform (the build stage tested the
 # server). Exec form: scratch has no shell.
-RUN ["/usr/bin/silo", "--version"]
+RUN ["/usr/bin/minio", "--version"]

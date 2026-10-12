@@ -1,9 +1,9 @@
 # syntax=docker.io/docker/dockerfile:1
 #
 # MinIO Client (mc, S3 command-line client) from pgsty/mc, the maintained
-# fork of the archived minio/mc that ships with Silo (images/silo), built
+# fork of the archived minio/mc that ships with Silo (containers/silo), built
 # from source, on scratch. Upstream's release as tagged, with no patch. See
-# ARCHITECTURE.md (images/mc).
+# ARCHITECTURE.md (containers/mc).
 #
 # Runtime contract: UID/GID 65532 (no passwd entry); MC_CONFIG_DIR=/config
 # writable by it, as mc writes its config there at every start: with a
@@ -38,7 +38,7 @@ ADD --link \
 # git refuses a repository another user owns: trust this one, while root.
 RUN git config --system --add safe.directory /src
 
-# Build and test as the image's user, not root, as images/minio does.
+# Build and test as the image's user, not root, as containers/minio does.
 # WORKDIR creates its folder owned by USER: /out takes the build output.
 USER 65532:65532
 WORKDIR /out
@@ -48,7 +48,7 @@ WORKDIR /src
 # .github/goreleaser.yml), version included: gen-ldflags.go takes the tag's
 # time in RFC 3339 (<date>T<hh:mm:ss>Z for RELEASE.<date>T<hh-mm-ss>Z) and
 # MC_RELEASE as the tag's prefix. Without them, the binary is a
-# DEVELOPMENT build. Caches: images/minio's ids, the same user.
+# DEVELOPMENT build. Caches: containers/minio's ids, the same user.
 # DL3062: `go run` of a file in the checkout, not of a remote module.
 # hadolint ignore=DL3062
 RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
