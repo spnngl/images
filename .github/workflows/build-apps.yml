@@ -217,7 +217,9 @@ jobs:
       # outputs: pushed by digest, untagged (not on pull requests); the push
       # job tags the manifest list. rewrite-timestamp: BuildKit also clamps
       # the layers' file times to SOURCE_DATE_EPOCH, otherwise they keep the
-      # build's time.
+      # build's time. Pull requests: also an OCI layout, for the scan below
+      # (nothing else keeps the image on the runner).
+      # An empty line is no output.
       - id: build
         uses: docker/build-push-action@v7
         with:
@@ -228,7 +230,17 @@ jobs:
           build-args: SOURCE_DATE_EPOCH=${{ env.SOURCE_DATE_EPOCH }}
           provenance: mode=max,version=v1
           sbom: true
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }},rewrite-timestamp=true
+          outputs: |
+            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }},rewrite-timestamp=true
+            ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/oci,tar=false', runner.temp) || '' }}
+
+      # Same as build-bootc.yml's: pull requests fail on a Critical
+      # vulnerability with a fix; pushed images, image-scan.yml.
+      - if: github.event_name == 'pull_request'
+        uses: spnngl/.github/.github/actions/scan-image@main
+        with:
+          oci-layout: ${{ runner.temp }}/oci
+          fail: true
 
       # The digest, for the push job: one file per image and platform.
       - if: github.event_name != 'pull_request'
