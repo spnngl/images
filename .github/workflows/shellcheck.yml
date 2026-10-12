@@ -1,0 +1,34 @@
+# Lint every shell script, with the rules of .shellcheckrc. The scripts
+# run locally only (bootc/build.sh, a lock script): nothing else would
+# catch a broken one before someone runs it.
+name: shellcheck
+
+on:
+  pull_request:
+    paths: &paths
+      - "**.sh"
+      - .shellcheckrc
+      - .github/workflows/shellcheck.yml
+  push:
+    branches:
+      - main
+    paths: *paths
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  shellcheck:
+    # shellcheck is preinstalled (actions/runner-images,
+    # images/ubuntu/toolsets/toolset-2604.json).
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run shellcheck
+        run: git ls-files -z '*.sh' | xargs -0 shellcheck
