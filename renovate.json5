@@ -71,6 +71,18 @@
         },
         {
             "customType": "regex",
+            "description": "Garage release: the Containerfile's ARG BASE_VERSION with the --checksum of its source (the tag's commit, one match so both change together), from the tags of upstream's Forgejo (no GitHub repository; release candidates left out). build-apps.yml reads the version from the Containerfile.",
+            "managerFilePatterns": ["/^images/garage/Containerfile$/"],
+            "matchStrings": [
+                "ARG BASE_VERSION=(?<currentValue>\\S+)\\n[\\s\\S]*?--checksum=(?<currentDigest>[0-9a-f]{40})"
+            ],
+            "depNameTemplate": "Deuxfleurs/garage",
+            "datasourceTemplate": "forgejo-tags",
+            "registryUrlTemplate": "https://git.deuxfleurs.fr",
+            "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
+        },
+        {
+            "customType": "regex",
             "description": "SABnzbd release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit, one match so both change together). build-apps.yml reads the version from the spec.",
             "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
             "matchStrings": [
@@ -156,8 +168,12 @@
     ],
     "packageRules": [
         {
-            "description": "Wait 3 days before proposing a GitHub release or tag (actions, k3s, upstream sources): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
-            "matchDatasources": ["github-releases", "github-tags"],
+            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag (actions, k3s, upstream sources): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
+            "matchDatasources": [
+                "github-releases",
+                "github-tags",
+                "forgejo-tags"
+            ],
             "minimumReleaseAge": "3 days"
         },
         {
@@ -169,9 +185,11 @@
             "automerge": true
         },
         {
-            "description": "Build tools and application releases that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates: for par2cmdline-turbo, a moved tag.",
+            "description": "Build tools and application releases that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates: for par2cmdline-turbo, a moved tag. Garage: its build stage runs a single-node server through the S3 API; a major release needs a migration (upstream's working-documents/migration-<major>.md), by hand.",
             "matchDepNames": [
                 "docker.io/library/golang",
+                "docker.io/library/rust",
+                "Deuxfleurs/garage",
                 "golang-go",
                 "ghcr.io/nushell/nushell",
                 "ghcr.io/project-dalec/dalec/frontend",
@@ -224,6 +242,15 @@
             "automerge": false,
             "prBodyNotes": [
                 "Before merging, port upstream's config changes to `images/cs-firewall-bouncer/sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`: https://github.com/crowdsecurity/cs-firewall-bouncer/compare/v{{{currentValue}}}...v{{{newValue}}} (`config/crowdsec-firewall-bouncer.yaml`)."
+            ]
+        },
+        {
+            "description": "Garage major releases: never automerged (minor and patch ones are, above), they migrate the metadata for good.",
+            "matchDepNames": ["Deuxfleurs/garage"],
+            "matchUpdateTypes": ["major"],
+            "automerge": false,
+            "prBodyNotes": [
+                "Before merging, read upstream's migration guide (https://garagehq.deuxfleurs.fr/documentation/working-documents/migration-{{{newMajor}}}/) and the release notes (https://git.deuxfleurs.fr/Deuxfleurs/garage/releases/tag/v{{{newValue}}}). Merging changes the image tag: nodes stay on the old one until moved, following that guide."
             ]
         },
         {
