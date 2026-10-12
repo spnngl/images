@@ -2,7 +2,7 @@
 
 # Releases: https://github.com/crowdsecurity/cs-firewall-bouncer/releases
 ARG BASE_VERSION=0.0.38
-FROM docker.io/library/golang:1.27 AS build
+FROM docker.io/library/golang:1.27-trixie AS build
 
 ARG BASE_VERSION
 ARG SOURCE_DATE_EPOCH=0
