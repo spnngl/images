@@ -12,12 +12,13 @@
 - **An application image, not part of a bootc image:** its own release
   cadence, rollback by tag, and the host image stays smaller.
   `bootc/build.sh` refuses it.
-- **Sources from `ADD <git url>#v<BASE_VERSION>`, commit not pinned:**
-  the binary runs as root with `NET_ADMIN` in the host network, so the
-  build trusts upstream's tag anyway (buildah ignores `ADD --checksum`
-  for git). A local podman build runs the host's `git`. The source has
-  no `.git`: the build passes `BUILD_VERSION` and `BUILD_TAG` to the
-  Makefile.
+- **Sources from `ADD --checksum <git url>#v<BASE_VERSION>`, commit
+  pinned:** the binary runs as root with `NET_ADMIN` in the host
+  network, so a moved tag must fail the build. The commit is
+  `BASE_CHECKSUM` in `docker-bake.hcl`, kept with the version by
+  Renovate (the tag is lightweight: `git ls-remote` gives the commit
+  directly). The source has no `.git`: the build passes `BUILD_VERSION`
+  and `BUILD_TAG` to the Makefile.
 - **Smoke test `-T`:** prints the merged config, needs no netlink nor
   capability. Its `RUN` leaves empty `/dev`, `/proc`, `/sys` folders:
   harmless, the runtime mounts over them.

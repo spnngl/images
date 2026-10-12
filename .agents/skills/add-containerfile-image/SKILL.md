@@ -43,8 +43,14 @@ Done when every item has an answer and a source file.
   and the runtime contract: UID/GID, volumes, ports, required env or
   secrets, hardening it runs with (`--read-only`, no capability,
   `no-new-privileges`).
-- **Version**: `ARG BASE_VERSION=<release>` before `FROM`, its tags URL
-  in a comment.
+- **Versions**: stage `ARG BASE_VERSION`, `BASE_CHECKSUM`,
+  `DEBIAN_CODENAME` (and `DEBIAN_SNAPSHOT_VERSION` if it installs
+  packages), no default; they come from the image's `docker-bake.hcl`
+  (step 3). The first `RUN` fails without them, and checks the base's
+  release against `DEBIAN_CODENAME`; packages install from the snapshot:
+  copy garage's Containerfile.
+- **`FROM`** with a digest (`golang:<minor>-trixie@sha256:...`): Renovate
+  updates it.
 - **Build stage**: the toolchain's official image on Debian trixie
   (`golang:<minor>-trixie`, `rust:<minor>-trixie`: the Debian release
   named, not the tag's default, which moves with Debian); its
@@ -52,8 +58,8 @@ Done when every item has an answer and a source file.
   `SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]` after the stage's last
   `ENV` or `ARG`: hadolint 2.15.1 checks the `RUN`s after either as
   `/bin/sh`.
-- **Source**, as root: `ADD --link --checksum=<commit> <git url>#<tag>
-  /src`, so a moved tag fails the build. `--keep-git-dir=true` only when
+- **Source**, as root: `ADD --link --checksum=${BASE_CHECKSUM} <git
+  url>#v${BASE_VERSION} /src`, so a moved tag fails the build. `--keep-git-dir=true` only when
   the build reads git, with `git config --system --add safe.directory
   /src`: git refuses a repository another user owns.
 - **Build as the image's user**: root-only steps (packages, toolchain
@@ -90,14 +96,18 @@ header, and `hadolint` passes.
 
 ### 3. Track its versions
 
-Add a `renovate.json5` custom manager modeled on minio's: `ARG
-BASE_VERSION` and the `--checksum` commit in one match (`currentDigest`),
-so both change together. Add a `packageRules` entry: automerged only
-when the server test covers what a release can break; otherwise
-`prBodyNotes` saying what to check by hand.
+Write `containers/<name>/docker-bake.hcl`, modeled on garage's
+(`containers/AGENTS.md`, "Versions"): one `target` with `name`,
+`context`, `dockerfile = "Containerfile"`, a `matrix` of `debian` and
+`base` (`{ version, checksum }`, the checksum is the tag's commit),
+`args` and `tags`. A `# renovate:` comment before the version names its
+datasource, and `depType=automerge` only when the server test covers what
+a release can break. No `renovate.json5` change.
 
-Done when `renovate-config-validator --strict` passes and every pinned
-version of the Containerfile has a manager.
+Done when `docker buildx bake -f containers/docker-bake.hcl -f
+containers/<name>/docker-bake.hcl --print '<name>*'` shows the tag and
+arguments, and `renovate.yml`'s `extract` job would pass (one dependency
+per `# renovate:` comment; see its command).
 
 ### 4. Document it
 
@@ -105,8 +115,9 @@ Write `containers/<name>/AGENTS.md` and `REFERENCES.md`, shaped like
 the reference image's, plus `CLAUDE.md`, a symlink to `AGENTS.md`:
 
 - `AGENTS.md`: what the image is, where its runtime contract is, the
-  rules a later change must keep, the smoke tests, what a version bump
-  needs and whether it automerges
+  rules a later change must keep, the smoke tests, and an *Updates*
+  section: what a version bump needs and whether it automerges (the
+  PRs point there)
 - `REFERENCES.md`: upstream and where in its source to read (release
   build, flags, docs), then each decision with its reason
 
@@ -115,7 +126,7 @@ Done when every decision of step 2 has its reason in `REFERENCES.md`.
 ### 5. Verify
 
 ```sh
-docker buildx build -f containers/<name>/Containerfile -t <name>:test --load containers/<name>/
+docker buildx bake -f containers/docker-bake.hcl -f containers/<name>/docker-bake.hcl '<name>*' --set '*.output=type=docker'
 ```
 
 The build runs the server test. Then:

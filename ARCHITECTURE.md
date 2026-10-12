@@ -1,7 +1,8 @@
 # Architecture
 
 Two kinds of OCI image, built by CI and pushed, signed, to
-`ghcr.io/spnngl/images/<name>:<BASE_VERSION>`:
+`ghcr.io/spnngl/images/<name>:<BASE_VERSION>` (application images:
+`<name>:<BASE_VERSION>-debian<N>`):
 
 - **bootc images** (`bootc/`): bootable operating systems. A host boots
   from one and updates by pulling a newer one (`bootc upgrade`). Built
@@ -16,7 +17,8 @@ The two share no build input: different builders, workflows and rules.
 ## Lifecycle
 
 1. **Pin:** Renovate tracks every version (base image, upstream
-   release, checksum) and proposes bumps on Saturdays.
+   release, checksum; application images: in `docker-bake.hcl`) and
+   proposes bumps on Saturdays.
 2. **Build:** on a change, CI builds each platform natively, runs the
    image's tests, and pushes one manifest list per image.
 3. **Rebuild:** every Sunday, so images pick up base and package fixes
@@ -39,7 +41,7 @@ The two share no build input: different builders, workflows and rules.
 ├── .trivyignore.yaml           # vulnerability false positives, Trivy
 ├── AGENTS.md                   # agent rules for every image
 ├── cosign.pub                  # signing public key, a symlink into bootc/fedora/
-├── renovate.json5              # pinned versions
+├── renovate.json5              # what Renovate tracks, and how
 ├── bootc/                      # shared build context of every bootc image
 │   ├── AGENTS.md, REFERENCES.md
 │   ├── K3S.md                  # setting up k3s hosts
@@ -54,8 +56,10 @@ The two share no build input: different builders, workflows and rules.
 │                               # common/, then <BASE_VERSION>/
 ├── containers/                 # application images
 │   ├── AGENTS.md
+│   ├── docker-bake.hcl         # shared: Debian releases, snapshot, tag functions
 │   └── <name>/                 # one image, and its build context
 │       ├── AGENTS.md, REFERENCES.md
+│       ├── docker-bake.hcl     # its versions, checksums and tags
 │       ├── .dockerignore
 │       ├── Containerfile       # or spec.yml (Dalec), or dhi.yaml (DHI)
 │       └── sysroot/            # files copied as is, if any

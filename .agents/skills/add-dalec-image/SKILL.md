@@ -53,17 +53,20 @@ Done when every item has a home on both platforms.
   tags for field names. The docs drift from the schema (they say
   `workdir`; the field is `working_dir`): the schema wins.
 - **Target**: `<Debian stable>/container`, today `trixie/container`, the
-  one `build-apps.yml` builds. Dependencies are trixie package names.
+  one the Bake file's `target` names. Dependencies are trixie package names.
 - **Header comment**: what the image is, the build command, what a
   version bump needs beyond Renovate's PR (a lock to regenerate, a patch
   to check), and the runtime contract: UID/GID, volumes, port, required
   env or secrets.
-- **Versions** in `args`: `BASE_VERSION` is the upstream release, also the
-  image tag. Every other pinned version is an arg too, each with its
-  releases URL in a comment.
-- **Pinned** sources, so a `BASE_VERSION` that doesn't match the spec fails
-  the build: git with `commit: <tag>` and `checksum: <commit sha>`, http
-  with `digest`.
+- **Versions** in `args`, **empty**: `BASE_VERSION` (the upstream
+  release, also the image tag) and `BASE_CHECKSUM`, then one pair per
+  other pinned source. Their values are in `docker-bake.hcl` (step 5):
+  Bake passes them, and a build without Bake fails on an empty value.
+  Dalec fails on an argument the spec doesn't declare, so Bake passes
+  these and no more (no `DEBIAN_*`).
+- **Pinned** sources, so a version that doesn't match its checksum fails
+  the build: git with `commit: ${BASE_VERSION}` (the tag) and `checksum:
+  ${BASE_CHECKSUM}` (the commit sha), http with `digest`.
 - **Repo files** (patches, locks): a `context: {}` source with
   `includes:`. Patches go under `patches.<source>`, each with a comment saying why.
 - **Build tools** trixie lacks: an `image:` source with `path:` to the
@@ -125,13 +128,17 @@ Done when every exec'd tool and the app itself have a step.
 
 ### 5. Track its versions
 
-Renovate doesn't read specs: add a `renovate.json5` custom manager
-for each pinned version, modeled on sabnzbd's (a git source's version and
-`checksum` in one match, so both change together), and a `packageRules`
-entry saying whether it automerges, with `prBodyNotes` for what its PR
-needs by hand.
+Write `containers/<name>/docker-bake.hcl`, modeled on sabnzbd's
+(`containers/AGENTS.md`, "Versions"): one `target` with `name`,
+`context`, `dockerfile = "spec.yml"`, `target = "${DEBIAN[debian].codename}/container"`, a
+`matrix` (`debian`, `base` as `{ version, checksum }`, one entry per
+other pinned source), `args` (no `containerfile_args`) and `tags`. A
+`# renovate:` comment before each version names its datasource; its
+`depType=automerge` says it may merge alone. No `renovate.json5` change.
 
-Done when `renovate-config-validator --strict` passes and every pinned version of the spec has a manager.
+Done when `docker buildx bake -f containers/docker-bake.hcl -f
+containers/<name>/docker-bake.hcl --print '<name>*'` shows the tag and
+arguments, and every version has its `# renovate:` comment.
 
 ### 6. Document it
 
@@ -139,8 +146,9 @@ Write `containers/<name>/AGENTS.md` and `REFERENCES.md`, shaped like
 sabnzbd's, plus `CLAUDE.md`, a symlink to `AGENTS.md`:
 
 - `AGENTS.md`: what the image is, where its runtime contract is, the
-  rules a later change must keep, the tests, what a version bump needs
-  and whether it automerges
+  rules a later change must keep, the tests, and an *Updates* section:
+  what a version bump needs and whether it automerges (the PRs point
+  there)
 - `REFERENCES.md`: upstream and where in its source to read, then each
   closure choice and patch with its reason
 
@@ -150,7 +158,7 @@ Done when every choice of steps 1 to 4 has its reason in
 ### 7. Verify
 
 ```sh
-docker buildx build -f containers/<name>/spec.yml --target trixie/container -t <name>:test containers/<name>/
+docker buildx bake -f containers/docker-bake.hcl -f containers/<name>/docker-bake.hcl '<name>*' --set '*.output=type=docker'
 ```
 
 The build runs the tests. Then `docker run` the image as its runtime
