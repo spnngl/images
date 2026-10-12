@@ -5,6 +5,8 @@
 .idea
 CONTRIBUTING.md
 Containerfile*
+build.sh
+run.sh
 .containerignore
 Dockerfile*
 .dockerignore
