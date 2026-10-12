@@ -260,14 +260,14 @@
                 "quay.io/almalinuxorg/almalinux-bootc"
             ],
             "prBodyNotes": [
-                "Before merging, add `bootc/<name>/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's `/etc/containers/policy.json` plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:{{{currentValue}}} cat /etc/containers/policy.json) <(podman run --rm {{{depName}}}:{{{newValue}}} cat /etc/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
+                "Before merging, add `bootc/<name>/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's `/etc/containers/policy.json` plus our changes (bootc/REFERENCES.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:{{{currentValue}}} cat /etc/containers/policy.json) <(podman run --rm {{{depName}}}:{{{newValue}}} cat /etc/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
             ]
         },
         {
             "description": "CentOS Stream: the same as the base images above, but the base image tag is stream<BASE_VERSION>, and its policy.json is in /usr/share/containers (bootc/centos/Containerfile).",
             "matchDepNames": ["quay.io/centos-bootc/centos-bootc"],
             "prBodyNotes": [
-                "Before merging, add `bootc/centos/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's policy.json plus our changes (ARCHITECTURE.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:stream{{{currentValue}}} cat /usr/share/containers/policy.json) <(podman run --rm {{{depName}}}:stream{{{newValue}}} cat /usr/share/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
+                "Before merging, add `bootc/centos/sysroot/{{{newValue}}}/` (from `{{{currentValue}}}/`, removed if no build uses it any more) with the new base's policy.json plus our changes (bootc/REFERENCES.md, \"Signing\"). CI fails until then. What changed in the base's file:\n\n```sh\ndiff <(podman run --rm {{{depName}}}:stream{{{currentValue}}} cat /usr/share/containers/policy.json) <(podman run --rm {{{depName}}}:stream{{{newValue}}} cat /usr/share/containers/policy.json)\n```\n\nMerging changes the image tag: move hosts with `bootc switch`."
             ]
         },
         {
@@ -289,7 +289,7 @@
             "enabled": false
         },
         {
-            "description": "cs-firewall-bouncer: never automerged, its config in the image follows upstream's (ARCHITECTURE.md). Explicit, whatever the shared preset automerges.",
+            "description": "cs-firewall-bouncer: never automerged, its config in the image follows upstream's (containers/cs-firewall-bouncer/AGENTS.md). Explicit, whatever the shared preset automerges.",
             "matchDepNames": ["crowdsecurity/cs-firewall-bouncer"],
             "automerge": false,
             "prBodyNotes": [
@@ -313,7 +313,7 @@
             ]
         },
         {
-            "description": "nftables-exporter: never automerged, its config in the image follows upstream's options (ARCHITECTURE.md).",
+            "description": "nftables-exporter: never automerged, its config in the image follows upstream's options (containers/nftables-exporter/AGENTS.md).",
             "matchDepNames": ["metal-stack/nftables-exporter"],
             "prBodyNotes": [
                 "Before merging, port upstream's option changes to `containers/nftables-exporter/nftables_exporter.yaml`: https://github.com/metal-stack/nftables-exporter/compare/v{{{currentValue}}}...v{{{newValue}}} (`options.go`). If CI fails with `go.mod requires go >= ...`, bump `golang-<version>-go` in the spec. A checksum-only update means the tag was moved upstream."

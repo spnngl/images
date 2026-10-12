@@ -8,7 +8,7 @@ description: Static-binary application image (Go, Rust) on scratch. Use when add
 `containers/garage/` (Rust) and `containers/minio/` (Go) are the **reference
 images**: their comments carry the reason for each convention below. Read
 the one in your language whole before writing, and copy its shape, with
-its ARCHITECTURE.md section and "CI: `.github/workflows/build-apps.yml`".
+its `AGENTS.md` and `REFERENCES.md`.
 `containers/cs-firewall-bouncer/` is the exception, not a model: root with
 `NET_ADMIN`, source not pinned to a commit.
 
@@ -101,13 +101,16 @@ version of the Containerfile has a manager.
 
 ### 4. Document it
 
-Add a `### containers/<name>` section to ARCHITECTURE.md, after the last
-application image: its upstream and where in the source to read (release
-build, flags, docs), each decision with its reason, the smoke tests, the
-runtime contract, what a version bump needs. Add it to "Updates", under
-automerged or reviewed by hand.
+Write `containers/<name>/AGENTS.md` and `REFERENCES.md`, shaped like
+the reference image's, plus `CLAUDE.md`, a symlink to `AGENTS.md`:
 
-Done when every decision of step 2 has its reason in the section.
+- `AGENTS.md`: what the image is, where its runtime contract is, the
+  rules a later change must keep, the smoke tests, what a version bump
+  needs and whether it automerges
+- `REFERENCES.md`: upstream and where in its source to read (release
+  build, flags, docs), then each decision with its reason
+
+Done when every decision of step 2 has its reason in `REFERENCES.md`.
 
 ### 5. Verify
 

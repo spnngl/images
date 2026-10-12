@@ -10,6 +10,7 @@ run.sh
 .containerignore
 Dockerfile*
 .dockerignore
+**/*.md
 compose.yml
 docker-bake.hcl
 public
