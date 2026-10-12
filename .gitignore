@@ -34,3 +34,6 @@ id_*
 
 # macOS
 .DS_Store
+
+# Agentic
+PLAN*.md
