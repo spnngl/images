@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # Regenerate containers/sabnzbd/requirements.lock: SABnzbd's
-# requirements.txt at the spec's BASE_VERSION, every module
+# requirements.txt at the BASE_VERSION of docker-bake.hcl, every module
 # (sub-dependencies too) pinned to one version and to the hashes of its
 # files on PyPI. The image build installs exactly these files (uv pip
 # install --require-hashes).
 #
 # Usage: containers/sabnzbd/sabnzbd-lock.sh    (after bumping BASE_VERSION
-#        or UV_VERSION in containers/sabnzbd/spec.yml, or to update
+#        or UV_VERSION in containers/sabnzbd/docker-bake.hcl, or to update
 #        unpinned modules such as cryptography)
 #
-# Requirements: docker, curl.
+# Requirements: docker, curl, jq.
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -19,15 +19,14 @@ die() {
     exit 1
 }
 
-spec="containers/sabnzbd/spec.yml"
 command -v docker >/dev/null || die "docker not found, install Docker: https://docs.docker.com/get-docker/"
 command -v curl >/dev/null || die "curl not found, install it with your package manager"
-arg() {
-    sed -n -E "s/^  $1: ([^[:space:]]+).*/\1/p" "${spec}"
-}
-version="$(arg BASE_VERSION)"
-uv_version="$(arg UV_VERSION)"
-[[ -n ${version} && -n ${uv_version} ]] || die "${spec} has no args.BASE_VERSION or args.UV_VERSION"
+command -v jq >/dev/null || die "jq not found, install it with your package manager"
+# The versions are in the Bake file (docker-bake.hcl): read what it passes.
+args="$(docker buildx bake -f containers/docker-bake.hcl -f containers/sabnzbd/docker-bake.hcl --print "*" 2>/dev/null | jq -c '.target[].args')"
+version="$(jq -r .BASE_VERSION <<<"${args}")"
+uv_version="$(jq -r .UV_VERSION <<<"${args}")"
+[[ -n ${version} && -n ${uv_version} ]] || die "containers/sabnzbd/docker-bake.hcl has no BASE_VERSION or UV_VERSION"
 
 # notify2: desktop notifications over D-Bus, which the image doesn't have.
 # --python-version: Debian trixie's python3, the image's. --python-platform:

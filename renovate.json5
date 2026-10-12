@@ -2,10 +2,12 @@
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
     "description": "Keeps every pinned version current: base images, the k3s release of kubeenv, application images' upstream releases, build tools, GitHub Actions. Base images are pinned to a major release, not a digest: the weekly rebuild (build-bootc.yml) picks up their updates within it.",
     "extends": ["github>spnngl/.github:renovate.default.json5"],
-    // Digests for actions only (the preset's config:best-practices pins
-    // images too): a digest on a Containerfile's FROM would freeze the base
-    // image between rebuilds, and the dockerfile manager would write it into
-    // `ARG BASE_VERSION`, which is also the image's tag.
+    // Digests for actions and the application images' FROM lines only (the
+    // preset's config:best-practices pins every image, and a digest on a
+    // bootc Containerfile's FROM would freeze the base image between
+    // rebuilds, and the dockerfile manager would write it into `ARG
+    // BASE_VERSION`, which is also the image's tag): see the pinDigests
+    // rule below.
     "ignorePresets": ["docker:pinDigests"],
     // The day before the weekly rebuild (Sunday 07:00, build-bootc.yml and build-apps.yml), so a
     // merged update ships with it.
@@ -13,7 +15,20 @@
     "automergeSchedule": ["at any time"],
     // dockerfile: FROM lines, with `ARG BASE_VERSION` resolved, so the
     // Containerfile default of a base image is updated in place.
+    // custom.regex: the other versions, written once each in a docker-bake.hcl
+    // (containers/AGENTS.md).
     "enabledManagers": ["dockerfile", "github-actions", "custom.regex"],
+    // Debian's archive snapshots (snapshot.debian.org), newest 300: its JSON
+    // is {"result": {"debian": [<timestamp>...]}}, all of them, oldest first.
+    "customDatasources": {
+        "debian-snapshot": {
+            "defaultRegistryUrlTemplate": "https://snapshot.debian.org/mr/timestamp/?archive=debian",
+            "format": "json",
+            "transformTemplates": [
+                "{ \"releases\": result.debian[[-300..-1]].{ \"version\": $ } }"
+            ]
+        }
+    },
     "customManagers": [
         {
             "customType": "regex",
@@ -76,72 +91,6 @@
         },
         {
             "customType": "regex",
-            "description": "cs-firewall-bouncer release: the Containerfile's ARG BASE_VERSION. build-apps.yml reads the version from the Containerfile.",
-            "managerFilePatterns": [
-                "/^containers/cs-firewall-bouncer/Containerfile$/"
-            ],
-            "matchStrings": ["ARG BASE_VERSION=(?<currentValue>\\S+)"],
-            "depNameTemplate": "crowdsecurity/cs-firewall-bouncer",
-            "datasourceTemplate": "github-releases",
-            "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
-        },
-        {
-            "customType": "regex",
-            "description": "Garage release: the Containerfile's ARG BASE_VERSION with the --checksum of its source (the tag's commit, one match so both change together), from the tags of upstream's Forgejo (no GitHub repository; release candidates left out). build-apps.yml reads the version from the Containerfile.",
-            "managerFilePatterns": ["/^containers/garage/Containerfile$/"],
-            "matchStrings": [
-                "ARG BASE_VERSION=(?<currentValue>\\S+)\\n[\\s\\S]*?--checksum=(?<currentDigest>[0-9a-f]{40})"
-            ],
-            "depNameTemplate": "Deuxfleurs/garage",
-            "datasourceTemplate": "forgejo-tags",
-            "registryUrlTemplate": "https://git.deuxfleurs.fr",
-            "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
-        },
-        {
-            "customType": "regex",
-            "description": "MinIO and its forks (minio/minio, pgsty/silo, pgsty/mc): a Containerfile's ARG BASE_VERSION=RELEASE.<date>T<time>Z with the --checksum of its source (the tag's commit, one match so both change together), the repository from the ADD URL that follows. Any image of that form is picked up. Tags: minio/minio publishes no GitHub releases. Versioning: by date then time (the seconds left out: regex versioning has five parts). build-apps.yml reads the version from the Containerfile.",
-            "managerFilePatterns": ["/^containers/[^/]+/Containerfile$/"],
-            "matchStrings": [
-                "ARG BASE_VERSION=(?<currentValue>RELEASE\\.\\S+)\\n[\\s\\S]*?--checksum=(?<currentDigest>[0-9a-f]{40})[\\s\\\\]+https://github\\.com/(?<depName>[\\w.-]+/[\\w.-]+?)\\.git#"
-            ],
-            "datasourceTemplate": "github-tags",
-            "versioningTemplate": "regex:^RELEASE\\.(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})T(?<build>\\d{2})-(?<revision>\\d{2})-\\d{2}Z$"
-        },
-        {
-            "customType": "regex",
-            "description": "SABnzbd release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit, one match so both change together). build-apps.yml reads the version from the spec.",
-            "managerFilePatterns": ["/^containers/sabnzbd/spec\\.yml$/"],
-            "matchStrings": [
-                "BASE_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/sabnzbd/sabnzbd\\.git\\n\\s+commit: \\$\\{BASE_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
-            ],
-            "depNameTemplate": "sabnzbd/sabnzbd",
-            "datasourceTemplate": "github-tags",
-            "extractVersionTemplate": "^(?<version>\\d+\\.\\d+\\.\\d+)$"
-        },
-        {
-            "customType": "regex",
-            "description": "par2cmdline-turbo release: the spec's args.PAR2_VERSION with the checksum of its source (the tag's commit).",
-            "managerFilePatterns": ["/^containers/sabnzbd/spec\\.yml$/"],
-            "matchStrings": [
-                "PAR2_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/animetosho/par2cmdline-turbo\\.git\\n\\s+commit: v\\$\\{PAR2_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
-            ],
-            "depNameTemplate": "animetosho/par2cmdline-turbo",
-            "datasourceTemplate": "github-tags",
-            "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
-        },
-        {
-            "customType": "regex",
-            "description": "nftables-exporter release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit). Tags: upstream publishes no GitHub releases.",
-            "managerFilePatterns": ["/^containers/nftables-exporter/spec\\.yml$/"],
-            "matchStrings": [
-                "BASE_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/metal-stack/nftables-exporter\\.git\\n\\s+commit: v\\$\\{BASE_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
-            ],
-            "depNameTemplate": "metal-stack/nftables-exporter",
-            "datasourceTemplate": "github-tags",
-            "extractVersionTemplate": "^v(?<version>\\d+\\.\\d+\\.\\d+)$"
-        },
-        {
-            "customType": "regex",
             "description": "Go of the nftables-exporter spec: its golang-<major.minor>-go build dependency, from trixie-backports, whose golang-go (version 2:<major.minor>~...) depends on the newest one. Through Repology, by source package (golang-defaults builds golang-go): the deb datasource only reads Packages.gz, and backports only publishes Packages.xz.",
             "managerFilePatterns": ["/^containers/nftables-exporter/spec\\.yml$/"],
             "matchStrings": ["\\bgolang-(?<currentValue>\\d+\\.\\d+)-go: "],
@@ -153,14 +102,11 @@
         },
         {
             "customType": "regex",
-            "description": "Jellyfin release: the spec's args.BASE_VERSION, from the jellyfin-server package of Jellyfin's trixie repository (<version>+deb13), not GitHub: the spec repackages it, so a PR only comes once it is installable. amd64's index: both architectures are published together. build-apps.yml reads the version from the spec.",
-            "managerFilePatterns": ["/^containers/jellyfin/spec\\.yml$/"],
-            "matchStrings": ["BASE_VERSION: \"(?<currentValue>[^\"]+)\""],
-            "depNameTemplate": "jellyfin-server",
-            "datasourceTemplate": "deb",
-            "registryUrlTemplate": "https://repo.jellyfin.org/debian?suite=trixie&components=main&binaryArch=amd64",
-            "extractVersionTemplate": "^(?<version>\\d+\\.\\d+(?:\\.\\d+)?)\\+deb13$",
-            "versioningTemplate": "loose"
+            "description": "Every version of the application images: a `# renovate: datasource=<d> depName=<n> [packageName=] [registryUrl=] [versioning=] [extractVersion=] [depType=]` comment of a docker-bake.hcl, then the line with the version in quotes and, if any, the source's checksum (the tag's commit, one match so both change together). The comment is the whole configuration; the .github/workflows/renovate.yml extract job fails if one isn't picked up.",
+            "managerFilePatterns": ["/(^|/)docker-bake\\.hcl$/"],
+            "matchStrings": [
+                "#[ \\t]*renovate:[ \\t]+datasource=(?<datasource>\\S+)[ \\t]+depName=(?<depName>\\S+)(?:[ \\t]+packageName=(?<packageName>\\S+))?(?:[ \\t]+registryUrl=(?<registryUrl>\\S+))?(?:[ \\t]+versioning=(?<versioning>\\S+))?(?:[ \\t]+extractVersion=(?<extractVersion>\\S+))?(?:[ \\t]+depType=(?<depType>\\S+))?[ \\t]*\\n[^\\n\"]*\"(?<currentValue>[^\"]+)\"(?:[^\\n\"]*\"(?<currentDigest>[^\"]+)\")?"
+            ]
         },
         {
             "customType": "regex",
@@ -169,15 +115,6 @@
             "matchStrings": [
                 "# syntax=(?<depName>[^:\\s]+):(?<currentValue>\\S+)"
             ],
-            "datasourceTemplate": "docker",
-            "versioningTemplate": "docker"
-        },
-        {
-            "customType": "regex",
-            "description": "uv image of the SABnzbd spec (args.UV_VERSION).",
-            "managerFilePatterns": ["/^containers/sabnzbd/spec\\.yml$/"],
-            "matchStrings": ["UV_VERSION: (?<currentValue>\\S+)"],
-            "depNameTemplate": "ghcr.io/astral-sh/uv",
             "datasourceTemplate": "docker",
             "versioningTemplate": "docker"
         },
@@ -215,15 +152,13 @@
             "automerge": true
         },
         {
-            "description": "Build tools and application releases that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates: for par2cmdline-turbo, a moved tag. Garage: its build stage runs a single-node server through the S3 API; a major release needs a migration (upstream's working-documents/migration-<major>.md), by hand.",
+            "description": "Build tools that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates (pinned FROM lines: see the weekly rule below).",
             "matchDepNames": [
                 "docker.io/library/golang",
                 "docker.io/library/rust",
-                "Deuxfleurs/garage",
                 "golang-go",
                 "ghcr.io/nushell/nushell",
                 "ghcr.io/project-dalec/dalec/frontend",
-                "animetosho/par2cmdline-turbo",
                 "docker.io/hadolint/hadolint",
                 "ghcr.io/renovatebot/renovate"
             ],
@@ -231,12 +166,57 @@
             "automerge": true
         },
         {
-            "description": "Silo and pgsty/mc: every release automerged once CI is green (the build stage tests it: Silo's runs a server through the S3 API). Major too: the versioning is by date, so a new year is a major update, not a breaking change. Not digest updates: a moved tag. The note keeps what changed in the merged PR.",
-            "matchDepNames": ["pgsty/silo", "pgsty/mc"],
+            "description": "Application releases that CI exercises (depType=automerge in the docker-bake.hcl comment: the build stage's tests, a single-node server through the S3 API for Garage): automerge minor/patch once CI is green. Not digest updates: a moved tag. Major releases by hand: Garage's need a migration (AGENTS.md, Updates).",
+            "matchDepTypes": ["automerge"],
+            "matchUpdateTypes": ["minor", "patch"],
+            "automerge": true
+        },
+        {
+            "description": "Silo and pgsty/mc (depType=automerge-all): every release automerged once CI is green (the build stage tests it: Silo's runs a server through the S3 API). Major too: the versioning is by date, so a new year is a major update, not a breaking change. Not digest updates: a moved tag. The note keeps what changed in the merged PR.",
+            "matchDepTypes": ["automerge-all"],
             "matchUpdateTypes": ["major", "minor", "patch"],
             "automerge": true,
             "prBodyNotes": [
                 "What changed: https://github.com/{{{depName}}}/compare/{{{currentValue}}}...{{{newValue}}}"
+            ]
+        },
+        {
+            "description": "The application images' FROM lines carry a digest. Not the bootc images': see ignorePresets.",
+            "matchManagers": ["dockerfile"],
+            "matchFileNames": ["containers/**"],
+            "pinDigests": true
+        },
+        {
+            "description": "What follows Debian between two image releases, one PR on Saturday (the day before the weekly rebuild), automerged once CI is green: the archive snapshot of docker-bake.hcl, and the digests of the application images' FROM lines.",
+            "matchDepNames": ["debian-snapshot"],
+            "groupName": "Debian snapshot and base digests",
+            "schedule": ["on saturday"],
+            "automerge": true
+        },
+        {
+            "description": "Digests of the application images' FROM lines: grouped with the Debian snapshot above.",
+            "matchManagers": ["dockerfile"],
+            "matchFileNames": ["containers/**"],
+            "matchUpdateTypes": ["digest", "pin", "pinDigest"],
+            "groupName": "Debian snapshot and base digests",
+            "schedule": ["on saturday"],
+            "automerge": true
+        },
+        {
+            "description": "MinIO and its forks (minio/minio, pgsty/silo, pgsty/mc): RELEASE.<date>T<time>Z tags. Versioning: by date then time (the seconds left out: regex versioning has five parts).",
+            "matchCurrentValue": "/^RELEASE\\./",
+            "versioning": "regex:^RELEASE\\.(?<major>\\d{4})-(?<minor>\\d{2})-(?<patch>\\d{2})T(?<build>\\d{2})-(?<revision>\\d{2})-\\d{2}Z$"
+        },
+        {
+            "description": "Debian snapshots, <year><month><day>T<hour><minute><second>Z: by date, then by time.",
+            "matchDepNames": ["debian-snapshot"],
+            "versioning": "regex:^(?<major>\\d{4})(?<minor>\\d{2})(?<patch>\\d{2})T(?<build>\\d{2})(?<revision>\\d{4})Z$"
+        },
+        {
+            "description": "What to do before merging an application image's update: its AGENTS.md, Updates section (a checksum-only update means the tag was moved upstream). Never automerged unless a rule above says so.",
+            "matchFileNames": ["containers/*/docker-bake.hcl"],
+            "prBodyNotes": [
+                "Before merging, follow the *Updates* section of [`{{{packageFileDir}}}/AGENTS.md`](https://github.com/spnngl/images/blob/main/{{{packageFileDir}}}/AGENTS.md#updates). A checksum-only update means the tag was moved upstream."
             ]
         },
         {
@@ -287,58 +267,6 @@
             "matchDepNames": ["quay.io/almalinuxorg/almalinux-bootc"],
             "matchCurrentValue": "9",
             "enabled": false
-        },
-        {
-            "description": "cs-firewall-bouncer: never automerged, its config in the image follows upstream's (containers/cs-firewall-bouncer/AGENTS.md). Explicit, whatever the shared preset automerges.",
-            "matchDepNames": ["crowdsecurity/cs-firewall-bouncer"],
-            "automerge": false,
-            "prBodyNotes": [
-                "Before merging, port upstream's config changes to `containers/cs-firewall-bouncer/sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`: https://github.com/crowdsecurity/cs-firewall-bouncer/compare/v{{{currentValue}}}...v{{{newValue}}} (`config/crowdsec-firewall-bouncer.yaml`)."
-            ]
-        },
-        {
-            "description": "Garage major releases: never automerged (minor and patch ones are, above), they migrate the metadata for good.",
-            "matchDepNames": ["Deuxfleurs/garage"],
-            "matchUpdateTypes": ["major"],
-            "automerge": false,
-            "prBodyNotes": [
-                "Before merging, read upstream's migration guide (https://garagehq.deuxfleurs.fr/documentation/working-documents/migration-{{{newMajor}}}/) and the release notes (https://git.deuxfleurs.fr/Deuxfleurs/garage/releases/tag/v{{{newValue}}}). Merging changes the image tag: nodes stay on the old one until moved, following that guide."
-            ]
-        },
-        {
-            "description": "uv: never automerged, containers/sabnzbd/sabnzbd-lock.sh compiles the lock with the spec's uv.",
-            "matchDepNames": ["ghcr.io/astral-sh/uv"],
-            "prBodyNotes": [
-                "Before merging: run `containers/sabnzbd/sabnzbd-lock.sh` and commit `containers/sabnzbd/requirements.lock` if it changed."
-            ]
-        },
-        {
-            "description": "nftables-exporter: never automerged, its config in the image follows upstream's options (containers/nftables-exporter/AGENTS.md).",
-            "matchDepNames": ["metal-stack/nftables-exporter"],
-            "prBodyNotes": [
-                "Before merging, port upstream's option changes to `containers/nftables-exporter/nftables_exporter.yaml`: https://github.com/metal-stack/nftables-exporter/compare/v{{{currentValue}}}...v{{{newValue}}} (`options.go`). If CI fails with `go.mod requires go >= ...`, bump `golang-<version>-go` in the spec. A checksum-only update means the tag was moved upstream."
-            ]
-        },
-        {
-            "description": "Jellyfin: never automerged, a release migrates the database and settings for good.",
-            "matchDepNames": ["jellyfin-server"],
-            "prBodyNotes": [
-                "Before merging, read the release notes (https://github.com/jellyfin/jellyfin/releases/tag/v{{{newValue}}}) and back up `/config`: the new version migrates the database and settings, the old one can't read them any more. Check the spec's command-line options against upstream's `Jellyfin.Server/StartupOptions.cs`."
-            ]
-        },
-        {
-            "description": "SABnzbd: never automerged, the lock and the patch need a hand.",
-            "matchDepNames": ["sabnzbd/sabnzbd"],
-            "prBodyNotes": [
-                "Before merging: run `containers/sabnzbd/sabnzbd-lock.sh` and commit `containers/sabnzbd/requirements.lock`, and compare `containers/sabnzbd/downloads-dir.patch` with upstream's `sabnzbd/constants.py`. A checksum-only update means the tag was moved upstream."
-            ]
-        },
-        {
-            "description": "MinIO: never automerged, a release can migrate the data for good, and the repository was archived after the last one.",
-            "matchDepNames": ["minio/minio"],
-            "prBodyNotes": [
-                "Before merging, read what changed (https://github.com/minio/minio/compare/{{{currentValue}}}...{{{newValue}}}) and back up `/data`: the old version may not read what the new one writes. Check the image's flags and variables (`--certs-dir`, `MINIO_CONSOLE_ADDRESS`, `MINIO_UPDATE`) against `cmd/main.go` and `cmd/server-main.go`, and the build against the `build` target of the `Makefile`. A checksum-only update means the tag was moved upstream."
-            ]
         }
     ]
 }
