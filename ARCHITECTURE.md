@@ -3,11 +3,9 @@
 This repository builds [bootc](https://bootc.dev/bootc/) images: bootable
 operating systems shipped as OCI container images. A bootc host boots from
 an image and updates by pulling a newer one (`bootc upgrade`), the same way
-a container is updated. Six folders are not bootc images but
-application images, containers the hosts run: `images/cs-firewall-bouncer`,
-`images/garage`, `images/minio`, `images/sabnzbd`,
-`images/nftables-exporter` and `images/jellyfin`, the last three built
-with Dalec, not a Containerfile (see their sections).
+a container is updated. The other images are application images,
+containers the hosts run, built from a Containerfile on `scratch` or with
+Dalec (see each one's section).
 
 For a bootc image there are two stages:
 
@@ -37,10 +35,8 @@ For a bootc image there are two stages:
 │   ├── k3s/                    # shared by every kubeenv stage (not an image)
 │   │   ├── install.sh          # k3s and CRI-O install
 │   │   └── sysroot/...         # CRI-O configuration, kube.slice, swap
-│   └── <name>/                 # one folder per image (bootc, or application
-│       │                       # image: cs-firewall-bouncer, garage, minio)
-│       ├── Containerfile       # or spec.yml, for a Dalec image: sabnzbd,
-│       │                       # nftables-exporter, jellyfin
+│   └── <name>/                 # one folder per image
+│       ├── Containerfile       # or spec.yml, for a Dalec image
 │       └── sysroot/...         # files copied as is into the image root
 │                               # (bootc: common/, then <BASE_VERSION>/)
 ├── scripts/
@@ -138,7 +134,8 @@ Geo-blocking and blocklists:
   of every country (one archive) and the feeds with `ADD`, then
   `images/almalinux/geoblock.nu` turns the blocked countries and the
   feeds into firewalld ipsets. The stage is the `ghcr.io/nushell/nushell`
-  image with nushell as its `SHELL`: its `RUN` is nushell code.
+  image with nushell as its `SHELL`: its `RUN` is nushell code. Source
+  of truth: `github.com/nushell/nushell`, at that image's tag.
   Both ipsets are compacted: overlapping and adjacent networks merge into
   the fewest covering the same addresses (ipdeny's zones aren't
   aggregated, and the feeds overlap). Feed entries inside a blocked
@@ -183,6 +180,9 @@ Geo-blocking and blocklists:
   `bootc switch` always fetch `linux/amd64`. See "Known limits".
 
 ### Firewalld (both images)
+
+Source of truth: `github.com/firewalld/firewalld` (`doc/xml` for docs,
+`src/firewall/core` for behaviour).
 
 - **`firewall-offline-cmd`'s zone-scoped removal option is
   `--remove-service-from-zone=<service>`.** Not `--remove-service`: that
@@ -438,6 +438,10 @@ Cargo features (upstream's release set, `nix/compile.nix`), so upstream's
 docs and Helm chart apply (the chart sets either no command or
 `command: ["/garage"]`).
 
+Source of truth: `git.deuxfleurs.fr/Deuxfleurs/garage` at the
+`v<BASE_VERSION>` tag (`doc/book` for docs, `nix/compile.nix` for the
+release build).
+
 - **`ENTRYPOINT ["/garage"]`, `CMD ["server"]`**, where upstream only has
   `CMD ["/garage", "server"]`: arguments are Garage's (`docker run
   <image> server --single-node`, `docker run <image> --version`). A
@@ -490,6 +494,10 @@ docs and Helm chart apply (the chart sets either no command or
 built from source, one static binary on `scratch`, like
 `images/cs-firewall-bouncer`. Upstream archived the repository and ships
 source only: no binaries or images after its last release.
+
+Source of truth: `github.com/minio/minio` at the `BASE_VERSION` tag
+(`Makefile` and `buildscripts/gen-ldflags.go` for the release build,
+`cmd/` for flags and variables); docs: `github.com/minio/docs`.
 
 - **The last release, without patches.** Fixes merged after the last tag
   (a PostPolicy tag check among them) are not in the image: it is
