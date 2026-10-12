@@ -78,7 +78,7 @@
             "customType": "regex",
             "description": "cs-firewall-bouncer release: the Containerfile's ARG BASE_VERSION. build-apps.yml reads the version from the Containerfile.",
             "managerFilePatterns": [
-                "/^images/cs-firewall-bouncer/Containerfile$/"
+                "/^containers/cs-firewall-bouncer/Containerfile$/"
             ],
             "matchStrings": ["ARG BASE_VERSION=(?<currentValue>\\S+)"],
             "depNameTemplate": "crowdsecurity/cs-firewall-bouncer",
@@ -88,7 +88,7 @@
         {
             "customType": "regex",
             "description": "Garage release: the Containerfile's ARG BASE_VERSION with the --checksum of its source (the tag's commit, one match so both change together), from the tags of upstream's Forgejo (no GitHub repository; release candidates left out). build-apps.yml reads the version from the Containerfile.",
-            "managerFilePatterns": ["/^images/garage/Containerfile$/"],
+            "managerFilePatterns": ["/^containers/garage/Containerfile$/"],
             "matchStrings": [
                 "ARG BASE_VERSION=(?<currentValue>\\S+)\\n[\\s\\S]*?--checksum=(?<currentDigest>[0-9a-f]{40})"
             ],
@@ -100,7 +100,7 @@
         {
             "customType": "regex",
             "description": "MinIO and its forks (minio/minio, pgsty/silo, pgsty/mc): a Containerfile's ARG BASE_VERSION=RELEASE.<date>T<time>Z with the --checksum of its source (the tag's commit, one match so both change together), the repository from the ADD URL that follows. Any image of that form is picked up. Tags: minio/minio publishes no GitHub releases. Versioning: by date then time (the seconds left out: regex versioning has five parts). build-apps.yml reads the version from the Containerfile.",
-            "managerFilePatterns": ["/^images/[^/]+/Containerfile$/"],
+            "managerFilePatterns": ["/^containers/[^/]+/Containerfile$/"],
             "matchStrings": [
                 "ARG BASE_VERSION=(?<currentValue>RELEASE\\.\\S+)\\n[\\s\\S]*?--checksum=(?<currentDigest>[0-9a-f]{40})[\\s\\\\]+https://github\\.com/(?<depName>[\\w.-]+/[\\w.-]+?)\\.git#"
             ],
@@ -110,7 +110,7 @@
         {
             "customType": "regex",
             "description": "SABnzbd release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit, one match so both change together). build-apps.yml reads the version from the spec.",
-            "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
+            "managerFilePatterns": ["/^containers/sabnzbd/spec\\.yml$/"],
             "matchStrings": [
                 "BASE_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/sabnzbd/sabnzbd\\.git\\n\\s+commit: \\$\\{BASE_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
             ],
@@ -121,7 +121,7 @@
         {
             "customType": "regex",
             "description": "par2cmdline-turbo release: the spec's args.PAR2_VERSION with the checksum of its source (the tag's commit).",
-            "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
+            "managerFilePatterns": ["/^containers/sabnzbd/spec\\.yml$/"],
             "matchStrings": [
                 "PAR2_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/animetosho/par2cmdline-turbo\\.git\\n\\s+commit: v\\$\\{PAR2_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
             ],
@@ -132,7 +132,7 @@
         {
             "customType": "regex",
             "description": "nftables-exporter release: the spec's args.BASE_VERSION with the checksum of its source (the tag's commit). Tags: upstream publishes no GitHub releases.",
-            "managerFilePatterns": ["/^images/nftables-exporter/spec\\.yml$/"],
+            "managerFilePatterns": ["/^containers/nftables-exporter/spec\\.yml$/"],
             "matchStrings": [
                 "BASE_VERSION: (?<currentValue>\\S+)\\n[\\s\\S]*?url: https://github\\.com/metal-stack/nftables-exporter\\.git\\n\\s+commit: v\\$\\{BASE_VERSION\\}\\n(?:\\s+#.*\\n)*\\s+checksum: (?<currentDigest>[0-9a-f]{40})"
             ],
@@ -143,7 +143,7 @@
         {
             "customType": "regex",
             "description": "Go of the nftables-exporter spec: its golang-<major.minor>-go build dependency, from trixie-backports, whose golang-go (version 2:<major.minor>~...) depends on the newest one. Through Repology, by source package (golang-defaults builds golang-go): the deb datasource only reads Packages.gz, and backports only publishes Packages.xz.",
-            "managerFilePatterns": ["/^images/nftables-exporter/spec\\.yml$/"],
+            "managerFilePatterns": ["/^containers/nftables-exporter/spec\\.yml$/"],
             "matchStrings": ["\\bgolang-(?<currentValue>\\d+\\.\\d+)-go: "],
             "depNameTemplate": "golang-go",
             "packageNameTemplate": "debian_13_backports/golang-defaults",
@@ -154,7 +154,7 @@
         {
             "customType": "regex",
             "description": "Jellyfin release: the spec's args.BASE_VERSION, from the jellyfin-server package of Jellyfin's trixie repository (<version>+deb13), not GitHub: the spec repackages it, so a PR only comes once it is installable. amd64's index: both architectures are published together. build-apps.yml reads the version from the spec.",
-            "managerFilePatterns": ["/^images/jellyfin/spec\\.yml$/"],
+            "managerFilePatterns": ["/^containers/jellyfin/spec\\.yml$/"],
             "matchStrings": ["BASE_VERSION: \"(?<currentValue>[^\"]+)\""],
             "depNameTemplate": "jellyfin-server",
             "datasourceTemplate": "deb",
@@ -165,7 +165,7 @@
         {
             "customType": "regex",
             "description": "Dalec frontend of the specs (# syntax= line, which the dockerfile manager only reads in Containerfiles).",
-            "managerFilePatterns": ["/^images/[^/]+/spec\\.yml$/"],
+            "managerFilePatterns": ["/^containers/[^/]+/spec\\.yml$/"],
             "matchStrings": [
                 "# syntax=(?<depName>[^:\\s]+):(?<currentValue>\\S+)"
             ],
@@ -175,7 +175,7 @@
         {
             "customType": "regex",
             "description": "uv image of the SABnzbd spec (args.UV_VERSION).",
-            "managerFilePatterns": ["/^images/sabnzbd/spec\\.yml$/"],
+            "managerFilePatterns": ["/^containers/sabnzbd/spec\\.yml$/"],
             "matchStrings": ["UV_VERSION: (?<currentValue>\\S+)"],
             "depNameTemplate": "ghcr.io/astral-sh/uv",
             "datasourceTemplate": "docker",
@@ -185,7 +185,7 @@
             "customType": "regex",
             "description": "Images run by the scripts and the commands in the docs (image-builder-cli, hadolint...).",
             "managerFilePatterns": [
-                "/^scripts/[^/]+\\.sh$/",
+                "/^containers/[^/]+/[^/]+\\.sh$/",
                 "/^bootc/[^/]+\\.sh$/",
                 "/^[^/]+\\.md$/"
             ],
@@ -293,7 +293,7 @@
             "matchDepNames": ["crowdsecurity/cs-firewall-bouncer"],
             "automerge": false,
             "prBodyNotes": [
-                "Before merging, port upstream's config changes to `images/cs-firewall-bouncer/sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`: https://github.com/crowdsecurity/cs-firewall-bouncer/compare/v{{{currentValue}}}...v{{{newValue}}} (`config/crowdsec-firewall-bouncer.yaml`)."
+                "Before merging, port upstream's config changes to `containers/cs-firewall-bouncer/sysroot/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml`: https://github.com/crowdsecurity/cs-firewall-bouncer/compare/v{{{currentValue}}}...v{{{newValue}}} (`config/crowdsec-firewall-bouncer.yaml`)."
             ]
         },
         {
@@ -306,17 +306,17 @@
             ]
         },
         {
-            "description": "uv: never automerged, scripts/sabnzbd-lock.sh compiles the lock with the spec's uv.",
+            "description": "uv: never automerged, containers/sabnzbd/sabnzbd-lock.sh compiles the lock with the spec's uv.",
             "matchDepNames": ["ghcr.io/astral-sh/uv"],
             "prBodyNotes": [
-                "Before merging: run `scripts/sabnzbd-lock.sh` and commit `images/sabnzbd/requirements.lock` if it changed."
+                "Before merging: run `containers/sabnzbd/sabnzbd-lock.sh` and commit `containers/sabnzbd/requirements.lock` if it changed."
             ]
         },
         {
             "description": "nftables-exporter: never automerged, its config in the image follows upstream's options (ARCHITECTURE.md).",
             "matchDepNames": ["metal-stack/nftables-exporter"],
             "prBodyNotes": [
-                "Before merging, port upstream's option changes to `images/nftables-exporter/nftables_exporter.yaml`: https://github.com/metal-stack/nftables-exporter/compare/v{{{currentValue}}}...v{{{newValue}}} (`options.go`). If CI fails with `go.mod requires go >= ...`, bump `golang-<version>-go` in the spec. A checksum-only update means the tag was moved upstream."
+                "Before merging, port upstream's option changes to `containers/nftables-exporter/nftables_exporter.yaml`: https://github.com/metal-stack/nftables-exporter/compare/v{{{currentValue}}}...v{{{newValue}}} (`options.go`). If CI fails with `go.mod requires go >= ...`, bump `golang-<version>-go` in the spec. A checksum-only update means the tag was moved upstream."
             ]
         },
         {
@@ -330,7 +330,7 @@
             "description": "SABnzbd: never automerged, the lock and the patch need a hand.",
             "matchDepNames": ["sabnzbd/sabnzbd"],
             "prBodyNotes": [
-                "Before merging: run `scripts/sabnzbd-lock.sh` and commit `images/sabnzbd/requirements.lock`, and compare `images/sabnzbd/downloads-dir.patch` with upstream's `sabnzbd/constants.py`. A checksum-only update means the tag was moved upstream."
+                "Before merging: run `containers/sabnzbd/sabnzbd-lock.sh` and commit `containers/sabnzbd/requirements.lock`, and compare `containers/sabnzbd/downloads-dir.patch` with upstream's `sabnzbd/constants.py`. A checksum-only update means the tag was moved upstream."
             ]
         },
         {

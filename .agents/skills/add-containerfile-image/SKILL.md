@@ -1,15 +1,15 @@
 ---
 name: add-containerfile-image
-description: Add or change an application image built from images/<name>/Containerfile: one static binary (Go, Rust) on scratch. Use when an app ships as a static binary, or when editing an application image's Containerfile.
+description: Add or change an application image built from containers/<name>/Containerfile: one static binary (Go, Rust) on scratch. Use when an app ships as a static binary, or when editing an application image's Containerfile.
 ---
 
 # Add a Containerfile image
 
-`images/garage/` (Rust) and `images/minio/` (Go) are the **reference
+`containers/garage/` (Rust) and `containers/minio/` (Go) are the **reference
 images**: their comments carry the reason for each convention below. Read
 the one in your language whole before writing, and copy its shape, with
 its ARCHITECTURE.md section and "CI: `.github/workflows/build-apps.yml`".
-`images/cs-firewall-bouncer/` is the exception, not a model: root with
+`containers/cs-firewall-bouncer/` is the exception, not a model: root with
 `NET_ADMIN`, source not pinned to a commit.
 
 The final image is `scratch`: the binary, and only the files the
@@ -36,8 +36,10 @@ its source, with the file that says so:
 
 Done when every item has an answer and a source file.
 
-### 2. Write `images/<name>/Containerfile`
+### 2. Write `containers/<name>/Containerfile`
 
+- **`.dockerignore`**: copy another image's; the folder is the build
+  context (BuildKit ignores `.containerignore`).
 - **Header comment**: what the image is, how it differs from upstream's,
   and the runtime contract: UID/GID, volumes, ports, required env or
   secrets, hardening it runs with (`--read-only`, no capability,
@@ -102,7 +104,7 @@ version of the Containerfile has a manager.
 
 ### 4. Document it
 
-Add a `### images/<name>` section to ARCHITECTURE.md, after the last
+Add a `### containers/<name>` section to ARCHITECTURE.md, after the last
 application image: its upstream and where in the source to read (release
 build, flags, docs), each decision with its reason, the smoke tests, the
 runtime contract, what a version bump needs. Add it to "Updates", under
@@ -113,7 +115,7 @@ Done when every decision of step 2 has its reason in the section.
 ### 5. Verify
 
 ```sh
-docker buildx build -f images/<name>/Containerfile -t <name>:test --load images/
+docker buildx build -f containers/<name>/Containerfile -t <name>:test --load containers/<name>/
 ```
 
 The build runs the server test. Then:

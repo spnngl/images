@@ -1,8 +1,9 @@
 # Build the application images (see ARCHITECTURE.md): Dalec images
-# (images/<name>/spec.yml) and Containerfile ones (images/<name>/Containerfile;
-# bootc images: bootc/, build-bootc.yml), those that changed since the last
-# build, every one on the weekly rebuild and manual runs (see the discover
-# job). Then push them to
+# (containers/<name>/spec.yml) and Containerfile ones
+# (containers/<name>/Containerfile; bootc images: bootc/,
+# build-bootc.yml), those that changed since the last build, every one on
+# the weekly rebuild and manual runs (see the discover job). Then push
+# them to
 # ghcr.io/spnngl/images/<name>:<version>, <version> being the upstream
 # release (the spec's args.BASE_VERSION, the Containerfile's ARG
 # BASE_VERSION default). Pull requests only lint and build (which runs
@@ -41,12 +42,11 @@ defaults:
     shell: bash
 
 jobs:
-  # The images to build. Found, not listed: every folder of images/ with a
-  # spec.yml or a Containerfile, its version being where Renovate updates
-  # it, the only place it is written.
-  # Only those that changed: a file of the image's folder, or every image
-  # for a file at the root of images/ (the shared build context) or this
-  # workflow.
+  # The images to build. Found, not listed: every folder of containers/
+  # with a spec.yml or a Containerfile, its version being where Renovate
+  # updates it, the only place it is written.
+  # Only those that changed: a file of the image's folder (its build
+  # context), or every image for this workflow.
   discover:
     runs-on: ubuntu-26.04
     permissions:
@@ -104,19 +104,19 @@ jobs:
         run: |-
           shopt -s nullglob
           {
-            for file in images/*/spec.yml; do
+            for file in containers/*/spec.yml; do
               version="$(yq -e '.args.BASE_VERSION' "${file}")"
               jq -cn --arg file "${file}" --arg version "${version}" '{file: $file, version: $version, target: "trixie/container"}'
             done
-            for file in images/*/Containerfile; do
+            for file in containers/*/Containerfile; do
               version="$(sed -n 's/^ARG BASE_VERSION=//p' "${file}")"
               [[ -n "${version}" ]] || { echo "::error file=${file}::no ARG BASE_VERSION=<version>"; exit 1; }
               jq -cn --arg file "${file}" --arg version "${version}" '{file: $file, version: $version, target: ""}'
             done
           } | jq -cs --argjson files "${FILES}" '
             map(.name = (.file | split("/")[1]))
-            | if $files == null or any($files[]; . == ".github/workflows/build-apps.yml" or test("^images/[^/]+$")) then .
-              else map(select(.name as $name | any($files[]; startswith("images/\($name)/"))))
+            | if $files == null or any($files[]; . == ".github/workflows/build-apps.yml") then .
+              else map(select(.name as $name | any($files[]; startswith("containers/\($name)/"))))
               end' > "${RUNNER_TEMP}/images.json"
           echo "images=$(< "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
           echo "containerfiles=$(jq -c 'map(.file | select(endswith("/Containerfile")))' "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
@@ -204,7 +204,7 @@ jobs:
       # dates the image with it.
       - run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "${GITHUB_ENV}"
 
-      # Context is images/, the application images' shared build context.
+      # Context is the image's own folder.
       # target: none ("") for a Containerfile, its last stage.
       # Attestations, attached to the image in its index
       # (https://docs.docker.com/build/metadata/attestations/):
@@ -222,7 +222,7 @@ jobs:
       - id: build
         uses: docker/build-push-action@v7
         with:
-          context: images
+          context: containers/${{ matrix.image.name }}
           file: ${{ matrix.image.file }}
           target: ${{ matrix.image.target }}
           platforms: linux/${{ matrix.platform.arch }}

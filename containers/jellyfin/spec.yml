@@ -9,8 +9,8 @@
 # scanners can read.
 #
 # Build (from the repo root):
-#   docker buildx build -f images/jellyfin/spec.yml --target trixie/container \
-#     -t ghcr.io/spnngl/images/jellyfin:<BASE_VERSION> images/
+#   docker buildx build -f containers/jellyfin/spec.yml --target trixie/container \
+#     -t ghcr.io/spnngl/images/jellyfin:<BASE_VERSION> containers/jellyfin/
 #
 # Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
 # (database, settings, metadata, logs) and /cache (transcodes, images,

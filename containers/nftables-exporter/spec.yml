@@ -8,9 +8,9 @@
 # `nft -j -t list ruleset` for every scrape, and nft needs its libraries.
 #
 # Build (from the repo root):
-#   docker buildx build -f images/nftables-exporter/spec.yml \
+#   docker buildx build -f containers/nftables-exporter/spec.yml \
 #     --target trixie/container \
-#     -t ghcr.io/spnngl/images/nftables-exporter:<BASE_VERSION> images/
+#     -t ghcr.io/spnngl/images/nftables-exporter:<BASE_VERSION> containers/nftables-exporter/
 #
 # Runtime contract (Kubernetes DaemonSet):
 # - hostNetwork: true. nftables rules belong to a network namespace: in the
@@ -69,7 +69,6 @@ sources:
   # This folder: the config.
   files:
     context: {}
-    path: nftables-exporter/
     includes:
       - nftables_exporter.yaml
 

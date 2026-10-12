@@ -7,8 +7,8 @@
 # shell, no apt, but a dpkg database scanners can read.
 #
 # Build (from the repo root):
-#   docker buildx build -f images/sabnzbd/spec.yml --target trixie/container \
-#     -t ghcr.io/spnngl/images/sabnzbd:<BASE_VERSION> images/
+#   docker buildx build -f containers/sabnzbd/spec.yml --target trixie/container \
+#     -t ghcr.io/spnngl/images/sabnzbd:<BASE_VERSION> containers/sabnzbd/
 #
 # Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
 # (settings, queue, logs) and /downloads must be writable by it; web UI on
@@ -17,8 +17,8 @@
 #
 # Renovate (renovate.json5) bumps the args below, with the source
 # checksums (CI reads BASE_VERSION from here). In its PR for
-# a new SABnzbd or uv, run scripts/sabnzbd-lock.sh; for a new SABnzbd,
-# also compare downloads-dir.patch with upstream's sabnzbd/constants.py.
+# a new SABnzbd or uv, run containers/sabnzbd/sabnzbd-lock.sh; for a new
+# SABnzbd, also compare downloads-dir.patch with upstream's sabnzbd/constants.py.
 
 args:
   # Releases: https://github.com/sabnzbd/sabnzbd/releases
@@ -60,7 +60,6 @@ sources:
   # This folder: the hash-pinned Python modules and the patch.
   files:
     context: {}
-    path: sabnzbd/
     includes:
       - downloads-dir.patch
       - requirements.lock

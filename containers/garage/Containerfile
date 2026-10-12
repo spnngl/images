@@ -62,7 +62,7 @@ WORKDIR /src
 # as upstream's CI sets it (.woodpecker/release.yaml).
 # Caches: uid sets the owner of a new cache only, and one is shared by
 # every build that uses its id (the target by default): ids of their own,
-# as images/minio does.
+# as containers/minio does.
 RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
     --mount=type=cache,id=garage-target-65532,uid=65532,gid=65532,target=/src/target \
     <<EORUN
@@ -75,13 +75,13 @@ cp "target/${target}/release/garage" /out/
 EORUN
 
 # Server smoke test, here because scratch has no shell to run it: a
-# single-node cluster (garage/smoke-test.toml) with a default key and
-# bucket, then a 1 MiB object written and read back through the S3 API
-# (large enough to go to the data directory, not inline in the metadata),
-# then a graceful stop. Random throwaway secrets: none in the repository.
+# single-node cluster (smoke-test.toml, next to this file) with a default
+# key and bucket, then a 1 MiB object written and read back through the
+# S3 API (large enough to go to the data directory, not inline in the
+# metadata), then a graceful stop. Random throwaway secrets: none in the repository.
 # kill (DL3001) stops the server this step started, not a container's.
 # hadolint ignore=DL3001
-RUN --mount=type=bind,source=garage/smoke-test.toml,target=/etc/garage.toml \
+RUN --mount=type=bind,source=smoke-test.toml,target=/etc/garage.toml \
     <<EORUN
 /out/garage --version | grep -F "garage v${BASE_VERSION} ["
 hex() { od -An -vtx1 -N32 /dev/urandom | tr -d ' \n'; }
