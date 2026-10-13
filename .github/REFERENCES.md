@@ -10,6 +10,10 @@
 - BuildKit attestations:
   <https://docs.docker.com/build/metadata/attestations/>
 - Signing: `bootc/REFERENCES.md`, "Signing"
+- Copilot cloud agent: `github.com/github/docs`,
+  `content/copilot/how-tos/use-copilot-agents/cloud-agent/`
+  (`use-cloud-agent-on-github.md`, "Continuing work on a pull
+  request"; `troubleshoot-cloud-agent.md`)
 
 ## `build-bootc.yml`
 
@@ -127,3 +131,28 @@ digests and automerge under `.github/`.
   the images whose `AGENTS.md` says so. A new base major or Kubernetes
   minor changes the tag: hosts stay on the old, no longer rebuilt, until
   `bootc switch`.
+
+## `copilot-fix.yml`
+
+A Renovate PR whose build fails waits for a person, automerged or not.
+Copilot's cloud agent gets the first attempt.
+
+- **An `@copilot` comment on the PR, not an issue assigned to Copilot:**
+  Copilot pushes to the PR's branch, so the fix lands in the PR that
+  failed; from an issue it opens a second PR.
+- **Triggered by `workflow_run`, not a Copilot automation:** automations
+  have no "build failed" trigger, and live outside the repository.
+- **`COPILOT_FIX_TOKEN`:** Copilot answers the mentions of users with
+  write access (`troubleshoot-cloud-agent.md`); `GITHUB_TOKEN` writes as
+  `github-actions[bot]`. A fine-grained token of such a user, with a
+  Copilot plan: this repository only, *Pull requests: read and write*.
+- **Once per PR:** a fix that fails again goes to a person, rather than
+  Copilot answering its own failures.
+- **The comment points Copilot to every `AGENTS.md` above the files it
+  changes:** for Copilot the nearest one takes precedence
+  (`data/reusables/copilot/custom-instructions-agents.md`), and an
+  image's rules start at the root's.
+- **A person merges the fix:** CI runs on Copilot's pushes once someone
+  with write access approves the run, and Renovate, which merges its PRs
+  itself (no GitHub auto-merge), skips a branch it didn't write alone
+  (`isBranchModified`, `lib/workers/repository/update/pr/automerge.ts`).
