@@ -1,0 +1,149 @@
+# syntax=docker.io/docker/dockerfile:1
+#
+# kustomize (Kubernetes manifest customization CLI) built from
+# kubernetes-sigs/kustomize as tagged, no patch, with Helm for its
+# helmCharts generator: two static binaries on scratch. Upstream's image is
+# Alpine with git and openssh; this one has helm as its only other
+# program. See containers/kustomize/REFERENCES.md.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); arguments are
+# kustomize's, run in /src (`docker run -v "${PWD}:/src:ro" <image>
+# build`). `build --enable-helm` writes Helm's homes and values files in
+# /tmp (any UID): with a read-only root filesystem, mount a tmpfs there.
+# It pulls charts missing from the kustomization's charts/ folder into
+# it: mount /src writable, or vendor them. `create` and `edit` write
+# kustomization.yaml in /src. Credentials from the runtime: a registry
+# login for OCI charts, mounted read-only and named by
+# HELM_REGISTRY_CONFIG. No capability needed, runs with
+# no-new-privileges. Unavailable, as the programs they exec are not in
+# the image: remote git resources (git), exec and container KRM functions
+# and plugins, `openapi fetch` (kubectl).
+# https://kubectl.docs.kubernetes.io/references/kustomize/
+
+# Versions come from containers/kustomize/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG HELM_VERSION
+ARG HELM_CHECKSUM
+ARG DEBIAN_CODENAME
+# kustomize's buildDate (`kustomize version --output=yaml`).
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads it, and
+# root's (/root) is closed to it. Before SHELL: hadolint (2.15.1) checks
+# the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${HELM_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: each tag must resolve to its commit, tags can be moved.
+# No .git: neither release build reads git, the version is set below.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/kubernetes-sigs/kustomize.git#kustomize/v${BASE_VERSION} /src
+ADD --link \
+    --checksum=${HELM_CHECKSUM} \
+    https://github.com/helm/helm.git#v${HELM_VERSION} /helm
+
+# Build and test as the image's user, not root: neither upstream's build
+# nor the test get root, and the sources stay root's. WORKDIR creates its
+# folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release builds, versions included. Caches: containers/minio's
+# ids, the same user.
+# kustomize: releasing/create-release.sh, from the repository's root, so
+# in go.work's workspace (kustomize's api and kyaml modules from the same
+# tag). Its gitCommit -X sets no variable (upstream's binaries print
+# `gitCommit: unknown`); buildDate from SOURCE_DATE_EPOCH, not the clock.
+# Helm: .github/workflows/release.yml, `make build-cross` (goreleaser) with
+# the Makefile's LDFLAGS; its own binary target here, as goreleaser isn't
+# in the image and `make build` would rewrite go.mod (tidy). The GIT_*
+# variables say what make reads from git for a release: the tag, its
+# commit, a clean tree.
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+CGO_ENABLED=0 go build -o /out/kustomize -ldflags \
+    "-s -w \
+    -X sigs.k8s.io/kustomize/api/provenance.version=v${BASE_VERSION} \
+    -X sigs.k8s.io/kustomize/api/provenance.gitCommit=${BASE_CHECKSUM} \
+    -X sigs.k8s.io/kustomize/api/provenance.buildDate=$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ)" \
+    kustomize/main.go
+make -C /helm /out/helm BINDIR=/out VERSION="v${HELM_VERSION}" \
+    GIT_TAG="v${HELM_VERSION}" GIT_COMMIT="${HELM_CHECKSUM}" GIT_DIRTY=clean
+install -d -m 1777 /out/rootfs/tmp
+EORUN
+
+# Smoke test, here because scratch has no shell to run it, and because
+# kustomize and Helm releases and golang bumps are automerged on it.
+# Offline: the versions upstream's releases would print, static binaries,
+# then a kustomization made by `create` and `edit` over the files of
+# smoke-test/ (next to this file), with a local chart: built with
+# --enable-helm, finding helm in PATH as in the image, and checked byte
+# for byte against smoke-test/expected.yaml. WORKDIR: `create` and `edit`
+# work on the current folder only.
+WORKDIR /tmp/smoke
+RUN --mount=type=bind,source=smoke-test,target=/smoke-test \
+    <<EORUN
+[ "$(/out/kustomize version)" = "v${BASE_VERSION}" ]
+[ "$(/out/helm version --template '{{ .Version }} {{ .GitCommit }} {{ .GitTreeState }}')" = "v${HELM_VERSION} ${HELM_CHECKSUM} clean" ]
+go version -m /out/kustomize | grep -E '^\s+build\s+CGO_ENABLED=0$'
+go version -m /out/helm | grep -E '^\s+build\s+CGO_ENABLED=0$'
+cp -r /smoke-test/. .
+/out/kustomize create --resources deployment.yaml,helm --nameprefix smoke-
+/out/kustomize edit set image nginx=registry.example/nginx:2.0
+/out/kustomize edit add configmap settings --from-literal=key=value
+PATH="/out:${PATH}" /out/kustomize build --enable-helm . | cmp - expected.yaml
+rm -r /tmp/smoke
+EORUN
+
+# Neither binary has a C library: the binaries, the CA bundle for
+# outbound TLS (remote resources over HTTPS, chart repositories and OCI
+# registries), /tmp, and the licenses.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /usr/share/doc/kustomize/
+COPY --link --from=build /helm/LICENSE /usr/share/doc/helm/
+# Owned by root, not by the build's user: neither can rewrite its binary.
+COPY --link --from=build --chown=0:0 /out/kustomize /out/helm /usr/bin/
+# Root's, sticky and world-writable, as Debian's: any UID can run the image.
+# Copied from its parent: a COPY of the folder itself creates /tmp 0755.
+COPY --link --from=build --chown=0:0 /out/rootfs/ /
+
+# Root's, created before USER: a mount point for the kustomization.
+WORKDIR /src
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+# kustomize runs `helm` through PATH (--helm-command's default), which
+# scratch leaves to the runtime: the image sets its own.
+ENV PATH=/usr/bin
+
+# Upstream's entrypoint: arguments are kustomize's.
+ENTRYPOINT ["/usr/bin/kustomize"]
+
+# Smoke test: kustomize runs on this platform (the build stage tested
+# both binaries).
+RUN ["/usr/bin/kustomize", "version"]
