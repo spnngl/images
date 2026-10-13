@@ -1,7 +1,7 @@
 # haproxy: what to build and with which versions (containers/AGENTS.md).
 # Dalec spec: no containerfile_args, Dalec fails on an undeclared one.
 # One image per release line, tagged with its version and its line
-# (haproxy:3.2.25-debian13, haproxy:3.2-debian13); lines in support:
+# (haproxy:3.2.25, haproxy:3.2); lines in support:
 # https://www.haproxy.org/download/. Adding or dropping a line is an
 # entry of this list: containers/haproxy/AGENTS.md (Updates).
 target "haproxy" {

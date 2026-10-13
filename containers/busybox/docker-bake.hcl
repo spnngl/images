@@ -1,8 +1,8 @@
 # busybox: what to build and with which versions (containers/AGENTS.md).
 # The version is the mirror's tag (1_38_0), what Renovate's regex
 # versioning reads; the build and the image tag get it dotted.
-# No debian matrix nor -debian<N>: a static musl binary uses no Debian
-# file at run time (containers/AGENTS.md); Debian 13 only builds it.
+# No debian matrix: a static musl binary uses no Debian file at run
+# time; Debian 13 only builds it.
 target "busybox" {
   name       = "busybox"
   context    = "containers/busybox"
