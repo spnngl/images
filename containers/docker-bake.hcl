@@ -27,7 +27,7 @@ function "line" {
 # Every tag names the Debian release: haproxy:3.2.25-debian13.
 function "tags" {
   params = [name, debian, versions]
-  result = [for v in versions : "ghcr.io/spnngl/images/${name}:${v}-debian${debian}"]
+  result = [for v in versions : "ghcr.io/spnngl/images/${name}:${v}"]
 }
 
 # Arguments of every Containerfile. Not for Dalec specs: Dalec fails on
