@@ -17,4 +17,5 @@ merging, read the release notes
 (`https://github.com/jellyfin/jellyfin/releases/tag/v<new>`), back up
 `/config`, and check the spec's command-line options against upstream's
 `Jellyfin.Server/StartupOptions.cs`. A rotated repository key fails the
-build on its digest.
+build on its digest. On a Dalec update, check whether `libmd0` can
+leave the runtime dependencies (REFERENCES.md).
