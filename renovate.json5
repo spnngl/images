@@ -137,6 +137,7 @@
             "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag (actions, k3s, upstream sources): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
             "matchDatasources": [
                 "github-releases",
+                "github-release-attachments",
                 "github-tags",
                 "forgejo-tags"
             ],

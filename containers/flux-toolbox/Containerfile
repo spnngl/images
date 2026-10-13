@@ -1,0 +1,223 @@
+# syntax=docker.io/docker/dockerfile:1
+
+# A Flux toolbox: flux, flux-operator, kustomize, kubectl and nushell
+# (with its plugins) on this repository's git image, so with git, ssh and
+# busybox's shell. For CI jobs and Kubernetes jobs that render, diff or
+# apply what Flux deploys. flux, flux-operator, kustomize and nushell are
+# upstream's release binaries, from GitHub releases, each checked against
+# its release's checksum file; kubectl comes from this repository's
+# kubectl image (Kubernetes publishes no GitHub release binary). Every
+# program is static: the git image has no C library. A shell, against
+# containers/AGENTS.md's rule: it is the image's purpose
+# (containers/flux-toolbox/REFERENCES.md).
+#
+# Runtime contract: UID/GID 65532 (nonroot, HOME /tmp: busybox's passwd).
+# /git, the working directory, writable by it (the git image's). `sh` by
+# default; a command as arguments (`docker run <image> flux build ...`).
+# Credentials from the runtime: a kubeconfig mounted read-only and named
+# by KUBECONFIG, or in a pod its service account; git's as the git
+# image's header says. No port. With --read-only, mount a tmpfs on /tmp
+# (HOME: kubectl's and nushell's caches and configuration). Runs with no
+# capability and no-new-privileges. Nushell's plugins are in /usr/bin,
+# not registered: `plugin add nu_plugin_<name>` (nushell finds them next
+# to nu), or `nu --plugins '[/usr/bin/nu_plugin_<name>]'`.
+
+# Versions come from containers/flux-toolbox/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md); git's and kubectl's are
+# these FROM lines, their images' tags.
+FROM ghcr.io/spnngl/images/git:2.56.0@sha256:81eeb6832f65a99ca9836386d150b2004bcb83f52940073b9b30133cea27ff14 AS base
+FROM ghcr.io/spnngl/images/kubectl:1.37.1@sha256:14659cc0f9e7997935a36d64f13e1f8589154e98a97534e3aa9b7f717d58c02c AS kubectl
+
+# The build stage is the base itself: busybox has what checking and
+# unpacking need (sha256sum, tar, gzip), and the binaries are tested on
+# the libc-less system they ship on.
+FROM base AS build
+
+ARG TARGETARCH
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG FLUX_OPERATOR_VERSION
+ARG FLUX_OPERATOR_CHECKSUM
+ARG KUSTOMIZE_VERSION
+ARG KUSTOMIZE_CHECKSUM
+ARG NUSHELL_VERSION
+ARG NUSHELL_CHECKSUM
+# nushell names its builds by Rust target (x86_64, aarch64), the others
+# by Go's GOARCH, as TARGETARCH (amd64, arm64).
+ARG NUSHELL_ARCH_AMD64=${TARGETARCH/amd64/x86_64}
+ARG NUSHELL_ARCH=${NUSHELL_ARCH_AMD64/arm64/aarch64}
+# busybox's shell, ash: POSIX, with pipefail. By its name, so that
+# hadolint knows it has pipefail (DL4006).
+SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
+
+# Checks first: outside Bake, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${FLUX_OPERATOR_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${KUSTOMIZE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${NUSHELL_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+EORUN
+
+# Each release's checksum file, pinned by --checksum (a release whose
+# assets change fails the build), then this platform's archive, checked
+# against it below. Owned by the build's user, 65532: a remote ADD
+# writes 0600 (--chmod would also apply to the folders it creates,
+# leaving them untraversable). Licenses: flux's and kustomize's archives
+# have none, so each from its tag (text, not pinned).
+ADD --link --chown=65532:65532 \
+    --checksum=sha256:${BASE_CHECKSUM} \
+    https://github.com/fluxcd/flux2/releases/download/v${BASE_VERSION}/flux_${BASE_VERSION}_checksums.txt /dl/flux/
+ADD --link --chown=65532:65532 \
+    https://github.com/fluxcd/flux2/releases/download/v${BASE_VERSION}/flux_${BASE_VERSION}_linux_${TARGETARCH}.tar.gz /dl/flux/
+ADD --link --chown=65532:65532 \
+    https://raw.githubusercontent.com/fluxcd/flux2/v${BASE_VERSION}/LICENSE /dl/flux/
+ADD --link --chown=65532:65532 \
+    --checksum=sha256:${FLUX_OPERATOR_CHECKSUM} \
+    https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v${FLUX_OPERATOR_VERSION}/flux-operator_${FLUX_OPERATOR_VERSION}_checksums.txt /dl/flux-operator/
+ADD --link --chown=65532:65532 \
+    https://github.com/controlplaneio-fluxcd/flux-operator/releases/download/v${FLUX_OPERATOR_VERSION}/flux-operator_${FLUX_OPERATOR_VERSION}_linux_${TARGETARCH}.tar.gz /dl/flux-operator/
+ADD --link --chown=65532:65532 \
+    --checksum=sha256:${KUSTOMIZE_CHECKSUM} \
+    https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/checksums.txt /dl/kustomize/
+ADD --link --chown=65532:65532 \
+    https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize%2Fv${KUSTOMIZE_VERSION}/kustomize_v${KUSTOMIZE_VERSION}_linux_${TARGETARCH}.tar.gz /dl/kustomize/
+ADD --link --chown=65532:65532 \
+    https://raw.githubusercontent.com/kubernetes-sigs/kustomize/kustomize/v${KUSTOMIZE_VERSION}/LICENSE /dl/kustomize/
+ADD --link --chown=65532:65532 \
+    --checksum=sha256:${NUSHELL_CHECKSUM} \
+    https://github.com/nushell/nushell/releases/download/${NUSHELL_VERSION}/SHA256SUMS /dl/nushell/
+ADD --link --chown=65532:65532 \
+    https://github.com/nushell/nushell/releases/download/${NUSHELL_VERSION}/nu-${NUSHELL_VERSION}-${NUSHELL_ARCH}-unknown-linux-musl.tar.gz /dl/nushell/
+
+# Unpack as the image's user, not root. WORKDIR creates its folder owned
+# by USER: /out takes the image's files.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /tmp/unpack
+
+# Each archive checked against its release's checksum file: its line,
+# by file name (sha256sum -c of no line passes). Then the programs into
+# /usr/bin, the licenses into /usr/share/doc/<name>/. Nushell's plugins
+# but the examples and test fixtures (example, custom_values,
+# stress_internals).
+RUN <<EORUN
+verify() {
+    sum="$(awk -v f="$3" '$2 == f || $2 == "*" f { print $1 }' "/dl/$1/$2")"
+    [ -n "${sum}" ]
+    echo "${sum}  /dl/$1/$3" | sha256sum -c -
+}
+verify flux "flux_${BASE_VERSION}_checksums.txt" "flux_${BASE_VERSION}_linux_${TARGETARCH}.tar.gz"
+verify flux-operator "flux-operator_${FLUX_OPERATOR_VERSION}_checksums.txt" "flux-operator_${FLUX_OPERATOR_VERSION}_linux_${TARGETARCH}.tar.gz"
+verify kustomize checksums.txt "kustomize_v${KUSTOMIZE_VERSION}_linux_${TARGETARCH}.tar.gz"
+nushell="nu-${NUSHELL_VERSION}-${NUSHELL_ARCH}-unknown-linux-musl"
+verify nushell SHA256SUMS "${nushell}.tar.gz"
+for f in /dl/*/*.tar.gz; do
+    tar -xzf "${f}"
+done
+mkdir -p /out/usr/bin /out/usr/share/doc/flux /out/usr/share/doc/flux-operator \
+    /out/usr/share/doc/kustomize /out/usr/share/doc/nushell
+cp flux flux-operator kustomize "${nushell}/nu" "${nushell}/nu_plugin_formats" \
+    "${nushell}/nu_plugin_gstat" "${nushell}/nu_plugin_inc" "${nushell}/nu_plugin_polars" \
+    "${nushell}/nu_plugin_query" /out/usr/bin/
+cp /dl/flux/LICENSE /out/usr/share/doc/flux/
+cp LICENSE /out/usr/share/doc/flux-operator/
+cp /dl/kustomize/LICENSE /out/usr/share/doc/kustomize/
+cp "${nushell}/LICENSE" /out/usr/share/doc/nushell/
+# A remote ADD writes 0600: readable by every user in the image.
+chmod 644 /out/usr/share/doc/*/LICENSE
+rm -r /tmp/unpack
+EORUN
+
+# kubectl, its license and those of its vendored code: tested below with
+# the others.
+COPY --link --from=kubectl /usr/bin/kubectl /out/usr/bin/
+COPY --link --from=kubectl /usr/share/doc/kubectl/ /out/usr/share/doc/kubectl/
+
+# Smoke test, offline, with the image's binaries first in PATH. Every
+# version is the pinned one, every program runs here (no C library: a
+# dynamic one fails), and each does something real: manifests generated
+# client-side (flux, flux-operator, kubectl), a kustomization built and
+# compared byte for byte, each nushell plugin loaded at nu's version and
+# used. Automerged updates rely on it.
+WORKDIR /tmp/smoke
+RUN <<EORUN
+export PATH="/out/usr/bin:${PATH}"
+git --version
+flux version --client | grep -Fx "flux: v${BASE_VERSION}"
+flux-operator version --client | grep -Fx "client: ${FLUX_OPERATOR_VERSION}"
+[ "$(kustomize version)" = "v${KUSTOMIZE_VERSION}" ]
+nu --version | grep -Fx "${NUSHELL_VERSION}"
+kubectl version --client
+
+flux create source git smoke --url=https://example.com/smoke.git --branch=main --export > flux.yaml
+grep -Fx 'kind: GitRepository' flux.yaml
+grep -Fx '  url: https://example.com/smoke.git' flux.yaml
+
+cat > resourceset.yaml <<EOF
+apiVersion: fluxcd.controlplane.io/v1
+kind: ResourceSet
+metadata:
+  name: smoke
+  namespace: default
+spec:
+  inputs:
+    - tenant: smoke-tenant
+  resources:
+    - apiVersion: v1
+      kind: Namespace
+      metadata:
+        name: << inputs.tenant >>
+EOF
+flux-operator build resourceset -f resourceset.yaml > namespace.yaml
+grep -Fx 'kind: Namespace' namespace.yaml
+grep -Fx '  name: smoke-tenant' namespace.yaml
+
+kubectl create configmap smoke --from-literal=key=value --dry-run=client --output=yaml > configmap.yaml
+printf 'resources:\n- configmap.yaml\nnamePrefix: app-\n' > kustomization.yaml
+printf 'apiVersion: v1\ndata:\n  key: value\nkind: ConfigMap\nmetadata:\n  name: app-smoke\n' > expected.yaml
+kustomize build . | cmp - expected.yaml
+
+git init -q -b main repo
+touch repo/file
+git -C repo add file
+plugins=""
+for p in formats gstat inc polars query; do
+    plugins="${plugins} /out/usr/bin/nu_plugin_${p}"
+done
+nu --no-config-file --plugins "[${plugins}]" --commands '
+use std/assert
+assert equal (plugin list | where version == (version).version | get name | sort) [formats gstat inc polars query]
+assert equal ("[s]\na=1" | from ini | get s.a) "1"
+assert equal (gstat repo | get idx_added_staged) 1
+assert equal ("1.2.3" | inc --minor) "1.3.0"
+assert equal ([[a]; [1] [2]] | polars into-df | polars sum | polars into-nu | get a.0) 3
+assert equal ("{\"a\": 1}" | query json a) 1
+'
+rm -r /tmp/smoke
+EORUN
+
+FROM base
+ARG BASE_VERSION
+
+# The licenses of git, OpenSSH and busybox come with the base image.
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0 AND AGPL-3.0-only AND MIT AND GPL-2.0-only AND SSH-OpenSSH" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The programs and licenses: root's, not the build user's, so that the
+# user can't replace them.
+COPY --link --from=build --chown=0:0 /out/ /
+
+# Numeric, so runAsNonRoot can check it (the git image's already).
+USER 65532:65532
+
+# A shell, as busybox's image: the git image's entrypoint (git) reset.
+ENTRYPOINT []
+CMD ["/bin/sh"]
+
+# Smoke test: every program runs on this platform at the image's paths
+# (the build stage tested them), and the image's user reads every
+# license.
+RUN ["/bin/sh", "-euc", "git --version && flux version --client && flux-operator version --client && kustomize version && kubectl version --client && nu --version && cat /usr/share/doc/*/LICENSE > /dev/null"]
