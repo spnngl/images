@@ -8,7 +8,8 @@ Two kinds of OCI image, built by CI and pushed, signed, to
   with podman; `bootc/build.sh` also turns one into a qcow2 disk image
   for the first install, with image-builder.
 - **Application images** (`containers/`): upstream apps the hosts run,
-  shell-less (busybox excepted: a shell is its purpose), from a
+  shell-less (busybox excepted: a shell is its purpose; and git, built
+  on it: its hooks and aliases need one), from a
   Containerfile on `scratch`, a Dalec spec, or a DHI definition. Built with `docker buildx`.
 
 The two share no build input: different builders, workflows and rules.

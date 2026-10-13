@@ -1,0 +1,264 @@
+# syntax=docker.io/docker/dockerfile:1
+
+# Git (https://git-scm.com), the client, built from source as static musl
+# binaries, with a static OpenSSH client (ssh) for ssh:// remotes, on this
+# repository's busybox image: its shell runs hooks, `!` aliases,
+# `git submodule` and credential helpers, its less and vi are the pager
+# and the editor. Not shell-less, as busybox: containers/git/REFERENCES.md.
+#
+# Runtime contract: UID/GID 65532 (nonroot, HOME /tmp: busybox's passwd;
+# ssh refuses a UID without a passwd entry). /git, the working directory,
+# writable by it: mount the repository there. A repository owned by
+# another UID needs `-c safe.directory=<path>` (git refuses it
+# otherwise). Credentials from the runtime: an SSH key and known_hosts
+# through GIT_SSH_COMMAND (`ssh -i <key> -o UserKnownHostsFile=<file>`),
+# an HTTPS token through a credential helper or GIT_CONFIG_* variables.
+# No port. With --read-only, mount a tmpfs on /tmp (HOME). Runs with no
+# capability and no-new-privileges.
+
+# Versions come from containers/git/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Alpine, not Debian: its *-static packages hold the libraries libcurl
+# links (OpenSSL, nghttp2, brotli, zstd, c-ares, libpsl, libidn2), Debian
+# has no static libcurl (containers/git/REFERENCES.md). Its
+# ca-certificates-bundle is the CA bundle copied below.
+FROM docker.io/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG OPENSSH_VERSION
+ARG OPENSSH_CHECKSUM
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# The image's SBOM also lists this stage's packages: the static libraries
+# linked into git-remote-http and ssh, which scanners can't see in the
+# binaries.
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
+# Alpine's shell, busybox's ash: POSIX, with pipefail. By its name, so
+# that hadolint knows it has pipefail (DL4006).
+SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
+
+# build-base: gcc, make, musl's headers and static libc. meson and cargo:
+# git's build, with its Rust code (upstream's default). curl-dev,
+# curl-static and the *-static packages: libcurl and every library it
+# links, static (`pkg-config --static --libs libcurl`). autoconf,
+# automake (autoreconf runs its aclocal) and linux-headers: OpenSSH's
+# configure, from git, not a release tarball. openssl-dev: ssh's
+# libcrypto. openssl: the HTTPS test's server. ca-certificates-bundle: libcurl's
+# default CA file (`curl-config --ca`), copied into the image.
+# Not pinned (DL3018): Alpine keeps only the newest build of each package
+# in a release branch; the image digest pins the branch, Renovate moves
+# it, the weekly rebuild picks up fixes (containers/git/REFERENCES.md).
+# The test user: ssh and sshd refuse a UID without a passwd entry; the
+# same name and HOME as busybox's.
+# hadolint ignore=DL3018
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+apk add --no-cache \
+    autoconf automake brotli-static build-base ca-certificates-bundle \
+    cargo curl-dev curl-static libidn2-static libpsl-static \
+    libunistring-static linux-headers meson nghttp2-static openssl \
+    openssl-dev openssl-libs-static pkgconf zlib-dev zlib-static \
+    zstd-static
+echo 'nonroot:x:65532:65532:nonroot:/tmp:/bin/sh' >> /etc/passwd
+echo 'nonroot:x:65532:' >> /etc/group
+EORUN
+
+# --checksum: each tag must resolve to this commit, tags can be moved.
+# No .git: meson's -Dversion below sets git's version, OpenSSH's is in
+# its version.h.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/git/git.git#v${BASE_VERSION} /src/git
+ADD --link \
+    --checksum=${OPENSSH_CHECKSUM} \
+    https://github.com/openssh/openssh-portable.git#${OPENSSH_VERSION} /src/openssh
+
+# Build and test as the image's user, not root: neither the builds nor
+# the test servers get root, and the sources stay root's. WORKDIR creates
+# its folder owned by USER: /out takes the image's files.
+# HOME: cargo's (CARGO_HOME) and the tests' files.
+USER 65532:65532
+ENV HOME=/tmp
+WORKDIR /out
+WORKDIR /build
+
+# Upstream's meson build, out of the source tree, as its musl CI job
+# (ci/run-build-and-tests.sh, linux-musl-meson). In a copy of the
+# source: git has no Cargo.lock (its crate has no dependency), cargo
+# writes one beside Cargo.toml. Static: prefer_static makes meson ask
+# pkg-config for static libraries; -static-pie links them, and keeps
+# ASLR (Alpine's gcc compiles PIE by default). nofallback: a library
+# missing from Alpine fails, never a download of its source. Version and
+# commit: what release tarballs' `version` file gives (GIT-VERSION-GEN);
+# `git version --build-options` prints the commit. Features enabled or
+# disabled, not `auto`: a missing package fails instead of dropping one.
+# https_backend=none: OpenSSL stays out of git's own programs (by
+# default, for imap-send's TLS); libcurl does TLS for the http helpers
+# and imap-send. Left out: Perl and Python scripts (no interpreter),
+# gettext (English only), PCRE2 (git grep -P), expat (git-http-push,
+# WebDAV), the GUIs, contrib (bash completion), docs and tests.
+# --strip: as distributions ship it.
+RUN <<EORUN
+cp -R /src/git .
+meson setup git-build git \
+    --prefix=/usr --buildtype=release --wrap-mode=nofallback \
+    -Dprefer_static=true -Dc_link_args=-static-pie \
+    -Dversion="${BASE_VERSION}" -Dbuilt_from_commit="${BASE_CHECKSUM}" \
+    -Dcurl=enabled -Diconv=enabled -Drust=enabled -Dhttps_backend=none \
+    -Dexpat=disabled -Dgettext=disabled -Dpcre2=disabled -Dperl=disabled \
+    -Dpython=disabled -Dgitk=disabled -Dgit_gui=disabled -Dgitweb=disabled \
+    -Dcontrib=[] -Dtests=false
+meson compile -C git-build
+DESTDIR=/out meson install -C git-build --no-rebuild --strip
+mkdir -p /out/usr/share/doc/git
+cp /src/git/COPYING /src/git/LGPL-2.1 /out/usr/share/doc/git/
+EORUN
+
+# OpenSSH's client, static as git: git execs `ssh` for ssh:// and
+# scp-like remotes. In a copy of the source: autoreconf and configure
+# write into it. --without-pie: configure's -pie, linked after
+# -static-pie, would win and link dynamically; Alpine's gcc still
+# compiles PIE, -static-pie links it. --disable-security-key and
+# --disable-pkcs11: both load a library at run time (dlopen), which a
+# static binary can't. sshd, sshd-session, sshd-auth and ssh-keygen: the
+# test's server and keys only, not shipped. --with-sandbox=no: the
+# sandbox is sshd-auth's only, the test's; seccomp's fails under QEMU,
+# which builds the other platform on a workstation
+# ("prctl(PR_SET_SECCOMP): Invalid argument"), rlimit's needs a select
+# that Linux lacks (configure).
+WORKDIR /build/openssh
+RUN <<EORUN
+cp -R /src/openssh/. .
+autoreconf
+./configure --prefix=/usr --sysconfdir=/etc/ssh --without-pie \
+    --with-ldflags=-static-pie --with-sandbox=no \
+    --disable-security-key --disable-pkcs11
+make -j"$(nproc)" ssh ssh-keygen sshd sshd-session sshd-auth
+install -D -s -m 0755 ssh /out/usr/bin/ssh
+mkdir -p /out/usr/share/doc/openssh
+cp LICENCE /out/usr/share/doc/openssh/
+EORUN
+
+# Smoke test, here as the image has neither sshd nor a TLS server: the
+# versions; every program static (no interpreter, so it runs on any
+# libc or none); then a commit pushed through ssh and cloned back over
+# ssh and over HTTPS. Throwaway keys and certificate; servers on
+# 127.0.0.1, as the build user. The image's paths are under /out:
+# GIT_EXEC_PATH, GIT_TEMPLATE_DIR and PATH point there.
+# - ssh: OpenSSH's sshd, unprivileged as its regress tests run it
+#   (regress/test-exec.sh); SetEnv gives the server's git the same
+#   paths. Daemonized: it returns once listening.
+# - HTTPS: openssl s_server serving files, git's dumb HTTP protocol.
+#   git asks for info/refs?service=git-upload-pack first: s_server
+#   takes the query as part of the file name, so the refs file is
+#   copied to it. A clone without the certificate must fail: libcurl
+#   checks the server's certificate.
+# kill (DL3001) stops the servers this step started, not a container's.
+WORKDIR /tmp/smoke
+# hadolint ignore=DL3001
+RUN <<EORUN
+/out/usr/bin/git --version | grep -Fx "git version ${BASE_VERSION}"
+openssh="${OPENSSH_VERSION#V_}"
+/out/usr/bin/ssh -V 2>&1 | grep -F "OpenSSH_$(echo "${openssh%_P*}" | tr _ .)p${openssh##*_P}, "
+[ "$(curl-config --ca)" = /etc/ssl/certs/ca-certificates.crt ]
+find /out -type f -perm -u+x | while read -r f; do
+    readelf -h "${f}" > /dev/null 2>&1 || continue
+    if readelf -lW "${f}" | grep -F 'program interpreter' \
+        || readelf -dW "${f}" | grep -F NEEDED; then
+        exit 1
+    fi
+done
+export PATH="/out/usr/bin:${PATH}"
+export GIT_EXEC_PATH=/out/usr/libexec/git-core
+export GIT_TEMPLATE_DIR=/out/usr/share/git-core/templates
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=smoke GIT_AUTHOR_EMAIL=smoke@localhost
+export GIT_COMMITTER_NAME=smoke GIT_COMMITTER_EMAIL=smoke@localhost
+[ "$(git --exec-path)" = /out/usr/libexec/git-core ]
+
+/build/openssh/ssh-keygen -q -t ed25519 -N '' -C '' -f host_key
+/build/openssh/ssh-keygen -q -t ed25519 -N '' -C '' -f client_key
+cp client_key.pub authorized_keys
+echo "[127.0.0.1]:2222 $(cat host_key.pub)" > known_hosts
+cat > sshd_config <<EOF
+Port 2222
+ListenAddress 127.0.0.1
+HostKey /tmp/smoke/host_key
+PidFile /tmp/smoke/sshd.pid
+AuthorizedKeysFile /tmp/smoke/authorized_keys
+StrictModes no
+PerSourcePenalties no
+SshdSessionPath /build/openssh/sshd-session
+SshdAuthPath /build/openssh/sshd-auth
+SetEnv PATH=/out/usr/bin:/usr/bin:/bin GIT_EXEC_PATH=/out/usr/libexec/git-core
+EOF
+# sshd's log, to read on a failure.
+trap 'cat /tmp/smoke/sshd.log >&2' EXIT
+/build/openssh/sshd -f /tmp/smoke/sshd_config -E /tmp/smoke/sshd.log
+export GIT_SSH_COMMAND='ssh -i /tmp/smoke/client_key -o UserKnownHostsFile=/tmp/smoke/known_hosts -o StrictHostKeyChecking=yes -o BatchMode=yes'
+remote=ssh://nonroot@127.0.0.1:2222/tmp/smoke/remote.git
+git init -q --bare -b main remote.git
+git init -q -b main work
+head -c 64k /dev/urandom > work/object
+git -C work add object
+git -C work commit -q -m smoke
+git -C work push -q "${remote}" main
+git clone -q "${remote}" ssh
+cmp work/object ssh/object
+kill "$(cat sshd.pid)"
+trap - EXIT
+
+git -C remote.git update-server-info
+cp remote.git/info/refs 'remote.git/info/refs?service=git-upload-pack'
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes -days 1 \
+    -subj /CN=127.0.0.1 -addext subjectAltName=IP:127.0.0.1 \
+    -keyout tls.key -out tls.crt 2> /dev/null
+openssl s_server -quiet -WWW -accept 127.0.0.1:8443 -cert tls.crt -key tls.key &
+server=$!
+https=https://127.0.0.1:8443/remote.git
+i=0
+until git -c http.sslCAInfo=tls.crt ls-remote "${https}" > /dev/null; do
+    i=$((i + 1))
+    [ "${i}" -lt 30 ]
+    sleep 1
+done
+if git ls-remote "${https}" 2> error; then exit 1; fi
+grep -F 'certificate' error
+git -c http.sslCAInfo=tls.crt clone -q "${https}" https
+cmp work/object https/object
+kill "${server}"
+EORUN
+
+FROM ghcr.io/spnngl/images/busybox:1.38.0@sha256:6c1e457f951ce58e92e57bc0b8f281140d45de13e2062accad72ac15e85e513e
+ARG BASE_VERSION
+
+# Licenses: git's and OpenSSH's; busybox's comes with the base image.
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="GPL-2.0-only AND SSH-OpenSSH" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# git (/usr/bin, /usr/libexec/git-core), its templates, ssh, the licenses:
+# root's, not the build user's, so that the user can't replace them. CA
+# bundle: libcurl's default path (the build stage checks it), for HTTPS
+# remotes with a public CA; refreshed by the weekly rebuild.
+COPY --link --from=build --chown=0:0 /out/ /
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+
+# Numeric, so runAsNonRoot can check it. /git, created owned by it: the
+# repository's mount point, as other git images use.
+USER 65532:65532
+WORKDIR /git
+
+# Arguments are git's: `docker run <image> clone <url>`. Kubernetes'
+# `command:` replaces the entrypoint (`["sh", "-c", ...]` for a script).
+ENTRYPOINT ["/usr/bin/git"]
+CMD ["--version"]
+
+# Smoke test: the binaries run on this platform (the build stage tested
+# the transports), git finds its exec path and templates at the image's
+# paths, and the shell runs. `ssh -V` (DL3001) prints its version only.
+# hadolint ignore=DL3001
+RUN ["/bin/sh", "-euc", "git --version && ssh -V && [ \"$(git --exec-path)\" = /usr/libexec/git-core ] && git init -q /tmp/t && rm -r /tmp/t"]

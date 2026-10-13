@@ -17,7 +17,8 @@
 - **A shell, against the rule of `containers/AGENTS.md`:** the image is
   a toolbox (debugging a pod, an init container's `sh -c`, a binary to
   `COPY --from`), useless without its shell and applets. Every other
-  image stays shell-less; none is built `FROM` this one.
+  image stays shell-less, except `containers/git`, built `FROM` this one
+  (its `REFERENCES.md` gives why).
 - **Static, musl:** scratch has no C library, and `COPY --from` puts the
   binary in images with none or another. musl links fully statically;
   glibc's static binaries still load NSS modules at run time. Debian's `musl-tools` (`musl-gcc`), from the
