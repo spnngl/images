@@ -1,0 +1,119 @@
+diff --git a/nzbget.conf b/nzbget.conf
+index 5983f690..f59ef73b 100644
+--- a/nzbget.conf
++++ b/nzbget.conf
+@@ -8,7 +8,7 @@
+ #
+ # On POSIX you can use "~" as alias for home directory (e.g. "~/downloads").
+ # On Windows use absolute paths (e.g. "C:\Downloads").
+-MainDir=~/downloads
++MainDir=/downloads
+ 
+ # Destination directory for downloaded files.
+ #
+@@ -50,7 +50,7 @@ NzbDir=${MainDir}/nzb
+ #
+ # This directory is used to save download queue, history, information
+ # about fetched RSS feeds, statistics, etc.
+-QueueDir=${MainDir}/queue
++QueueDir=/config/queue
+ 
+ # Directory to store temporary files.
+ TempDir=${MainDir}/tmp
+@@ -62,14 +62,14 @@ TempDir=${MainDir}/tmp
+ # NOTE: To disable web-interface set the option to an empty value.
+ # This however doesn't disable the built-in web-server completely because
+ # it is also used to serve JSON-/XML-RPC requests.
+-WebDir=
++WebDir=/usr/lib/nzbget/webui
+ 
+ # Directory with post-processing and other scripts.
+ #
+ # This option may contain multiple directories separated with commas or semicolons.
+ #
+ # NOTE: For information on writing scripts visit https://nzbget.com/documentation/extension-scripts/.
+-ScriptDir=${MainDir}/scripts
++ScriptDir=/config/scripts
+ 
+ # Lock-file for daemon-mode, POSIX only.
+ #
+@@ -86,7 +86,7 @@ LockFile=${MainDir}/nzbget.lock
+ # Where to store log file, if it needs to be created.
+ #
+ # NOTE: See also option <WriteLog>.
+-LogFile=${MainDir}/nzbget.log
++LogFile=/config/nzbget.log
+ 
+ # Configuration file template.
+ #
+@@ -99,7 +99,7 @@ LogFile=${MainDir}/nzbget.log
+ # /usr/local/share/nzbget/nzbget.conf).
+ #
+ # Example: /usr/local/share/nzbget/nzbget.conf.
+-ConfigTemplate=
++ConfigTemplate=/usr/lib/nzbget/nzbget.conf
+ 
+ # Required directories.
+ #
+@@ -132,7 +132,7 @@ RequiredDir=
+ # NOTE: Certificate verification must be enabled separately via option <CertCheck>.
+ #
+ # NOTE: For more details visit https://nzbget.com/documentation/certificate-verification/.
+-CertStore=
++CertStore=/etc/ssl/certs/ca-certificates.crt
+ 
+ ##############################################################################
+ ### NEWS-SERVERS                                                           ###
+@@ -438,14 +438,14 @@ AuthorizedIP=
+ # which must be configured using option <CertStore>.
+ #
+ # NOTE: For more details visit https://nzbget.com/documentation/certificate-verification/.
+-CertCheck=no
++CertCheck=yes
+ 
+ # Automatically check for new releases (none, stable, testing).
+ #
+ #  None    - do not show notifications;
+ #  Stable  - show notifications about new stable releases;
+ #  Testing - show notifications about new testing releases;
+-UpdateCheck=stable
++UpdateCheck=none
+ 
+ # User name for daemon-mode, POSIX only.
+ #
+@@ -1230,7 +1230,7 @@ TimeCorrection=0
+ #            and download progress info; uses escape-sequences to move cursor;
+ # curses   - advanced interactive interface with the ability to edit
+ #            download queue and various output option.
+-OutputMode=curses
++OutputMode=log
+ 
+ # Shows NZB-Filename in file list in curses-outputmode (yes, no).
+ #
+@@ -1624,7 +1624,7 @@ UnpackCleanupDisk=yes
+ #
+ # If unrar is in your PATH you may leave the path part and set only
+ # the executable name ("unrar" on POSIX or "unrar.exe" on Windows).
+-UnrarCmd=unrar
++UnrarCmd=/usr/bin/unrar
+ 
+ # Full path to 7-Zip executable.
+ #
+@@ -1634,7 +1634,7 @@ UnrarCmd=unrar
+ #
+ # If 7-Zip binary is in your PATH you may leave the path part and set only
+ # the executable name ("7z" or "7za" on POSIX or "7z.exe" on Windows).
+-SevenZipCmd=7z
++SevenZipCmd=/usr/lib/7zip/7za
+ 
+ # Files to delete after successful download.
+ #
+@@ -1753,7 +1753,7 @@ ScriptPauseQueue=no
+ # dot) followed by equal sign and the full path to script interpreter.
+ #
+ # Example: .py=/usr/bin/python2;.py3=/usr/bin/python3;.sh=/usr/bin/bash.
+-ShellOverride=
++ShellOverride=.py=/usr/bin/python3
+ 
+ # Minimum interval between queue events (seconds).
+ #

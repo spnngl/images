@@ -1,0 +1,26 @@
+diff --git a/cmake/par2-turbo.cmake b/cmake/par2-turbo.cmake
+index dc06b623..40bb544c 100644
+--- a/cmake/par2-turbo.cmake
++++ b/cmake/par2-turbo.cmake
+@@ -61,6 +61,8 @@ ExternalProject_add(
+ 	TLS_VERIFY		TRUE
+ 	GIT_SHALLOW		TRUE
+ 	GIT_PROGRESS	TRUE
++	DOWNLOAD_COMMAND	""
++	UPDATE_COMMAND	""
+ 	DOWNLOAD_EXTRACT_TIMESTAMP	TRUE
+ 	BUILD_BYPRODUCTS ${PAR2_LIBS}
+ 	CMAKE_ARGS		 ${CMAKE_ARGS}
+diff --git a/cmake/rapidyenc.cmake b/cmake/rapidyenc.cmake
+index cb17b8c1..40f38642 100644
+--- a/cmake/rapidyenc.cmake
++++ b/cmake/rapidyenc.cmake
+@@ -60,6 +60,8 @@ ExternalProject_add(
+ 	TLS_VERIFY		TRUE
+ 	GIT_SHALLOW		TRUE
+ 	GIT_PROGRESS	TRUE
++	DOWNLOAD_COMMAND	""
++	UPDATE_COMMAND	""
+ 	DOWNLOAD_EXTRACT_TIMESTAMP	TRUE
+ 	BUILD_BYPRODUCTS ${RAPIDYENC_LIBS}
+ 	CMAKE_ARGS		 ${CMAKE_ARGS}
