@@ -13,10 +13,43 @@ on:
 
 permissions: {}
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
+  # The packages to scan (.github/REFERENCES.md): build-bootc.yml's
+  # matrix names, and the folders of the Bake files (build-apps.yml's
+  # image name). An input of the shared workflow: GitHub's API refuses to
+  # list an owner's packages to GITHUB_TOKEN.
+  packages:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    outputs:
+      packages: ${{ steps.find.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: find
+        run: |-
+          shopt -s nullglob
+          packages="$(
+            {
+              yq '.jobs.build.strategy.matrix.image[].name' .github/workflows/build-bootc.yml
+              for file in containers/*/docker-bake.hcl; do
+                basename "$(dirname "${file}")"
+              done
+            } | sort -u | sed 's|^|images/|' | paste -sd ' ' -
+          )"
+          echo "packages=${packages}" >> "${GITHUB_OUTPUT}"
+
   image-scan:
+    needs: packages
     permissions:
       contents: read
       packages: read
       security-events: write
     uses: spnngl/.github/.github/workflows/image-scan.yml@main
+    with:
+      packages: ${{ needs.packages.outputs.packages }}
