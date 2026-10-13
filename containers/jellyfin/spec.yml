@@ -60,6 +60,10 @@ dependencies:
     # VA-API, QSV and Vulkan drivers. Not pinned, like Debian's packages: a
     # rebuild picks up its fixes.
     jellyfin-ffmpeg8: {}
+    # Not used by Jellyfin: Dalec 0.22.1 purges it before its last dpkg
+    # run, which then fails and leaves the shell in the image.
+    # TODO: drop when Dalec keeps the libraries dpkg links.
+    libmd0: {}
     # What jellyfin-server depends on, and the .NET runtime loads (ICU for
     # globalization, OpenSSL for TLS, CA certificates for metadata
     # providers, tzdata for TimeZoneInfo).

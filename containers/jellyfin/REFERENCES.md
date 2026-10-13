@@ -33,3 +33,5 @@
   (Podman does), so a read-only root filesystem breaks ASP.NET's key
   ring (`Read-only file system : '/tmp/'`). On disk, not in memory:
   Jellyfin extracts attachments and subtitles there.
+- **`libmd0` as a runtime dependency:** as haproxy's, a workaround of
+  Dalec 0.22.1 (`containers/haproxy/REFERENCES.md`).
