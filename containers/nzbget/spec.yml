@@ -1,0 +1,224 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.1
+#
+# NZBGet built with Dalec (https://project-dalec.github.io/dalec/): one
+# Debian trixie package (the app, its web UI and default configuration),
+# installed into the minimal image of the trixie/container target, built
+# from scratch out of the package's dependency closure: no shell, no apt.
+#
+# Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
+# (nzbget.conf, queue, extensions, log) and /downloads must be writable by
+# it; web UI and API on 6789/tcp. The first start writes the image's
+# default /config/nzbget.conf (default-config.patch). Its login is
+# upstream's public default, nzbget/tegbzn6789: set your own, in the web
+# UI or with `-o ControlPassword=...` after the image's cmd (Kubernetes:
+# args `-s -c /config/nzbget.conf -o ControlPassword=$(NZBGET_PASSWORD)`,
+# the variable from a Secret). Extensions: Python only, run with
+# /usr/bin/python3 (ShellOverride); no shell, no /usr/bin/env.
+#
+# Renovate bumps the versions and checksums in docker-bake.hcl (AGENTS.md,
+# Updates).
+
+# Set by docker-bake.hcl; empty here, Dalec needs them declared
+# (containers/AGENTS.md).
+args:
+  # NZBGet's release (without the tag's v) and its tag's commit.
+  BASE_VERSION: ""
+  BASE_CHECKSUM: ""
+  # The par2cmdline-turbo and rapidyenc tags NZBGet's build names
+  # (cmake/par2-turbo.cmake, cmake/rapidyenc.cmake), without the v, and
+  # their commits.
+  PAR2_VERSION: ""
+  PAR2_CHECKSUM: ""
+  RAPIDYENC_VERSION: ""
+  RAPIDYENC_CHECKSUM: ""
+
+name: nzbget
+description: NZBGet, an efficient Usenet downloader
+website: https://nzbget.com
+license: GPL-2.0-or-later
+packager: spnngl/images
+vendor: spnngl/images
+version: ${BASE_VERSION}
+revision: 1
+
+sources:
+  nzbget:
+    git:
+      url: https://github.com/nzbgetcom/nzbget.git
+      commit: v${BASE_VERSION}
+      # The tag must resolve to this commit: tags can be moved.
+      checksum: ${BASE_CHECKSUM}
+  # NZBGet's par2 repair and yEnc decoding, nzbgetcom's forks, linked
+  # statically. NZBGet's build clones them (ExternalProject): the Dalec
+  # build has no network, so they are pinned here and handed to it
+  # (pinned-libs.patch).
+  par2cmdline-turbo:
+    git:
+      url: https://github.com/nzbgetcom/par2cmdline-turbo.git
+      commit: v${PAR2_VERSION}
+      checksum: ${PAR2_CHECKSUM}
+  rapidyenc:
+    git:
+      url: https://github.com/nzbgetcom/rapidyenc.git
+      commit: v${RAPIDYENC_VERSION}
+      checksum: ${RAPIDYENC_CHECKSUM}
+  # The patches, from this folder: one source each, Dalec's Debian build
+  # stores a patch under its source's name (deb/debroot.go,
+  # sourcePatchesDir), so two from one source overwrite each other.
+  default-config-patch:
+    context: {}
+    includes:
+      - default-config.patch
+  defaults-patch:
+    context: {}
+    includes:
+      - defaults.patch
+  pinned-libs-patch:
+    context: {}
+    includes:
+      - pinned-libs.patch
+
+patches:
+  nzbget:
+    # NZBGet exits when the -c file doesn't exist, and the image has no
+    # shell to copy one in: on first start, copy the image's default.
+    - source: default-config-patch
+      path: default-config.patch
+    # The defaults of the image's configuration: paths in the volumes and
+    # the image, the tools' absolute paths, TLS certificates checked
+    # against Debian's store, no update check (Renovate updates the
+    # image), log output (no curses). NZBGet takes no env variable for
+    # them. Still changeable in the web UI.
+    - source: defaults-patch
+      path: defaults.patch
+    # Skips the clone of par2cmdline-turbo and rapidyenc: the build step
+    # puts the pinned sources where it would have cloned them.
+    - source: pinned-libs-patch
+      path: pinned-libs.patch
+
+dependencies:
+  build:
+    build-essential: {}
+    cmake: {}
+    libboost-json-dev: {}
+    libssl-dev: {}
+    libxml2-dev: {}
+    zlib1g-dev: {}
+  runtime:
+    # The interpreter of extensions (ShellOverride, defaults.patch). Without
+    # it, NZBGet looks for one through /bin/sh, which the image lacks.
+    python3: {}
+    # The RAR extractor. From non-free, see extra_repos.
+    unrar: {}
+    # For 7z and zip archives, extensions' too (the extension manager
+    # unpacks them with it).
+    7zip: {}
+    # CertStore (defaults.patch).
+    ca-certificates: {}
+  extra_repos:
+    # trixie's non-free component for unrar, only when installing into the
+    # image (as containers/sabnzbd/spec.yml).
+    - config:
+        non-free:
+          inline:
+            file:
+              contents: |
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian trixie non-free
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian trixie-updates non-free
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian-security trixie-security non-free
+      envs:
+        - install
+
+build:
+  env:
+    # Steps don't expand args: the first one reads these.
+    PAR2_VERSION: ${PAR2_VERSION}
+    RAPIDYENC_VERSION: ${RAPIDYENC_VERSION}
+    # No nzbget-dbgsym package: the image would install it.
+    DEB_BUILD_OPTIONS: noautodbgsym
+  # Steps run with sh (dash) from the folder holding one folder per source.
+  steps:
+    # The pinned par2cmdline-turbo and rapidyenc must be the tags NZBGet's
+    # build names (on GIT_TAG, or in a set() since NZBGet's develop branch):
+    # a Renovate PR bumping one before NZBGet does fails here.
+    - command: |
+        for lib in par2-turbo:${PAR2_VERSION} rapidyenc:${RAPIDYENC_VERSION}; do
+          file="nzbget/cmake/${lib%%:*}.cmake"
+          if ! grep -Fqw "v${lib#*:}" "${file}"; then
+            echo "${file} doesn't name v${lib#*:} (docker-bake.hcl)" >&2
+            exit 1
+          fi
+        done
+    # The pinned sources where ExternalProject would clone them
+    # (<binary dir>/<name>/src/<name>). No curses: OutputMode=log.
+    - command: |
+        mkdir -p build/par2-turbo/src build/rapidyenc/src
+        cp -a par2cmdline-turbo build/par2-turbo/src/par2-turbo
+        cp -a rapidyenc build/rapidyenc/src/rapidyenc
+        cmake -S nzbget -B build -DCMAKE_BUILD_TYPE=Release -DDISABLE_CURSES=ON
+        cmake --build build -j"$(nproc)"
+    # What upstream's install puts in share/nzbget: the web UI, and the
+    # configuration (patched) as the template and first start's default.
+    - command: |
+        mkdir -p out/nzbget
+        cp -a nzbget/webui out/nzbget/
+        cp nzbget/nzbget.conf out/nzbget/
+
+artifacts:
+  binaries:
+    build/nzbget: {}
+  libs:
+    # Installed as /usr/lib/nzbget.
+    out/nzbget: {}
+  licenses:
+    nzbget/COPYING: {}
+    # Statically linked: their license texts ship with the binary.
+    par2cmdline-turbo/COPYING:
+      subpath: par2cmdline-turbo
+    rapidyenc/crcutil-1.0/LICENSE:
+      subpath: rapidyenc/crcutil
+
+image:
+  entrypoint: /usr/bin/nzbget
+  # -s: server in the foreground, no lock file (daemon mode only).
+  cmd: -s -c /config/nzbget.conf
+  env:
+    # No /etc/passwd entry for the user: ~ would not resolve.
+    - HOME=/config
+  # Not root, numeric so Kubernetes' runAsNonRoot can check it. The image has
+  # no such user: the mounted folders must be writable by this UID/GID.
+  user: "65532:65532"
+  working_dir: /config
+  volumes:
+    /config: {}
+    /downloads: {}
+  labels:
+    org.opencontainers.image.title: nzbget
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: GPL-2.0-or-later
+    org.opencontainers.image.source: https://github.com/spnngl/images
+    # Web UI on 6789/tcp: Dalec has no EXPOSE equivalent.
+
+tests:
+  # The tools NZBGet runs, from the paths of its configuration
+  # (defaults.patch). The image has no shell: a wrapper script would fail.
+  - name: tools NZBGet runs work
+    steps:
+      - command: /usr/bin/unrar
+        stdout:
+          contains:
+            - UNRAR
+      - command: /usr/lib/7zip/7za
+        stdout:
+          contains:
+            - 7-Zip (a)
+      - command: /usr/bin/python3 --version
+        stdout:
+          contains:
+            - Python 3
+  - name: NZBGet starts
+    steps:
+      - command: /usr/bin/nzbget -v
+        stdout:
+          contains:
+            - "nzbget version: ${BASE_VERSION}"
