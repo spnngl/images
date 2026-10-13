@@ -1,0 +1,68 @@
+# Ask Copilot's cloud agent to fix a Renovate pull request whose build
+# failed: an @copilot comment, with the failed run, on the pull request,
+# whose branch Copilot then pushes its fix to. Reasons:
+# .github/REFERENCES.md.
+name: copilot-fix
+
+on:
+  workflow_run:
+    workflows:
+      - build-apps
+      - build-bootc
+    types:
+      - completed
+
+permissions: {}
+
+jobs:
+  ask:
+    # A failed pull request run of a Renovate branch of this repository:
+    # never a fork's, whose branch name and code nobody here wrote.
+    # workflow_run runs with this repository's secrets, so nothing of the
+    # branch is checked out or run; its name only goes through env.
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      startsWith(github.event.workflow_run.head_branch, 'renovate/')
+    # Both builds can fail on one branch: one comment between them. On the
+    # job, not the workflow: every completed build run starts this
+    # workflow, and a skipped one would cancel a pending failure's.
+    concurrency:
+      group: ${{ github.workflow }}-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: false
+    runs-on: ubuntu-26.04
+    permissions: {}
+    steps:
+      - name: Comment @copilot on the pull request
+        env:
+          GH_REPO: ${{ github.repository }}
+          # A user's token: Copilot answers users with write access, not
+          # github-actions[bot].
+          GH_TOKEN: ${{ secrets.COPILOT_FIX_TOKEN }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          # Hidden on GitHub: marks the pull requests already asked.
+          MARKER: "<!-- copilot-fix -->"
+        run: |-
+          [[ -n "${GH_TOKEN}" ]] || { echo "::error::no COPILOT_FIX_TOKEN secret: gh secret set COPILOT_FIX_TOKEN (.github/REFERENCES.md)"; exit 1; }
+          # Only while the failed commit is the pull request's head: a newer
+          # commit has its own build.
+          pr="$(gh pr list --head "${BRANCH}" --state open --json number,headRefOid --jq '.[] | select(.headRefOid == env.HEAD_SHA) | .number')"
+          [[ -n "${pr}" ]] || { echo "No open pull request at ${HEAD_SHA} on ${BRANCH}"; exit 0; }
+          # Once per pull request: Copilot's own failed fix goes to a person.
+          asked="$(gh pr view "${pr}" --json comments --jq 'any(.comments[]; .body | contains(env.MARKER))')"
+          [[ "${asked}" == false ]] || { echo "Copilot was already asked on #${pr}"; exit 0; }
+          gh pr comment "${pr}" --body-file - <<EOF
+          @copilot ${WORKFLOW} failed on this pull request: ${RUN_URL}
+
+          Fix its cause on this branch. Read the AGENTS.md of every folder from
+          the repository root down to each file you change. Keep every check,
+          test and smoke test as strict as it is: when the fix needs one
+          loosened, or a choice only a person can make, leave the branch as it
+          is and explain why in a comment.
+
+          ${MARKER}
+          EOF
