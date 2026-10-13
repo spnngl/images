@@ -70,7 +70,8 @@ By what the app needs at runtime; name that need in the image's
   Containerfile, `spec.yml`, docs and scripts out: BuildKit reads only
   `.dockerignore`, never `.containerignore`.
 - **`FROM` digests** stay in the Containerfile: Renovate's dockerfile
-  manager updates them.
+  manager updates them. A builder that differs per release line
+  (kubectl's golang) comes from Bake instead: a `FROM` line can't vary.
 - **Shell-less**: the final image has no shell, so everything it runs is
   exec form, with absolute paths. Busybox excepted: a shell is its
   purpose.
