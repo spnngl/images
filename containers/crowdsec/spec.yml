@@ -131,7 +131,7 @@ build:
     # Upstream's Makefile: its tags (netgo, osusergo,
     # sqlite_omit_load_extension, re2_cgo...) and -X flags, -s and
     # -trimpath. Without git (the source has no .git): the short commit is
-    # BUILD_TAG, SOURCE_DATE_EPOCH (CI: the last commit's time) the build
+    # BUILD_TAG, SOURCE_DATE_EPOCH (CI: build-apps.yml's) the build
     # date. DOCKER_BUILD: cscli says to restart the container rather than
     # systemd's service, and the User-Agent says docker. Dalec expands args
     # in env, not in the command.

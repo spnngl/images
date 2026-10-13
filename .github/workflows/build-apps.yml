@@ -60,7 +60,11 @@ jobs:
       images: ${{ steps.find.outputs.images }}
       containerfiles: ${{ steps.find.outputs.containerfiles }}
     steps:
+      # The whole history: each image's SOURCE_DATE_EPOCH is the last
+      # commit of its files (see find).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
 
       # The commit to compare with, or nothing to build every image:
       # - pull request: its base.
@@ -70,9 +74,8 @@ jobs:
       #   runs are skipped: their commit isn't the branch's.
       # - schedule, workflow_dispatch, or no base (first run, history
       #   rewritten: fetching it fails): nothing.
-      # checkout fetches one commit: the comparison needs both trees, not
-      # the history between them; the base goes in a worktree, to resolve
-      # its Bake files.
+      # The base goes in a worktree, to resolve its Bake files. A full
+      # fetch: --depth=1 would cut the history at the base.
       - id: changes
         env:
           GH_TOKEN: ${{ github.token }}
@@ -89,7 +92,7 @@ jobs:
               ;;
             *) ;;
           esac
-          if [[ -n "${base}" ]] && git fetch --quiet --depth=1 origin "${base}" && git worktree add --quiet --detach "${RUNNER_TEMP}/base" "${base}"; then
+          if [[ -n "${base}" ]] && git fetch --quiet origin "${base}" && git worktree add --quiet --detach "${RUNNER_TEMP}/base" "${base}"; then
             echo "base=${base}" >> "${GITHUB_OUTPUT}"
           fi
 
@@ -100,12 +103,13 @@ jobs:
       # - file, target: Dalec images' target is the minimal image, from
       #   scratch (see the specs); Containerfiles: none, the last stage.
       # - tags: the first is the scan's baseline.
-      # - buildargs: the target's args, and SOURCE_DATE_EPOCH, the last
-      #   commit's time, as in build-bootc.yml: Dalec exports it to the
-      #   build (packaging tools clamp the package's file times to it), the
-      #   Containerfiles read it (ARG SOURCE_DATE_EPOCH), and BuildKit
-      #   dates the image and clamps its layers' file times with it. Not
-      #   in Bake: it would change every target at each commit.
+      # - buildargs: the target's args, and SOURCE_DATE_EPOCH: Dalec
+      #   exports it to the build (packaging tools clamp the package's file
+      #   times to it), the Containerfiles read it (ARG SOURCE_DATE_EPOCH),
+      #   and BuildKit dates the image and clamps its layers' file times
+      #   with it. The last commit of the target's context or of the
+      #   shared Bake file, docs excepted: per image, so other images'
+      #   commits keep the build cache (.github/REFERENCES.md).
       # Bake takes one -f per file, and contexts from the repo root:
       # relative paths, from where it runs.
       # nullglob: no Bake file gives no target, not the pattern.
@@ -128,6 +132,9 @@ jobs:
             )
           }
           bake_print . > "${RUNNER_TEMP}/head.json"
+          epochs="$(jq -r '[.target[].context] | unique[]' "${RUNNER_TEMP}/head.json" | while read -r context; do
+            printf '%s\t%s\n' "${context}" "$(git log -1 --format=%ct -- "${context}" containers/docker-bake.hcl ':(exclude)*.md')"
+          done | jq -Rcn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}')"
           if [[ -n "${BASE}" ]]; then
             bake_print "${RUNNER_TEMP}/base" > "${RUNNER_TEMP}/base.json"
             files="$(git diff --name-only --no-renames "${BASE}" HEAD | jq -Rcn '[inputs]')"
@@ -135,7 +142,7 @@ jobs:
             echo '{"target":{}}' > "${RUNNER_TEMP}/base.json"
             files=null
           fi
-          jq -c --slurpfile base "${RUNNER_TEMP}/base.json" --argjson files "${files}" --arg epoch "$(git log -1 --format=%ct)" '
+          jq -c --slurpfile base "${RUNNER_TEMP}/base.json" --argjson files "${files}" --argjson epochs "${epochs}" '
             .target
             | to_entries
             | map(
@@ -148,7 +155,7 @@ jobs:
                     file: "\($target.context)/\($target.dockerfile)",
                     target: ($target.target // ""),
                     tags: $target.tags,
-                    buildargs: (($target.args // {}) + {SOURCE_DATE_EPOCH: $epoch} | to_entries | map("\(.key)=\(.value)") | join("\n")),
+                    buildargs: (($target.args // {}) + {SOURCE_DATE_EPOCH: $epochs[$target.context]} | to_entries | map("\(.key)=\(.value)") | join("\n")),
                     resolved: $target
                   }
               )
@@ -257,6 +264,11 @@ jobs:
       # build's time. Pull requests: also an OCI layout, for the scan below
       # (nothing else keeps the image on the runner).
       # An empty line is no output.
+      # Build cache, one scope per target and platform; mode=max: the
+      # build stages hold the work. ignore-error: fork pull requests can't
+      # write it. Weekly and manual rebuilds skip it, to fetch the
+      # packages that follow their archive, and refresh it
+      # (.github/REFERENCES.md).
       - id: build
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -267,6 +279,9 @@ jobs:
           build-args: ${{ matrix.image.buildargs }}
           provenance: mode=max,version=v1
           sbom: true
+          cache-from: type=gha,scope=${{ env.ARTIFACT }}
+          cache-to: type=gha,scope=${{ env.ARTIFACT }},mode=max,ignore-error=true
+          no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           outputs: |
             type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }},rewrite-timestamp=true
             ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/oci,tar=false', runner.temp) || '' }}
