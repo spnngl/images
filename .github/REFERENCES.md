@@ -75,8 +75,13 @@ Dalec, and one way to build, attest and sign is simpler.
 The shared `scan-image` action runs Grype and Trivy: Trivy has no Fedora
 data, and their sources differ.
 
-- **Pull requests:** each build job scans its image (OCI layout) and
-  fails on a Critical vulnerability with a fix that the pushed image of
+- **Pull requests, bootc:** each build job scans its image (OCI layout)
+  and uploads High and Critical findings to code scanning, in
+  `image-scan.yml`'s categories, so the pull request shows what it
+  adds. It never fails: its findings are triaged there, not in the
+  pull request.
+- **Pull requests, applications:** each build job scans its image (OCI
+  layout) and fails on a Critical vulnerability with a fix that the pushed image of
   the same tag and platform lacks. The rest is reported: without a fix,
   or already pushed, a pull request can't act on it. No pushed image (a
   new image, a version bump) fails nothing: blocking would keep the
