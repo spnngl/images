@@ -180,6 +180,15 @@
             ]
         },
         {
+            "description": "NZBGet and the par2cmdline-turbo and rapidyenc tags its build names (containers/nzbget): one PR, so a new NZBGet comes with the tags it names. The spec fails while a library's newest tag is one NZBGet doesn't name yet: the PR waits for NZBGet's next release.",
+            "matchDepNames": [
+                "nzbgetcom/nzbget",
+                "nzbgetcom/par2cmdline-turbo",
+                "nzbgetcom/rapidyenc"
+            ],
+            "groupName": "nzbget"
+        },
+        {
             "description": "The application images' FROM lines carry a digest. Not the bootc images': see ignorePresets.",
             "matchManagers": ["dockerfile"],
             "matchFileNames": ["containers/**"],

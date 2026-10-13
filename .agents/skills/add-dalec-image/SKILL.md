@@ -67,7 +67,9 @@ Done when every item has a home on both platforms.
   ${BASE_CHECKSUM}` (the commit sha), http with `digest`.
 - **Repo files** (patches, locks): a `context: {}` source with
   `includes:`. Patches go under `patches.<source>`, each with a comment
-  saying why.
+  saying why, and each from its own source: Dalec's Debian build stores
+  a patch under its source's name, so two from one source overwrite
+  each other (`containers/nzbget/spec.yml`).
 - **Build tools** trixie lacks: an `image:` source with `path:` to the
   binary, as the reference image does for `uv`.
 - **Metadata**: `packager` and `vendor` `spnngl/images`, `revision: 1`,

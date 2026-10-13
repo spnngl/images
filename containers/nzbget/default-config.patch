@@ -1,0 +1,17 @@
+diff --git a/daemon/main/Options.cpp b/daemon/main/Options.cpp
+index 48122f39..dc82e5d6 100644
+--- a/daemon/main/Options.cpp
++++ b/daemon/main/Options.cpp
+@@ -468,6 +468,12 @@ void Options::InitOptFile()
+ 
+ 		SetOption(CONFIGFILE.data(), m_configFilename);
+ 
++		// spnngl/images: first start on an empty volume, the image's defaults.
++		if (!FileSystem::FileExists(m_configFilename))
++		{
++			FileSystem::CopyFile("/usr/lib/nzbget/nzbget.conf", m_configFilename);
++		}
++
+ 		LoadConfigFile();
+ 	}
+ }
