@@ -50,7 +50,7 @@
   `v<BASE_VERSION>`, the tag after `kustomize/`, as `create-release.sh`
   sets it. Its `gitCommit` `-X` names no variable: upstream's binaries
   print `gitCommit: unknown` too. `buildDate` from `SOURCE_DATE_EPOCH`
-  (the repository's last commit in CI): reproducible.
+  (CI: `build-apps.yml`'s): reproducible.
 - **Commits pinned** (`ADD --checksum`): a moved tag fails the build.
 - **One image tag, kustomize's version:** Helm is the image's
   dependency, and its updates rebuild the same tag.

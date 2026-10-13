@@ -53,8 +53,8 @@
 - **Version from `KUBE_GIT_*`, not git:** `version.sh` reads them before
   git, so no `.git` is fetched; they say what upstream's release reads
   from git (the tag, its commit, a clean tree), and `ADD --checksum`
-  proves the commit. `buildDate` comes from `SOURCE_DATE_EPOCH` (the
-  repository's last commit in CI), not the clock: reproducible.
+  proves the commit. `buildDate` comes from `SOURCE_DATE_EPOCH` (CI:
+  `build-apps.yml`'s), not the clock: reproducible.
 - **Commit pinned** (`ADD --checksum`): a moved tag fails the build.
 - **Built and tested as UID 65532:** upstream's scripts don't get root;
   the source stays root's, `_output` (the build's only output,
