@@ -1,0 +1,14 @@
+# What the image changes in upstream's defconfig: `make defconfig
+# KBUILD_DEFCONFIG=<this file>` reads it and gives every option it doesn't
+# set its default, as a plain `make defconfig` does
+# (scripts/kconfig/Makefile). Kconfig syntax: `# CONFIG_<X> is not set`
+# disables an option, any other comment is ignored.
+
+# One static binary: scratch has no C library to link against at run
+# time, and `COPY --from` puts it in images with none or another.
+CONFIG_STATIC=y
+
+# tc: networking/tc.c uses the CBQ qdisc's definitions (TCA_CBQ_*,
+# struct tc_cbq_*), which recent kernel headers (trixie's linux-libc-dev
+# 6.12) no longer have, with the qdisc itself: it does not build.
+# CONFIG_TC is not set

@@ -2,15 +2,15 @@
 
 Two kinds of OCI image, built by CI and pushed, signed, to
 `ghcr.io/spnngl/images/<name>:<BASE_VERSION>` (application images:
-`<name>:<BASE_VERSION>-debian<N>`):
+`<name>:<BASE_VERSION>-debian<N>`, busybox's without the suffix):
 
 - **bootc images** (`bootc/`): bootable operating systems. A host boots
   from one and updates by pulling a newer one (`bootc upgrade`). Built
   with podman; `bootc/build.sh` also turns one into a qcow2 disk image
   for the first install, with image-builder.
 - **Application images** (`containers/`): upstream apps the hosts run,
-  shell-less, from a Containerfile on `scratch`, a Dalec spec, or a DHI
-  definition. Built with `docker buildx`.
+  shell-less (busybox excepted: a shell is its purpose), from a
+  Containerfile on `scratch`, a Dalec spec, or a DHI definition. Built with `docker buildx`.
 
 The two share no build input: different builders, workflows and rules.
 
