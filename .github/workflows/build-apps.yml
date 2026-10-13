@@ -316,6 +316,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Build provenance attestation: OIDC token for its Sigstore
+      # certificate, and storing it on GitHub.
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -388,12 +392,27 @@ jobs:
           done
 
       # Every manifest in the list carries a signature from the key hosts
-      # trust (the public key in the fedora image).
+      # trust (the public key in the fedora image). --new-bundle-format=false:
+      # cosign switches to bundles when the image has one (the provenance
+      # below, on a re-run), then ignores the .sig attachment.
       - env:
           DIGEST: ${{ steps.merge.outputs.digest }}
         run: |-
           read -r -a tags <<< "${TAGS}"
           mapfile -t digests < <(docker buildx imagetools inspect --raw "${tags[0]}" | jq -r '.manifests[].digest')
           for digest in "${DIGEST}" "${digests[@]}"; do
-            cosign verify --key bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub --insecure-ignore-tlog=true "${IMAGE}@${digest}" > /dev/null
+            cosign verify --key bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub --new-bundle-format=false --insecure-ignore-tlog=true "${IMAGE}@${digest}" > /dev/null
           done
+
+      # Signed SLSA build provenance (workflow, commit, run) for the
+      # manifest list, pushed next to it as an OCI referrer: what
+      # Kubernetes admission checks (.github/REFERENCES.md). BuildKit's
+      # provenance in the index is unsigned. Check it with
+      # gh attestation verify oci://<tag> -R <owner>/<repo>.
+      # No storage record: it needs an organization-owned repository.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ steps.merge.outputs.digest }}
+          push-to-registry: true
+          create-storage-record: false
