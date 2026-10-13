@@ -24,7 +24,8 @@ function "line" {
   result = regex("^[0-9]+\\.[0-9]+", version)
 }
 
-# Every tag names the Debian release: haproxy:3.2.25-debian13.
+# Tags name the upstream version alone (haproxy:3.2.25): Debian only
+# builds the image, and most images are scratch, with no Debian file.
 function "tags" {
   params = [name, debian, versions]
   result = [for v in versions : "ghcr.io/spnngl/images/${name}:${v}"]
@@ -33,7 +34,7 @@ function "tags" {
 # Arguments of every Containerfile. Not for Dalec specs: Dalec fails on
 # an argument the spec doesn't declare (load.go, errUnknownArg).
 # DEBIAN_CODENAME: the build stage checks it runs on that release, so the
-# tag's -debian<N> can't lie (FROM lines name the release, not Bake).
+# target's debian matches its FROM lines (they name the release, not Bake).
 function "containerfile_args" {
   params = [debian]
   result = {

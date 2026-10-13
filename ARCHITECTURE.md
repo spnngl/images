@@ -1,8 +1,7 @@
 # Architecture
 
 Two kinds of OCI image, built by CI and pushed, signed, to
-`ghcr.io/spnngl/images/<name>:<BASE_VERSION>` (application images:
-`<name>:<BASE_VERSION>-debian<N>`, busybox's without the suffix):
+`ghcr.io/spnngl/images/<name>:<BASE_VERSION>`:
 
 - **bootc images** (`bootc/`): bootable operating systems. A host boots
   from one and updates by pulling a newer one (`bootc upgrade`). Built

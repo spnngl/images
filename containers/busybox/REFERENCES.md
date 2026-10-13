@@ -23,10 +23,8 @@
   glibc's static binaries still load NSS modules at run time. Debian's `musl-tools` (`musl-gcc`), from the
   snapshot, as `containers/garage` builds its C libraries; `debian:
   trixie-slim`, as busybox needs no other toolchain.
-- **No `-debian<N>` in the tag:** the image has no Debian file and uses
-  none at run time; Debian 13 only builds it. A Debian release adds no
-  image, so `docker-bake.hcl` has no `debian` matrix and writes its tag
-  itself: `tags()` adds the suffix.
+- **No `debian` matrix:** the image has no Debian file and uses none at
+  run time; Debian 13 only builds it (`apt_args("13")`).
 - **Kernel headers linked into musl's include folder:** `musl-gcc`
   searches musl's headers only, and busybox includes `linux/`, `asm/`
   (with `asm-generic/`) and `mtd/` from `linux-libc-dev`. Not all of

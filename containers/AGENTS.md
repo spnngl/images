@@ -17,8 +17,8 @@ images share: the Debian releases (`DEBIAN`), the Debian snapshot
 arguments. Each image's `docker-bake.hcl` has one `target` whose
 `matrix` lists what to build:
 
-- `debian`: the Debian releases (`["13"]`; a second one doubles the
-  images, the tag's suffix tells them apart);
+- `debian`: the Debian release, one per image (`["13"]`): tags don't
+  name it, so a second would push the same tags;
 - `base`: `{ version, checksum }`, the upstream release (`BASE_VERSION`,
   also the tag) and its commit (`BASE_CHECKSUM`, checked by `ADD
   --checksum`: a moved tag fails the build). Several entries build
@@ -34,13 +34,12 @@ without the comment is never updated; the `extract` job of
 what is tested enough to merge alone (patch and minor),
 `automerge-all` for majors too (`renovate.json5`).
 
-Tags are `<version>-debian<N>`, plus `<major.minor>-debian<N>` for an
-image with several lines; busybox, a static musl binary using no Debian
-file, has no `-debian<N>`. The Containerfile or spec gets the versions as
-build arguments **without a default** (a Dalec spec: an empty one): a
-build without Bake fails on the first `RUN`, never on a stale version.
-What differs between release lines goes in the Containerfile, as a
-`case` on `BASE_VERSION`.
+Tags are `<version>`, plus `<major.minor>` for an image with several
+lines. The Containerfile or spec gets the versions as build arguments
+**without a default** (a Dalec spec: an empty one): a build without
+Bake fails on the first `RUN`, never on a stale version. What differs
+between release lines goes in the Containerfile, as a `case` on
+`BASE_VERSION`.
 
 The Debian packages a Containerfile installs come from
 `snapshot.debian.org` at `DEBIAN_SNAPSHOT_VERSION` (trixie's apt has no

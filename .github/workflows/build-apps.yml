@@ -3,9 +3,9 @@
 # (containers/<name>/Containerfile), those that changed since the last
 # build (every one on the weekly rebuild and manual runs: see discover),
 # and push them to the tags of their Bake target (containers/AGENTS.md):
-# ghcr.io/spnngl/images/<name>:<version>-debian<N> (busybox: <version>),
-# <version> being the upstream release. Pull requests lint and build
-# (running the spec's tests, the Containerfile's smoke test), never push.
+# ghcr.io/spnngl/images/<name>:<version>, <version> being the upstream
+# release. Pull requests lint and build (running the spec's tests, the
+# Containerfile's smoke test), never push.
 # bootc images: build-bootc.yml.
 #
 # Not in build-bootc.yml: Dalec is a BuildKit frontend (the spec's #
