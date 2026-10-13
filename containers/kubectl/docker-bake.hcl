@@ -1,6 +1,6 @@
 # kubectl: what to build and with which versions (containers/AGENTS.md).
 # One image per Kubernetes minor release, tagged with its version and its
-# line (kubectl:<BASE_VERSION>-debian13, kubectl:<major.minor>-debian13);
+# line (kubectl:<BASE_VERSION>, kubectl:<major.minor>);
 # lines in support: https://kubernetes.io/releases/. Each line builds with
 # the Go of its .go-version: its own golang image, tag and digest, in its
 # entry.
