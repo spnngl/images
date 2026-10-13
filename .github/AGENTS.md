@@ -9,6 +9,8 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
   found in the Bake files, not listed.
 - `renovate.yml`: validates `renovate.json5`, and that Renovate reads
   every `# renovate:` comment of the Bake files.
+- `copilot-fix.yml`: asks Copilot, once per pull request, to fix a
+  Renovate branch whose build failed.
 - The other workflows call the shared ones of `github.com/spnngl/.github`.
 
 ## Rules
