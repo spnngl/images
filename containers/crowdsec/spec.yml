@@ -1,0 +1,266 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.1
+#
+# CrowdSec's security engine (crowdsec: the agent and the Local API, cscli,
+# the notification plugins) built with Dalec
+# (https://project-dalec.github.io/dalec/): one Debian trixie package,
+# installed into the minimal image of the trixie/container target with
+# Debian's libre2 and the hub items upstream's Docker image installs
+# (REFERENCES.md).
+#
+# Runtime contract:
+# - Root only, crowdsec and cscli alike, like upstream's image (the
+#   reasons: REFERENCES.md). Capabilities: CAP_SETUID and CAP_SETGID to
+#   run the notification plugins as nobody:nogroup, CAP_DAC_READ_SEARCH
+#   for host logs root doesn't own (syslog:adm 0640); none otherwise
+#   (ports above 1024, files root's).
+# - Volumes, root's and mode 0700: /etc/crowdsec (config, hub items,
+#   credentials cscli writes) and /var/lib/crowdsec/data (SQLite
+#   database, hub data files). Docker copies the image's content into a new
+#   named volume; Kubernetes doesn't: there, mount files over the shipped
+#   ones (config.yaml.local, credentials) rather than the whole folder.
+# - LAPI on 8080/tcp (GET /health for probes), Prometheus metrics on
+#   6060/tcp, AppSec on 7422/tcp once an acquis file enables it.
+# - No shell, so no upstream docker_start.sh: each step it automates is a
+#   cscli run (--entrypoint /usr/bin/cscli), against the same volumes:
+#   machines add localhost --auto --force (the agent's LAPI credentials,
+#   over the shipped file that only has LAPI's URL), capi register,
+#   bouncers add, hub update and hub upgrade (which downloads the hub
+#   items' data files, GeoLite2 included: none are shipped).
+#
+# Renovate bumps the versions and checksums in docker-bake.hcl, and the Go
+# toolchain below (AGENTS.md, Updates).
+
+# Set by docker-bake.hcl; empty here, Dalec needs them declared
+# (containers/AGENTS.md).
+args:
+  BASE_VERSION: ""
+  # The commit of the BASE_VERSION tag.
+  BASE_CHECKSUM: ""
+  # The hub's master commit.
+  HUB_CHECKSUM: ""
+
+name: crowdsec
+description: CrowdSec security engine, its CLI and notification plugins
+website: https://www.crowdsec.net
+license: MIT
+packager: spnngl/images
+vendor: spnngl/images
+version: ${BASE_VERSION}
+revision: 1
+
+sources:
+  crowdsec:
+    git:
+      url: https://github.com/crowdsecurity/crowdsec.git
+      commit: v${BASE_VERSION}
+      # The tag must resolve to this commit: tags can be moved.
+      checksum: ${BASE_CHECKSUM}
+    # Downloads the Go modules before the build, which has no network;
+    # go.sum pins each one by hash.
+    generate:
+      - gomod: {}
+  # The hub (parsers, scenarios, collections), by commit: its branches move
+  # with every item change.
+  hub:
+    git:
+      url: https://github.com/crowdsecurity/hub.git
+      commit: ${HUB_CHECKSUM}
+  # This folder: the config.
+  files:
+    context: {}
+    includes:
+      - config.yaml
+
+dependencies:
+  build:
+    # trixie's golang-go is 1.24: go.mod needs 1.26 or later. From
+    # trixie-backports, see extra_repos. Dalec puts its
+    # /usr/lib/go-<version>/bin on the PATH.
+    golang-1.27-go: {}
+    # cgo: mattn/go-sqlite3 and go-re2's C++ binding.
+    build-essential: {}
+    # Upstream's Makefile links Debian's libre2 when pkg-config finds it
+    # (re2_cgo tag), and fails without pkg-config.
+    libre2-dev: {}
+    pkgconf: {}
+    # Decodes the hub index's items.
+    jq: {}
+  runtime:
+    # HTTPS to the Central API, the hub and the notification services.
+    ca-certificates: {}
+    # Time zones of the logs' timestamps (dateparse-enrich); upstream's
+    # image has them too.
+    tzdata: {}
+    # Not used by CrowdSec: Dalec 0.22.1 purges it before its last dpkg
+    # run, which then fails and leaves the shell in the image.
+    # TODO: drop when Dalec keeps the libraries dpkg links (the spec's
+    # "no shell" test fails otherwise; containers/haproxy/REFERENCES.md).
+    libmd0: {}
+  extra_repos:
+    # trixie-backports for Go, only for the build: the image gets nothing
+    # from it. Same mirror and signing key as the worker's own
+    # /etc/apt/sources.list.d/debian.sources. Dalec only takes the one-line
+    # format (it names the file *.list).
+    - config:
+        backports:
+          inline:
+            file:
+              contents: |
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian trixie-backports main
+      envs:
+        - build
+
+build:
+  env:
+    # mattn/go-sqlite3 and libre2 are C/C++.
+    CGO_ENABLED: "1"
+    # Fail with go.mod's requirement rather than try to download a newer Go
+    # (no network): a new go directive needs a newer golang-<version>-go.
+    GOTOOLCHAIN: local
+    # No crowdsec-dbgsym package: the image would install it.
+    DEB_BUILD_OPTIONS: noautodbgsym
+    # Keeps cscli's absolute links from /etc/crowdsec/<type>/ to the hub's
+    # items: dh_link would make them relative (Debian policy, same
+    # top-level folder), and cscli then refuses to remove those items
+    # ("isn't managed by hub", pkg/hubops/disable.go). Every debhelper
+    # command gets it: only dh_fixperms acts on these YAML files otherwise,
+    # and they already are 0644.
+    DH_OPTIONS: -X.yaml
+  # Steps run with sh (dash) from the folder holding one folder per source.
+  steps:
+    # Upstream's Makefile: its tags (netgo, osusergo,
+    # sqlite_omit_load_extension, re2_cgo...) and -X flags, -s and
+    # -trimpath. Without git (the source has no .git): the short commit is
+    # BUILD_TAG, SOURCE_DATE_EPOCH (CI: the last commit's time) the build
+    # date. DOCKER_BUILD: cscli says to restart the container rather than
+    # systemd's service, and the User-Agent says docker. Dalec expands args
+    # in env, not in the command.
+    - env:
+        VERSION: v${BASE_VERSION}
+        COMMIT: ${BASE_CHECKSUM}
+      command: |
+        cd crowdsec
+        make build DOCKER_BUILD=1 BUILD_VERSION="${VERSION}" \
+          BUILD_TAG="$(printf %.7s "${COMMIT}")" \
+          BUILD_TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%F_%T)"
+    # The plugins in one folder: one libs artifact, below.
+    - command: |
+        mkdir -p out/plugins
+        for d in crowdsec/cmd/notification-*; do
+          cp "${d}/${d##*/}" out/plugins/
+        done
+    # /etc/crowdsec as upstream's image has it (wizard.sh --docker-mode,
+    # then its Dockerfile), built in place: cscli links hub items by
+    # absolute path. Every hub item is decoded from the index, so cscli
+    # installs without downloading, item or data files (the build has no
+    # network). --branch skips cscli's lookup of it online; it is only
+    # used to download: nothing here.
+    - command: |
+        etc=/etc/crowdsec
+        mkdir -p "${etc}/hub" "${etc}/acquis.d" "${etc}/notifications"
+        cp files/config.yaml crowdsec/config/profiles.yaml \
+          crowdsec/config/simulation.yaml crowdsec/config/console.yaml "${etc}/"
+        cp -r crowdsec/config/patterns "${etc}/"
+        for d in crowdsec/cmd/notification-*; do
+          cp "${d}/${d##*/notification-}.yaml" "${etc}/notifications/"
+        done
+        # Upstream's: cscli machines add --auto --force rewrites it (the
+        # LAPI's address from listen_uri, the agent's login).
+        echo 'url: http://0.0.0.0:8080' > "${etc}/local_api_credentials.yaml"
+        # Upstream's: the agent won't start without a data source.
+        echo '{"source": "file", "filename": "/does/not/exist", "labels": {"type": "syslog"}}' \
+          > "${etc}/acquis.yaml"
+        cp hub/.index.json "${etc}/hub/"
+        jq -r '.[][] | select(.content) | [.path, .content] | @tsv' hub/.index.json |
+          while IFS="$(printf '\t')" read -r path content; do
+            mkdir -p "${etc}/hub/${path%/*}"
+            printf %s "${content}" | base64 -d > "${etc}/hub/${path}"
+          done
+        cscli="crowdsec/cmd/crowdsec-cli/cscli --branch master"
+        # Upstream's Dockerfile and docker_start.sh's always-installed ones.
+        ${cscli} collections install crowdsecurity/linux
+        ${cscli} parsers install crowdsecurity/whitelists \
+          crowdsecurity/docker-logs crowdsecurity/cri-logs
+        cp -a "${etc}" out/crowdsec
+
+artifacts:
+  binaries:
+    crowdsec/cmd/crowdsec/crowdsec: {}
+    crowdsec/cmd/crowdsec-cli/cscli: {}
+  libs:
+    # Installed as /usr/lib/crowdsec/plugins, config.yaml's plugin_dir.
+    out/plugins:
+      subpath: crowdsec
+  configFiles:
+    # Installed as /etc/crowdsec. 0700 instead of upstream's 0600 on
+    # config.yaml and the credentials files (permissions here only apply
+    # to the folder itself).
+    out/crowdsec:
+      permissions: 0o700
+  createDirectories:
+    state:
+      # /var/lib/crowdsec/data: the database and the hub's data files.
+      crowdsec/data:
+        mode: 0o700
+  licenses:
+    # The MIT text that must ship with the binaries, in
+    # /usr/share/doc/crowdsec/. Declaring it also makes trixie/container
+    # keep all of /usr/share/doc, so the Debian packages' copyright files
+    # stay too (it deletes the whole tree otherwise).
+    crowdsec/LICENSE: {}
+
+image:
+  entrypoint: /usr/bin/crowdsec
+  # Root on purpose, numeric to be explicit: see the runtime contract above.
+  user: "0:0"
+  volumes:
+    /etc/crowdsec: {}
+    /var/lib/crowdsec/data: {}
+  labels:
+    org.opencontainers.image.title: crowdsec
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: MIT
+    org.opencontainers.image.source: https://github.com/spnngl/images
+
+tests:
+  - name: crowdsec and cscli start
+    steps:
+      - command: /usr/bin/crowdsec -version
+        stdout:
+          contains:
+            - "version: v${BASE_VERSION}"
+            - "libre2: C++"
+      - command: /usr/bin/cscli version
+        stdout:
+          contains:
+            - "version: v${BASE_VERSION}"
+  # Offline: the hub index and items are in the image.
+  - name: hub items installed
+    steps:
+      - command: /usr/bin/cscli collections list
+        stdout:
+          contains:
+            - crowdsecurity/linux
+            - crowdsecurity/sshd
+      # Their links stayed absolute (DH_OPTIONS).
+      - command: /usr/bin/cscli parsers remove crowdsecurity/cri-logs
+        stdout:
+          contains:
+            - disabling parsers:crowdsecurity/cri-logs
+  # Checks every plugin's owner and mode (crowdsec refuses the whole
+  # folder otherwise), then runs one as nobody:nogroup.
+  - name: notification plugin runs
+    steps:
+      - command: /usr/bin/cscli notifications test dummy_default
+  # The volumes only root can enter: they hold credentials. And Dalec's
+  # libmd0 bug (dependencies) leaves no shell.
+  - name: private volumes, no shell
+    files:
+      /etc/crowdsec:
+        is_dir: true
+        permissions: 0o700
+      /var/lib/crowdsec/data:
+        is_dir: true
+        permissions: 0o700
+      /bin/sh:
+        not_exist: true
