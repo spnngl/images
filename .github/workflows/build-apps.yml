@@ -270,9 +270,10 @@ jobs:
             type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }},rewrite-timestamp=true
             ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/oci,tar=false', runner.temp) || '' }}
 
-      # Same as build-bootc.yml's: pull requests fail on a Critical
-      # vulnerability with a fix that the pushed image doesn't have; pushed
-      # images, image-scan.yml. The baseline: the target's first tag.
+      # Pull requests fail on a Critical vulnerability with a fix that the
+      # pushed image doesn't have (.github/REFERENCES.md, "Vulnerability
+      # scanning"); pushed images, image-scan.yml. The baseline: the
+      # target's first tag.
       - if: github.event_name == 'pull_request'
         uses: spnngl/.github/.github/actions/scan-image@main
         with:
