@@ -35,7 +35,8 @@ what is tested enough to merge alone (patch and minor),
 `automerge-all` for majors too (`renovate.json5`).
 
 Tags are `<version>-debian<N>`, plus `<major.minor>-debian<N>` for an
-image with several lines. The Containerfile or spec gets the versions as
+image with several lines; busybox, a static musl binary using no Debian
+file, has no `-debian<N>`. The Containerfile or spec gets the versions as
 build arguments **without a default** (a Dalec spec: an empty one): a
 build without Bake fails on the first `RUN`, never on a stale version.
 What differs between release lines goes in the Containerfile, as a
@@ -71,7 +72,8 @@ By what the app needs at runtime; name that need in the image's
 - **`FROM` digests** stay in the Containerfile: Renovate's dockerfile
   manager updates them.
 - **Shell-less**: the final image has no shell, so everything it runs is
-  exec form, with absolute paths.
+  exec form, with absolute paths. Busybox excepted: a shell is its
+  purpose.
 - **User** `65532:65532`, numeric so `runAsNonRoot` can check it. Root
   only when the app needs it, with the reason in the header
   (`cs-firewall-bouncer`, `nftables-exporter`).
