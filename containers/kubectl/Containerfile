@@ -1,0 +1,143 @@
+# syntax=docker.io/docker/dockerfile:1
+# check=skip=InvalidDefaultArgInFrom
+#
+# kubectl (Kubernetes command-line client) built from kubernetes/kubernetes
+# as tagged, no patch, one static binary on scratch: upstream's release
+# build (`make WHAT=cmd/kubectl`), with the Go of the tag's .go-version.
+# One image per Kubernetes minor release (docker-bake.hcl).
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); arguments are
+# kubectl's (`docker run <image> get pods`). Credentials from the runtime:
+# a kubeconfig mounted read-only and named by KUBECONFIG, or, in a pod
+# without one, its service account (in-cluster config). Writes nothing it
+# needs: its discovery and HTTP caches (~/.kube/cache, or KUBECACHEDIR)
+# are skipped when unwritable, so it runs with a read-only root
+# filesystem, no capability and no-new-privileges. What kubectl execs is
+# not in the image: exec credential plugins of a kubeconfig, `kubectl
+# <plugin>`, `edit`'s editor, `diff`'s diff.
+# https://kubernetes.io/docs/reference/kubectl/
+
+# Versions come from containers/kubectl/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md). The golang image too, tag
+# and digest: each release line builds with its own Go, which a FROM line
+# can't vary per matrix entry. No default, as for every version: hence
+# the skipped InvalidDefaultArgInFrom check (top of file), and outside
+# Bake the build fails here. Debian trixie: its ca-certificates is the
+# CA bundle copied below.
+ARG GOLANG_TAG
+ARG GOLANG_DIGEST
+FROM docker.io/library/golang:${GOLANG_TAG}@${GOLANG_DIGEST} AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+# buildDate of `kubectl version` (hack/lib/version.sh reads it).
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads it, and
+# root's (/root) is closed to it. Before SHELL: hadolint (2.15.1) checks
+# the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# No .git: the KUBE_GIT_* variables below set the version.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/kubernetes/kubernetes.git#v${BASE_VERSION} /src
+
+# Go as upstream's: the minor release of the tag's .go-version, the one
+# its release is built and tested with, at that patch release or a newer
+# one (Renovate follows the golang image within the minor release). A
+# release that moves .go-version to another minor fails here:
+# containers/kubectl/AGENTS.md (Updates).
+# _output: the build's only output folder (hack/lib/init.sh), the build
+# user's, so the source stays root's.
+RUN <<EORUN
+upstream="$(< /src/.go-version)"
+ours="$(go env GOVERSION)"
+ours="${ours#go}"
+[ "${ours%.*}" = "${upstream%.*}" ]
+printf '%s\n' "${upstream}" "${ours}" | sort -VC
+install -d -o 65532 -g 65532 /src/_output
+EORUN
+
+# Build and test as the image's user, not root: upstream's build scripts
+# don't get root. WORKDIR creates its folder owned by USER: /out takes the
+# build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (build/root/Makefile, all target ->
+# hack/make-rules/build.sh -> hack/lib/golang.sh): kubectl is in
+# KUBE_STATIC_BINARIES, built with CGO_ENABLED=0, -trimpath, `-s -w`,
+# its tags, from vendor/ with GOPROXY=off. The version: without .git,
+# hack/lib/version.sh takes the KUBE_GIT_* variables, as upstream's
+# release does from git (the tag, its commit, a clean tree), and
+# derives gitMajor and gitMinor. GOTOOLCHAIN=local (the golang image's):
+# no toolchain download. Cache: containers/minio's id, the same user;
+# GOCACHE set, or golang.sh puts it in _output.
+RUN --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+KUBE_GIT_VERSION="v${BASE_VERSION}" \
+    KUBE_GIT_COMMIT="${BASE_CHECKSUM}" \
+    KUBE_GIT_TREE_STATE=clean \
+    GOCACHE=/tmp/.cache/go-build \
+    make all WHAT=cmd/kubectl
+cp _output/bin/kubectl /out/
+EORUN
+
+# Smoke test, here because scratch has no shell to run it, and because
+# patch releases and golang bumps are automerged on it. Offline, no API
+# server: the version upstream's release would print, a static binary,
+# and a manifest generated client-side, checked byte for byte.
+RUN <<EORUN
+/out/kubectl version --client --output=json > /tmp/version.json
+grep -F "\"major\": \"${BASE_VERSION%%.*}\"," /tmp/version.json
+minor="${BASE_VERSION#*.}"
+grep -F "\"minor\": \"${minor%%.*}\"," /tmp/version.json
+grep -F "\"gitVersion\": \"v${BASE_VERSION}\"," /tmp/version.json
+grep -F "\"gitCommit\": \"${BASE_CHECKSUM}\"," /tmp/version.json
+grep -F '"gitTreeState": "clean",' /tmp/version.json
+go version -m /out/kubectl | grep -E '^\s+build\s+CGO_ENABLED=0$'
+printf 'apiVersion: v1\ndata:\n  key: value\nkind: ConfigMap\nmetadata:\n  name: smoke-test\n' > /tmp/manifest.yaml
+/out/kubectl create configmap smoke-test --from-literal=key=value \
+    --dry-run=client --output=yaml | cmp - /tmp/manifest.yaml
+rm /tmp/version.json /tmp/manifest.yaml
+EORUN
+
+# kubectl has no C library: the binary, the CA bundle for TLS to API
+# servers and identity providers, and the licenses: Kubernetes' and, in
+# LICENSES/, those of the vendored code built into it.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /usr/share/doc/kubectl/
+COPY --link --from=build /src/LICENSES /usr/share/doc/kubectl/LICENSES
+# Owned by root, not by the build's user: kubectl can't rewrite its binary.
+COPY --link --from=build --chown=0:0 /out/kubectl /usr/bin/
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+
+# Upstream's entrypoint: arguments are kubectl's.
+ENTRYPOINT ["/usr/bin/kubectl"]
+
+# Smoke test: the binary runs on this platform (the build stage tested it).
+RUN ["/usr/bin/kubectl", "version", "--client"]
