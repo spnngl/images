@@ -58,11 +58,25 @@ Dalec, and one way to build, attest and sign is simpler.
   Bake workflow pushes before anything else, which leaves no place for
   the scan on pull requests, and builds one target per call. The item's
   build arguments go to `docker/build-push-action`, plus
-  `SOURCE_DATE_EPOCH` from the last commit (Bake's file can't hold it: it
-  would change on every commit).
+  `SOURCE_DATE_EPOCH`: the time of the last commit of the target's
+  folder or of `containers/docker-bake.hcl` (the Debian snapshot), docs
+  excepted. Per image, not per commit as `build-bootc.yml`: the
+  Containerfiles set it as `ENV` before their first `RUN`, so each new
+  value misses the build cache. Bake can't read git history.
 - **`docker/build-push-action`** on a `docker-container` builder (the
   docker driver can't attest). The image sets its own
   `org.opencontainers.image.source` label.
+- **Build cache in the Actions cache** (`type=gha`,
+  <https://docs.docker.com/build/cache/backends/gha/>): each job's
+  builder starts empty. One scope per target and platform: jobs sharing
+  one overwrite each other's. `mode=max`: the build stages hold the
+  work. Export errors ignored: fork pull requests can't write. Pull
+  requests read `main`'s cache; `main` reads only its own. Weekly and
+  manual rebuilds build without it (`no-cache`) and refresh it: Dalec's
+  and Alpine's packages follow their archive (`containers/AGENTS.md`),
+  and a cached step keeps the old ones. Hits are mostly re-runs and
+  rebuilds of unchanged images: a version or snapshot bump changes build
+  arguments every `RUN` reads.
 - **BuildKit attestations** in each platform's index: SLSA provenance
   (`mode=max`, `version=v1`, no secrets) and an SPDX SBOM by syft on the
   final image (dpkg database, `dist-info`, Go modules). Read with
