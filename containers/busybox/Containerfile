@@ -1,0 +1,140 @@
+# syntax=docker.io/docker/dockerfile:1
+#
+# BusyBox (https://busybox.net) built from source: one static musl binary
+# on scratch, a link per applet. A utility and debugging image, and a
+# binary to `COPY --from=ghcr.io/spnngl/images/busybox:<BASE_VERSION>
+# /bin/busybox`. A shell, its purpose (containers/busybox/REFERENCES.md).
+#
+# Runtime contract: UID/GID 65532 (nonroot, HOME /tmp); `--user 0`, and
+# their capabilities, for the applets that need root (mount, ip changes,
+# nsenter...). No port, no volume, no configuration. With a read-only
+# root filesystem, mount a tmpfs on /tmp. wget's https trusts any
+# certificate (no CA bundle: REFERENCES.md).
+
+# Versions come from containers/busybox/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its gcc, with musl-tools' musl-gcc, builds the binary.
+FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+# Also the date `busybox --version` prints (scripts/kconfig/confdata.c).
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# gcc and libc6-dev: the build's host tools (kconfig's conf, applets'
+# tables), against glibc. musl-tools: musl-gcc, which compiles and links
+# the binary against musl. linux-libc-dev: the kernel's headers, which many
+# applets include. make: upstream's build. bzip2: the build compresses
+# what it embeds (applets' help, configuration, scripts) with it.
+# musl-gcc only searches musl's include folder: the kernel headers busybox
+# includes (linux/, asm/ and asm-generic/, mtd/) are linked into it.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends bzip2 gcc libc6-dev linux-libc-dev make musl-tools
+rm -rf /var/lib/apt/lists/*
+ln -s ../linux ../asm-generic ../mtd "../$(gcc -print-multiarch)/asm" "/usr/include/$(uname -m)-linux-musl/"
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# Upstream's tags write the version with underscores (1_2_3). No .git:
+# the Makefile sets the version.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/vda-linux/busybox_mirror.git#${BASE_VERSION//./_} /src
+
+# Build and test as the image's user, not root: neither upstream's build
+# nor the test gets root, and the source stays root's. WORKDIR creates its
+# folder owned by USER: /out takes the image's files.
+# /build: busybox's configuration writes into the source tree, even when
+# building out of it (Makefile, .kernelrelease): a copy, the user's.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /build
+RUN cp -R /src/. .
+
+# Upstream's build (INSTALL): defconfig with static_defconfig's changes
+# (KBUILD_DEFCONFIG; its option list goes to /dev/null, .config ships),
+# then `make install`: /bin/busybox and a link per applet.
+# CC on each make: kbuild rebuilds, with gcc against glibc, what a make
+# without it finds built by another command line.
+# LICENSE and .config ship with the binary: GPL, whose source is the tag
+# plus this configuration.
+# /tmp 1777: the shell's tools write there, whatever the user.
+# passwd and group: names for id, whoami, ls -l and the prompt, and the
+# runtime's HOME (nonroot's: /tmp, the one folder it can write).
+# Passwords locked (`*`), no shadow file.
+RUN --mount=type=bind,source=static_defconfig,target=/static_defconfig \
+    <<EORUN
+make defconfig KBUILD_DEFCONFIG=/static_defconfig > /dev/null
+make -j"$(nproc)" CC=musl-gcc busybox
+make CC=musl-gcc CONFIG_PREFIX=/out install
+mkdir -p /out/usr/share/doc/busybox
+cp /src/LICENSE /out/usr/share/doc/busybox/
+cp .config /out/usr/share/doc/busybox/config
+mkdir -m 1777 /out/tmp
+mkdir -m 0700 /out/root
+mkdir /out/etc
+printf '%s\n' \
+    'root:*:0:0:root:/root:/bin/sh' \
+    'nonroot:*:65532:65532:nonroot:/tmp:/bin/sh' \
+    'nobody:*:65534:65534:nobody:/nonexistent:/bin/false' > /out/etc/passwd
+printf '%s\n' 'root:*:0:' 'nonroot:*:65532:' 'nogroup:*:65534:' > /out/etc/group
+EORUN
+
+# Smoke test, here as the build stage has the tools to check the links.
+# The version, upstream's Makefile's; each link of busybox.links resolves
+# to the binary; then the image's shell runs a few applets, with a PATH of
+# the image's folders only.
+RUN <<EORUN
+/out/bin/busybox --version | grep -F "BusyBox v${BASE_VERSION} ("
+/out/bin/busybox --list-full | while read -r link; do
+    [ "$(readlink -f "/out/${link}")" = /out/bin/busybox ]
+done
+PATH=/out/bin:/out/sbin:/out/usr/bin:/out/usr/sbin /out/bin/sh -euc '
+[ "$(echo ok)" = ok ]
+[ "$(seq 100 | sort -rn | head -n 1)" = 100 ]
+[ "$(echo "a b" | awk "{ print \$2 }" | sed s/b/c/)" = c ]
+tar -czf - -C /out bin | tar -tzf - | grep -qx bin/busybox
+'
+EORUN
+
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="GPL-2.0-only" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The binary, its links, the license and configuration, /etc, /root,
+# /tmp: root's, not the build user's, so that the user can't replace
+# them.
+COPY --link --from=build --chown=0:0 /out/ /
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+
+# As Docker's busybox image: a shell by default (docker run -it,
+# kubectl debug), any applet or path as the command.
+CMD ["/bin/sh"]
+
+# Smoke test: the binary is static and runs on this platform (the build
+# stage tested the applets), and the image's user has a name.
+RUN ["/bin/sh", "-c", "busybox --version && [ \"$(whoami)\" = nonroot ]"]
