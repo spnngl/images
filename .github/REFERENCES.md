@@ -67,8 +67,14 @@ Dalec, and one way to build, attest and sign is simpler.
   (`mode=max`, `version=v1`, no secrets) and an SPDX SBOM by syft on the
   final image (dpkg database, `dist-info`, Go modules). Read with
   `docker buildx imagetools inspect <tag> --format '{{ json .Provenance
-  }}'` (or `.SBOM`). No `actions/attest-build-provenance`: it would be a
-  second provenance.
+  }}'` (or `.SBOM`).
+- **Signed provenance on top:** `actions/attest-build-provenance` on the
+  manifest list, keyless (the workflow's identity) with a Rekor entry, a
+  Sigstore bundle behind OCI referrers. BuildKit's provenance is
+  unsigned: Kubernetes admission (Kyverno,
+  `codeberg.org/lola_2lannoy/apps`, `sig-spnngl-images.yaml`) trusts
+  only this one, by the workflow file's identity. Renaming
+  `build-apps.yml` breaks deployments until the policy follows.
 - **Pushed by digest per platform**, merged with attestations by one
   `docker buildx imagetools create` for all the item's tags, each tag
   signed with `cosign sign` and checked with `cosign verify`; the scan's
