@@ -47,7 +47,8 @@ The Debian packages a Containerfile installs come from
 `/etc/apt/sources.list.d/debian.sources`), and the build stage checks the
 base's release against `DEBIAN_CODENAME`. Dalec specs' packages follow
 the archive (Dalec cannot pin them): the weekly rebuild and the SBOM
-cover them.
+cover them. So do git's: its build stage is Alpine's (Debian has no
+static libcurl), whose branch keeps only each package's newest build.
 
 ## Pick the build
 
@@ -73,7 +74,8 @@ By what the app needs at runtime; name that need in the image's
   (kubectl's golang) comes from Bake instead: a `FROM` line can't vary.
 - **Shell-less**: the final image has no shell, so everything it runs is
   exec form, with absolute paths. Busybox excepted: a shell is its
-  purpose.
+  purpose; and git, built `FROM` busybox: hooks, aliases and some of
+  its commands run through `/bin/sh`.
 - **User** `65532:65532`, numeric so `runAsNonRoot` can check it. Root
   only when the app needs it, with the reason in the header
   (`cs-firewall-bouncer`, `nftables-exporter`).
