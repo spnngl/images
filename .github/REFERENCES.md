@@ -87,7 +87,9 @@ data, and their sources differ.
 - **Pushed images:** `image-scan.yml` scans daily the tags pushed in the
   last 8 days, every platform, and uploads High and Critical findings to
   code scanning. It never fails, nor do pushes and weekly rebuilds:
-  failing would keep the older, more vulnerable image on hosts.
+  failing would keep the older, more vulnerable image on hosts. Its
+  packages are found as the builds find their images (`build-bootc.yml`'s
+  matrix, the Bake files' folders): a new image needs no edit.
 
 ## Updates: `renovate.json5`
 
