@@ -17,7 +17,7 @@ target "haproxy" {
       # renovate: datasource=git-tags depName=haproxy-3.2 packageName=https://git.haproxy.org/git/haproxy-3.2.git versioning=semver extractVersion=^v(?<version>3\.2\.\d+)$ depType=automerge
       { version = "3.2.25", checksum = "70469d33ba0edc5503e292518ddf3e5df7aa9605" },
       # renovate: datasource=git-tags depName=haproxy-3.4 packageName=https://git.haproxy.org/git/haproxy-3.4.git versioning=semver extractVersion=^v(?<version>3\.4\.\d+)$ depType=automerge
-      { version = "3.4.6", checksum = "56332c50b5291cfbbfd440d958adc988fbf87e2f" },
+      { version = "3.4.7", checksum = "8872a2604595140544774c2a6309a41186fc0f44" },
     ]
     # MaxMind's GeoLite2 databases as P3TERX republishes them: one release,
     # three files, each with its sha256 (Renovate's digest of the file).
