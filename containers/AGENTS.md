@@ -59,6 +59,9 @@ By what the app needs at runtime; name that need in the image's
   Containerfile on `scratch`, skill `add-containerfile-image`.
 - Distro packages (an interpreter, shared libraries, tools it execs):
   Dalec, skill `add-dalec-image`.
+- A C binary linking a few Debian libraries: a Containerfile on
+  distroless' `cc-debian13`, the packages it lacks copied with their
+  dpkg status (`containers/haproxy`).
 - Docker's hardened Debian packages and the DHI catalog's build steps:
   a DHI definition, skill `add-dhi-image`. When to pick it over Dalec
   is not decided yet.

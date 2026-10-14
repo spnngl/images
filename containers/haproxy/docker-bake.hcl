@@ -1,5 +1,4 @@
 # haproxy: what to build and with which versions (containers/AGENTS.md).
-# Dalec spec: no containerfile_args, Dalec fails on an undeclared one.
 # One image per release line, tagged with its version and its line
 # (haproxy:3.2.25, haproxy:3.2); lines in support:
 # https://www.haproxy.org/download/. Adding or dropping a line is an
@@ -7,8 +6,7 @@
 target "haproxy" {
   name       = "haproxy-${replace(line(base.version), ".", "-")}-debian${debian}"
   context    = "containers/haproxy"
-  dockerfile = "spec.yml"
-  target     = "${DEBIAN[debian].codename}/container"
+  dockerfile = "Containerfile"
   matrix = {
     debian = ["13"]
     base = [
@@ -22,9 +20,9 @@ target "haproxy" {
       { version = "3.4.6", checksum = "56332c50b5291cfbbfd440d958adc988fbf87e2f" },
     ]
   }
-  args = {
+  args = merge(apt_args(debian), {
     BASE_VERSION  = base.version
     BASE_CHECKSUM = base.checksum
-  }
+  })
   tags = tags("haproxy", debian, [base.version, line(base.version)])
 }
