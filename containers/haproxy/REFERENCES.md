@@ -14,6 +14,13 @@
   image started from
 - Distroless: `github.com/GoogleContainerTools/distroless`, `cc/` and
   `base/` (what `cc-debian13` holds, `/var/lib/dpkg/status.d`)
+- GeoLite2: `github.com/P3TERX/GeoLite.mmdb`,
+  `.github/workflows/GeoLite.yml` (MaxMind's databases every 3 days, the
+  last 2 releases kept); Renovate's `github-release-attachments`
+  datasource (`lib/modules/datasource/github-release-attachments`: the
+  digest of each file)
+- Cloudflare's IP ranges: <https://www.cloudflare.com/ips/>
+  (`ips-v4`, `ips-v6`)
 
 ## Decisions
 
@@ -69,5 +76,24 @@
   the copied Lua modules are found there; `-dW` fails it on a warning
   too. The config's `.if` blocks (`version_atleast`, `feature`, both in
   2.8) keep it free of warnings on every line.
+- **Lists in `/data/lists`, the last layer** (`COPY --link` of a
+  `scratch` stage), for the deployments' configs: they change more
+  often than the rest, whose layers stay. Root's: files 0644, folders
+  0755 (`--chmod=u=rwX,go=rX`: `ADD` gives a URL's file 0600, and
+  `--chmod` also sets the folders it creates).
+- **GeoLite2 from P3TERX, pinned:** MaxMind's own downloads need a
+  license key, a build secret. Its releases are deleted within about 6
+  days, so Renovate takes each one at once and automerges it, its
+  `--checksum` the sha256 Renovate computes (the regex manager's
+  `currentDigest`): one entry per file, one PR for the three. Renovate
+  reads the pinned release to find each file's new digest: once it is
+  deleted, only a manual update fixes the build (AGENTS.md, Updates).
+  Redistributing GeoLite2 in a public image: accepted by the owner,
+  MaxMind's license notwithstanding.
+- **Cloudflare's lists, not pinned:** no version to pin; BuildKit
+  fetches them again when they change, so a build, and the weekly
+  rebuild, has the current ones. The smoke tests check they aren't
+  empty and load them as ACLs: an HTML page or a bad range fails the
+  build.
 - **No `HEALTHCHECK`:** Kubernetes ignores it; probes are the
   deployments'.
