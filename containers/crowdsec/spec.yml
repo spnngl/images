@@ -94,7 +94,7 @@ dependencies:
     # Not used by CrowdSec: Dalec 0.22.1 purges it before its last dpkg
     # run, which then fails and leaves the shell in the image.
     # TODO: drop when Dalec keeps the libraries dpkg links (the spec's
-    # "no shell" test fails otherwise; containers/haproxy/REFERENCES.md).
+    # "no shell" test fails otherwise; containers/jellyfin/REFERENCES.md).
     libmd0: {}
   extra_repos:
     # trixie-backports for Go, only for the build: the image gets nothing
