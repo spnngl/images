@@ -1,0 +1,197 @@
+# syntax=docker.io/docker/dockerfile:1
+#
+# HAProxy (https://www.haproxy.org) built from source on distroless
+# (gcr.io/distroless/cc-debian13): the binary, linked against Debian
+# trixie's libraries, and the Debian packages it needs that distroless
+# lacks, copied with their dpkg status so scanners see them
+# (containers/haproxy/REFERENCES.md). One image per release line
+# (docker-bake.hcl). QUIC on every line: native OpenSSL 3.5 API from 3.2,
+# OpenSSL's compatibility layer before (no 0-RTT, `limited-quic` needed).
+#
+# Runtime contract: UID/GID 99 (containers/haproxy/AGENTS.md), no passwd
+# entry. A config in /etc/haproxy (a volume, none shipped), master-worker
+# mode in the foreground (-W -db): SIGUSR2 reloads, SIGUSR1 (the stop
+# signal) stops softly. Ports: 1936 stats, 8080 HTTP, 8443
+# HTTPS and HTTP/3, 9101 Prometheus, as the configs of the deployments use
+# them. Lua: lua-json (and lua-lpeg) for the configs' `lua-load`.
+
+# Versions come from containers/haproxy/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie, the release distroless' cc-debian13 is built from: the
+# libraries linked here are the ones the final image has.
+FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# gcc, libc6-dev, make: upstream's build; dpkg-dev: Debian's hardening
+# flags (dpkg-buildflags). The -dev packages: the libraries
+# HAProxy links (libcrypt: encrypted userlist passwords). lua-json (and
+# lua-lpeg): the Lua modules the configs load. curl (HTTP/3 through
+# OpenSSL 3.5's QUIC) and openssl (a certificate): the server test only.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends curl dpkg-dev gcc libc6-dev libcrypt-dev liblua5.4-dev libpcre2-dev libssl-dev lua-json make openssl
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# The runtime packages distroless lacks: the libraries HAProxy links
+# (libssl3t64, libc6 and libgcc-s1 are distroless'), and the Lua modules.
+# Copied as dpkg installed them, symbolic links included (lua-json's 5.4
+# files link to its 5.1 ones), with their status and md5sums in
+# /var/lib/dpkg/status.d/, where distroless records its own packages and
+# scanners read them. Folders aren't copied: --parents creates them.
+# Files the list names but the disk lacks: docs but the copyright, which
+# trixie-slim's dpkg excludes (/etc/dpkg/dpkg.cfg.d/docker).
+RUN <<EORUN
+mkdir -p /rootfs/var/lib/dpkg/status.d
+for pkg in libcrypt1 liblua5.4-0 libpcre2-8-0 lua-json lua-lpeg; do
+    dpkg-query -L "${pkg}" | while read -r file; do
+        if [ -f "${file}" ] || [ -L "${file}" ]; then
+            cp -a --parents "${file}" /rootfs/
+        fi
+    done
+    dpkg-query -s "${pkg}" > "/rootfs/var/lib/dpkg/status.d/${pkg}"
+    cp "$(dpkg-query --control-path "${pkg}" md5sums)" "/rootfs/var/lib/dpkg/status.d/${pkg}.md5sums"
+done
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# One repository per release line: haproxy-<major>.<minor>.git. No .git:
+# the VERSION and VERDATE files set the version.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://git.haproxy.org/git/haproxy-${BASE_VERSION%.*}.git#v${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: neither upstream's build
+# nor the server gets root, and the source stays root's. WORKDIR creates
+# its folder owned by USER: /out takes the image's files. /build: the
+# build writes into the source tree, a copy, the user's.
+USER 99:99
+WORKDIR /out
+WORKDIR /build
+RUN cp -R /src/. .
+
+# The official image's options (docker-library/haproxy), QUIC on every
+# line: 2.8 and 3.0 lack OpenSSL 3.5's QUIC API, so they get the
+# compatibility layer (no 0-RTT, `limited-quic` in the config). Upstream's
+# defaults for the rest: libcrypt, SLZ (compression), DEBUG (runtime
+# checks). https://github.com/haproxy/haproxy/blob/master/INSTALL
+# Debian's hardening flags, as its packages build with (stack protector,
+# fortify, RELRO; not BIND_NOW, off by default), without -g: no debug
+# info, the symbol table stays for the backtraces HAProxy logs on a crash.
+# Where they go differs: 2.8's CFLAGS replaces upstream's, its
+# DEBUG_CFLAGS (default -g) doesn't; 3.x appends CFLAGS, and its -g is
+# ARCH_FLAGS. LDFLAGS replaces upstream's -g (2.8) or nothing (3.x).
+# State folders: a named volume mounted there starts with their owner.
+RUN <<EORUN
+export DEB_CFLAGS_MAINT_STRIP=-g
+cflags="$(dpkg-buildflags --get CPPFLAGS) $(dpkg-buildflags --get CFLAGS)"
+case "${BASE_VERSION}" in
+    2.*) line=(USE_QUIC_OPENSSL_COMPAT=1 DEBUG_CFLAGS="${cflags}") ;;
+    3.0.*) line=(USE_QUIC_OPENSSL_COMPAT=1 ARCH_FLAGS= CFLAGS="${cflags}") ;;
+    *) line=(ARCH_FLAGS= CFLAGS="${cflags}") ;;
+esac
+make -j"$(nproc)" TARGET=linux-glibc USE_GETADDRINFO=1 \
+    USE_LUA=1 LUA_INC=/usr/include/lua5.4 USE_OPENSSL=1 USE_QUIC=1 \
+    USE_PCRE2=1 USE_PCRE2_JIT=1 USE_PROMEX=1 USE_PTHREAD_EMULATION=1 \
+    LDFLAGS="$(dpkg-buildflags --get LDFLAGS)" "${line[@]}"
+mkdir -p /out/usr/sbin /out/usr/share/doc/haproxy /out/etc/haproxy /out/var/lib/haproxy
+cp haproxy /out/usr/sbin/
+cp LICENSE /out/usr/share/doc/haproxy/
+EORUN
+
+# Server smoke test, here because the final image has no shell to run it.
+# -vv puts the build options in the build log; its feature list names the
+# QUIC flavour. The binary's sections and symbols: no debug info, a symbol
+# table, the stack protector and fortify's checked functions. Then
+# smoke-test/haproxy.cfg, run as the image runs it (-W -db), serves
+# lua-json's output over HTTP/1.1 and HTTP/3 (a throwaway self-signed
+# certificate, kept for the final image's test), and the Prometheus
+# exporter; SIGUSR1, the image's stop signal, ends it.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN --mount=type=bind,source=smoke-test,target=/smoke-test <<EORUN
+/out/usr/sbin/haproxy -vv | tee /tmp/haproxy-vv
+grep -F "HAProxy version ${BASE_VERSION} " /tmp/haproxy-vv
+sed -n 's/^Feature list : //p' /tmp/haproxy-vv | tr ' ' '\n' > /tmp/features
+case "${BASE_VERSION}" in
+    2.* | 3.0.*) quic_compat=+QUIC_OPENSSL_COMPAT ;;
+    *) quic_compat=-QUIC_OPENSSL_COMPAT ;;
+esac
+for feature in +CRYPT_H +LIBCRYPT +LUA +OPENSSL +PCRE2 +PCRE2_JIT +PROMEX +QUIC "${quic_compat}"; do
+    grep -qxF -- "${feature}" /tmp/features
+done
+readelf -SW /out/usr/sbin/haproxy > /tmp/sections
+readelf --dyn-syms -W /out/usr/sbin/haproxy > /tmp/symbols
+if grep -qF .debug_info /tmp/sections; then exit 1; fi
+grep -qF .symtab /tmp/sections
+grep -qF __stack_chk_fail /tmp/symbols
+grep -qE ' __[a-z_]+_chk@' /tmp/symbols
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    -subj /CN=localhost -days 1 -keyout /tmp/smoke-test.key -out /tmp/smoke-test.crt
+cat /tmp/smoke-test.crt /tmp/smoke-test.key > /tmp/smoke-test.pem
+/out/usr/sbin/haproxy -W -db -f /smoke-test/haproxy.cfg &
+server=$!
+[ "$(curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/)" = '[1]' ]
+[ "$(curl -fsS --insecure --http3-only https://127.0.0.1:8443/)" = '[1]' ]
+curl -fsS http://127.0.0.1:8080/metrics | grep -q '^haproxy_process_'
+kill -USR1 "${server}"
+wait "${server}"
+rm /tmp/haproxy-vv /tmp/features /tmp/sections /tmp/symbols /tmp/smoke-test.crt /tmp/smoke-test.key
+EORUN
+
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:e792ab3d241a468a4fd7519ddbbebe66b49b5f365771716ea688ad40b6c6f1c2
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="HAProxy" \
+    org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="GPL-2.0-or-later" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The Debian packages, as dpkg installed them (root's). The binary and
+# the license: root's, not the build user's, so that HAProxy can't
+# replace them. The config and state folders: the image's user's.
+COPY --link --from=build /rootfs/ /
+COPY --link --from=build --chown=0:0 /out/usr/ /usr/
+COPY --link --from=build --chown=99:99 /out/etc/haproxy/ /etc/haproxy/
+COPY --link --from=build --chown=99:99 /out/var/lib/haproxy/ /var/lib/haproxy/
+
+# Numeric, so runAsNonRoot can check it.
+USER 99:99
+WORKDIR /var/lib/haproxy
+
+# Documentation only: what the deployments' configs bind. 8443/udp: QUIC.
+EXPOSE 1936/tcp 8080/tcp 8443/tcp 8443/udp 9101/tcp
+VOLUME ["/etc/haproxy"]
+# Soft stop: listeners close, connections drain.
+STOPSIGNAL SIGUSR1
+
+ENTRYPOINT ["/usr/sbin/haproxy"]
+# -W: master-worker, as the official image runs it: the master, PID 1,
+# reaps its children and reloads the workers on SIGUSR2.
+CMD ["-W", "-db", "-f", "/etc/haproxy"]
+
+# Smoke test: the binary finds its libraries here, and the copied Lua
+# modules load (lua-load runs the file while parsing), with the build
+# stage's config and certificate. -dW: a warning fails it too.
+RUN --mount=type=bind,source=smoke-test,target=/smoke-test \
+    --mount=type=bind,from=build,source=/tmp/smoke-test.pem,target=/tmp/smoke-test.pem \
+    ["/usr/sbin/haproxy", "-dW", "-c", "-f", "/smoke-test/haproxy.cfg"]
