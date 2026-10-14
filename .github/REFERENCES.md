@@ -93,6 +93,13 @@ Dalec, and one way to build, attest and sign is simpler.
   `docker buildx imagetools create` for all the item's tags, each tag
   signed with `cosign sign` and checked with `cosign verify`; the scan's
   baseline is the first tag.
+- **One `gate` job, the check the `main` ruleset requires:** passes
+  when every lint and build job passed or was skipped. The build jobs
+  are named after the images that changed, so none can be required
+  itself. Without a required check pending, GitHub refuses the
+  auto-merge Renovate enables on a new PR, and the PR waits for
+  Renovate's next run. Its source in the ruleset: GitHub Actions, so no
+  other app or commit status can pass it.
 
 ## Vulnerability scanning
 
@@ -173,6 +180,8 @@ Copilot's cloud agent gets the first attempt.
   (`data/reusables/copilot/custom-instructions-agents.md`), and an
   image's rules start at the root's.
 - **A person merges the fix:** CI runs on Copilot's pushes once someone
-  with write access approves the run, and Renovate, which merges its PRs
-  itself (no GitHub auto-merge), skips a branch it didn't write alone
-  (`isBranchModified`, `lib/workers/repository/update/pr/automerge.ts`).
+  with write access approves the run. The workflow disables the PR's
+  GitHub auto-merge, which Renovate enables only when it commits
+  (`reattemptPlatformAutomerge`), and Renovate's own merge skips a
+  branch it didn't write alone (`isBranchModified`,
+  `lib/workers/repository/update/pr/automerge.ts`).
