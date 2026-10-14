@@ -14,9 +14,37 @@
 # signal) stops softly. Ports: 1936 stats, 8080 HTTP, 8443
 # HTTPS and HTTP/3, 9101 Prometheus, as the configs of the deployments use
 # them. Lua: lua-json (and lua-lpeg) for the configs' `lua-load`.
+# Lists in /data/lists (root's, read-only): MaxMind's GeoLite2 databases
+# in geolite2/ (GeoLite2-{ASN,City,Country}.mmdb), Cloudflare's IP ranges
+# in cloudflare/ (ips-v4, ips-v6: one CIDR per line, for `src -f`).
 
 # Versions come from containers/haproxy/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
+
+# The lists, the image's last layer: one COPY of this stage. ADD gives a
+# URL's file 0600, the image's user must read it: u=rwX,go=rX, 0644 for
+# the files, 0755 for the folders ADD creates, which --chmod sets too.
+# GeoLite2 as P3TERX republishes it, a release every 3 days, the last 2
+# kept: --checksum pins each file, and Renovate moves the release
+# (containers/haproxy/AGENTS.md, Updates).
+# Cloudflare's ranges have no version: not pinned, BuildKit fetches them
+# again when they change, so each build (and the weekly rebuild) has the
+# current ones. The smoke tests load them as ACLs.
+FROM scratch AS lists
+ARG GEOLITE2_ASN_VERSION
+ARG GEOLITE2_ASN_CHECKSUM
+ARG GEOLITE2_CITY_VERSION
+ARG GEOLITE2_CITY_CHECKSUM
+ARG GEOLITE2_COUNTRY_VERSION
+ARG GEOLITE2_COUNTRY_CHECKSUM
+ADD --chmod=u=rwX,go=rX --checksum=sha256:${GEOLITE2_ASN_CHECKSUM} \
+    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_ASN_VERSION}/GeoLite2-ASN.mmdb /geolite2/
+ADD --chmod=u=rwX,go=rX --checksum=sha256:${GEOLITE2_CITY_CHECKSUM} \
+    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_CITY_VERSION}/GeoLite2-City.mmdb /geolite2/
+ADD --chmod=u=rwX,go=rX --checksum=sha256:${GEOLITE2_COUNTRY_CHECKSUM} \
+    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_COUNTRY_VERSION}/GeoLite2-Country.mmdb /geolite2/
+ADD --chmod=u=rwX,go=rX https://www.cloudflare.com/ips-v4 https://www.cloudflare.com/ips-v6 /cloudflare/
+
 # Debian trixie, the release distroless' cc-debian13 is built from: the
 # libraries linked here are the ones the final image has.
 FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS build
@@ -123,10 +151,14 @@ EORUN
 # smoke-test/haproxy.cfg, run as the image runs it (-W -db), serves
 # lua-json's output over HTTP/1.1 and HTTP/3 (a throwaway self-signed
 # certificate, kept for the final image's test), and the Prometheus
-# exporter; SIGUSR1, the image's stop signal, ends it.
+# exporter; SIGUSR1, the image's stop signal, ends it. Its ACL loads
+# Cloudflare's lists, which must not be empty.
 # kill (DL3001) stops the server this step started, not a container's.
 # hadolint ignore=DL3001
-RUN --mount=type=bind,source=smoke-test,target=/smoke-test <<EORUN
+RUN --mount=type=bind,source=smoke-test,target=/smoke-test \
+    --mount=type=bind,from=lists,target=/data/lists <<EORUN
+[ -s /data/lists/cloudflare/ips-v4 ]
+[ -s /data/lists/cloudflare/ips-v6 ]
 /out/usr/sbin/haproxy -vv | tee /tmp/haproxy-vv
 grep -F "HAProxy version ${BASE_VERSION} " /tmp/haproxy-vv
 sed -n 's/^Feature list : //p' /tmp/haproxy-vv | tr ' ' '\n' > /tmp/features
@@ -191,7 +223,12 @@ CMD ["-W", "-db", "-f", "/etc/haproxy"]
 
 # Smoke test: the binary finds its libraries here, and the copied Lua
 # modules load (lua-load runs the file while parsing), with the build
-# stage's config and certificate. -dW: a warning fails it too.
+# stage's config and certificate, and the lists, read as the image's
+# user. -dW: a warning fails it too.
 RUN --mount=type=bind,source=smoke-test,target=/smoke-test \
     --mount=type=bind,from=build,source=/tmp/smoke-test.pem,target=/tmp/smoke-test.pem \
+    --mount=type=bind,from=lists,target=/data/lists \
     ["/usr/sbin/haproxy", "-dW", "-c", "-f", "/smoke-test/haproxy.cfg"]
+
+# Last: the lists change every few days, the layers below don't.
+COPY --link --from=lists / /data/lists/
