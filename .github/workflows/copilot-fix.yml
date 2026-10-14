@@ -55,6 +55,11 @@ jobs:
           # Once per pull request: Copilot's own failed fix goes to a person.
           asked="$(gh pr view "${pr}" --json comments --jq 'any(.comments[]; .body | contains(env.MARKER))')"
           [[ "${asked}" == false ]] || { echo "Copilot was already asked on #${pr}"; exit 0; }
+          # A person merges Copilot's fix: GitHub's auto-merge, which
+          # Renovate enables, would merge it once the gate passes.
+          if [[ "$(gh pr view "${pr}" --json autoMergeRequest --jq '.autoMergeRequest != null')" == true ]]; then
+            gh pr merge "${pr}" --disable-auto
+          fi
           gh pr comment "${pr}" --body-file - <<EOF
           @copilot ${WORKFLOW} failed on this pull request: ${RUN_URL}
 

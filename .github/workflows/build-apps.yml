@@ -315,6 +315,26 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # The pull request gate: the one check of this workflow the main
+  # ruleset requires, the others being named after the images that
+  # changed (.github/REFERENCES.md). Passes when every job above passed
+  # or was skipped (nothing to lint or build). always(): GitHub counts a
+  # skipped required check as passed, so this one must run when a job
+  # above fails.
+  gate:
+    needs:
+      - discover
+      - hadolint
+      - build
+    if: always()
+    runs-on: ubuntu-26.04
+    permissions: {}
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |-
+          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<< "${NEEDS}"
+
   # Merge each target's platforms into one manifest list with all its
   # tags, then sign and check it.
   push:

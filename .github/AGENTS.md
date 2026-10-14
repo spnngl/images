@@ -6,7 +6,9 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 - `build-bootc.yml`: lint, build, sign and push every bootc image of its
   matrix, each platform on its own runner.
 - `build-apps.yml`: the same for the application images that changed,
-  found in the Bake files, not listed.
+  found in the Bake files, not listed. Its `gate` job is the check the
+  `main` ruleset requires: its `needs` lists every job a pull request
+  runs.
 - `renovate.yml`: validates `renovate.json5`, and that Renovate reads
   every `# renovate:` comment of the Bake files.
 - `copilot-fix.yml`: asks Copilot, once per pull request, to fix a
