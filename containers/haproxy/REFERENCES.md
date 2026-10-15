@@ -72,7 +72,9 @@
   2.8) keep it free of warnings on every line.
 - **Lists in `/data/lists`, the last layer** (`COPY --link`), for the
   deployments' configs: they change more often than the rest, whose
-  layers stay.
+  layers stay. GeoLite2 excluded: its reader is the SPOA bouncer, whose
+  image ships it (`containers/cs-haproxy-spoa-bouncer/REFERENCES.md`).
+  An exclusion, so a list datalists adds reaches the deployments.
 - **The lists from the datalists image, pinned by digest:** built once
   there, not fetched by each line's build. Renovate moves the digest at
   once and automerges it (`renovate.json5`), the smoke tests the gate:
