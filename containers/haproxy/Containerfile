@@ -15,7 +15,7 @@
 # HTTPS and HTTP/3, 9101 Prometheus, as the configs of the deployments use
 # them. Lua: lua-json (and lua-lpeg) for the configs' `lua-load`.
 # Lists in /data/lists, root's, read-only: the datalists image's
-# (containers/datalists/Containerfile, header).
+# (containers/datalists/Containerfile, header), GeoLite2 aside.
 
 # Versions come from containers/haproxy/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
@@ -212,4 +212,6 @@ RUN --mount=type=bind,source=smoke-test,target=/smoke-test \
     ["/usr/sbin/haproxy", "-dW", "-c", "-f", "/smoke-test/haproxy.cfg"]
 
 # Last: the lists change every few days, the layers below don't.
-COPY --link --from=lists / /data/lists/
+# GeoLite2 ships with its reader, the SPOA bouncer
+# (containers/cs-haproxy-spoa-bouncer).
+COPY --link --exclude=geolite2 --from=lists / /data/lists/

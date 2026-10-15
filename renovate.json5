@@ -229,7 +229,7 @@
             "automerge": true
         },
         {
-            "description": "The datalists digest of haproxy's lists stage (containers/haproxy): updated each time datalists is pushed, not on Saturday with the base digests above, and automerged once haproxy's smoke tests, which load the lists, pass.",
+            "description": "The datalists digest of the lists stages (containers/haproxy, containers/cs-haproxy-spoa-bouncer): updated each time datalists is pushed, not on Saturday with the base digests above, and automerged once the smoke tests pass: haproxy's load the lists, the bouncer's looks up GeoLite2.",
             "matchDepNames": ["ghcr.io/spnngl/images/datalists"],
             "groupName": "datalists",
             "schedule": ["at any time"],
