@@ -14,36 +14,16 @@
 # signal) stops softly. Ports: 1936 stats, 8080 HTTP, 8443
 # HTTPS and HTTP/3, 9101 Prometheus, as the configs of the deployments use
 # them. Lua: lua-json (and lua-lpeg) for the configs' `lua-load`.
-# Lists in /data/lists (root's, read-only): MaxMind's GeoLite2 databases
-# in geolite2/ (GeoLite2-{ASN,City,Country}.mmdb), Cloudflare's IP ranges
-# in cloudflare/ (ips-v4, ips-v6: one CIDR per line, for `src -f`).
+# Lists in /data/lists, root's, read-only: the datalists image's
+# (containers/datalists/Containerfile, header).
 
 # Versions come from containers/haproxy/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
 
-# The lists, the image's last layer: one COPY of this stage. ADD gives a
-# URL's file 0600, the image's user must read it: u=rwX,go=rX, 0644 for
-# the files, 0755 for the folders ADD creates, which --chmod sets too.
-# GeoLite2 as P3TERX republishes it, a release every 3 days, the last 2
-# kept: --checksum pins each file, and Renovate moves the release
+# The lists, the image's last layer, and the smoke tests' ACLs. Its
+# digest, which Renovate moves, sets the lists an image ships
 # (containers/haproxy/AGENTS.md, Updates).
-# Cloudflare's ranges have no version: not pinned, BuildKit fetches them
-# again when they change, so each build (and the weekly rebuild) has the
-# current ones. The smoke tests load them as ACLs.
-FROM scratch AS lists
-ARG GEOLITE2_ASN_VERSION
-ARG GEOLITE2_ASN_CHECKSUM
-ARG GEOLITE2_CITY_VERSION
-ARG GEOLITE2_CITY_CHECKSUM
-ARG GEOLITE2_COUNTRY_VERSION
-ARG GEOLITE2_COUNTRY_CHECKSUM
-ADD --chmod=u=rwX,go=rX --checksum=sha256:${GEOLITE2_ASN_CHECKSUM} \
-    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_ASN_VERSION}/GeoLite2-ASN.mmdb /geolite2/
-ADD --chmod=u=rwX,go=rX --checksum=sha256:${GEOLITE2_CITY_CHECKSUM} \
-    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_CITY_VERSION}/GeoLite2-City.mmdb /geolite2/
-ADD --chmod=u=rwX,go=rX --checksum=sha256:${GEOLITE2_COUNTRY_CHECKSUM} \
-    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_COUNTRY_VERSION}/GeoLite2-Country.mmdb /geolite2/
-ADD --chmod=u=rwX,go=rX https://www.cloudflare.com/ips-v4 https://www.cloudflare.com/ips-v6 /cloudflare/
+FROM ghcr.io/spnngl/images/datalists:latest@sha256:56b48691c2f9e0521d5856e7b83e8a4e45f33f6e6a32419775b6012d659d526d AS lists
 
 # Debian trixie, the release distroless' cc-debian13 is built from: the
 # libraries linked here are the ones the final image has.
@@ -151,14 +131,14 @@ EORUN
 # smoke-test/haproxy.cfg, run as the image runs it (-W -db), serves
 # lua-json's output over HTTP/1.1 and HTTP/3 (a throwaway self-signed
 # certificate, kept for the final image's test), and the Prometheus
-# exporter; SIGUSR1, the image's stop signal, ends it. Its ACL loads
-# Cloudflare's lists, which must not be empty.
+# exporter; SIGUSR1, the image's stop signal, ends it. Its ACLs load
+# Cloudflare's lists and ipverse's: 1.1.1.1, Cloudflare's resolver, is
+# in AS13335's and Australia's.
 # kill (DL3001) stops the server this step started, not a container's.
 # hadolint ignore=DL3001
 RUN --mount=type=bind,source=smoke-test,target=/smoke-test \
-    --mount=type=bind,from=lists,target=/data/lists <<EORUN
-[ -s /data/lists/cloudflare/ips-v4 ]
-[ -s /data/lists/cloudflare/ips-v6 ]
+    --mount=type=bind,from=lists,target=/data/lists \
+    <<EORUN
 /out/usr/sbin/haproxy -vv | tee /tmp/haproxy-vv
 grep -F "HAProxy version ${BASE_VERSION} " /tmp/haproxy-vv
 sed -n 's/^Feature list : //p' /tmp/haproxy-vv | tr ' ' '\n' > /tmp/features
@@ -182,6 +162,7 @@ cat /tmp/smoke-test.crt /tmp/smoke-test.key > /tmp/smoke-test.pem
 server=$!
 [ "$(curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/)" = '[1]' ]
 [ "$(curl -fsS --insecure --http3-only https://127.0.0.1:8443/)" = '[1]' ]
+[ "$(curl -fsS -H 'X-Smoke-Test-Src: 1.1.1.1' http://127.0.0.1:8080/)" = 'AS13335 AU' ]
 curl -fsS http://127.0.0.1:8080/metrics | grep -q '^haproxy_process_'
 kill -USR1 "${server}"
 wait "${server}"
