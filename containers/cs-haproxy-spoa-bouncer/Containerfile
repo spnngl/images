@@ -1,0 +1,168 @@
+# syntax=docker.io/docker/dockerfile:1
+#
+# CrowdSec's HAProxy SPOA bouncer (crowdsec-spoa-bouncer) built from
+# source, on scratch: upstream's release as tagged, no patch. HAProxy's
+# SPOE filter asks it, per connection and request, what to do with the
+# source (allow, ban, captcha) from the bans it pulls from a CrowdSec Local
+# API, and forwards requests to CrowdSec's AppSec if configured. Unlike
+# upstream's image, its config fails open: it serves while the LAPI is
+# down (retry_initial_connect). HAProxy's side of fail-open is its own:
+# containers/cs-haproxy-spoa-bouncer/AGENTS.md.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry; any UID works, it
+# writes no file); CROWDSEC_URL and CROWDSEC_KEY set; overrides in
+# /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml.local (one file
+# mounted, not the folder: it would hide the shipped config). SPOA on
+# 9000/tcp, Prometheus metrics on 6060/tcp. Runs with a read-only root
+# filesystem, no capability and no-new-privileges.
+# https://docs.crowdsec.net/u/bouncers/haproxy_spoa
+
+# Versions come from containers/cs-haproxy-spoa-bouncer/docker-bake.hcl:
+# build with `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads it, and root's
+# (/root) is closed to it. Before SHELL: hadolint (2.15.1) checks the RUNs
+# after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: the tag must resolve to this commit.
+ADD --link --checksum=${BASE_CHECKSUM} \
+    https://github.com/crowdsecurity/cs-haproxy-spoa-bouncer.git#v${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: the source stays root's,
+# and the test runs the bouncer as the image does. WORKDIR creates its
+# folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (Makefile's binary target): static, netgo.
+# Without .git, the version comes from the tag and its commit, as
+# `git describe` and `git rev-parse` give them to upstream's.
+# DOCKER_BUILD: the platform --version prints, docker, as upstream's image.
+# Caches: ids of their own, writable by this user (containers/minio).
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+make binary BINARY_NAME=/out/crowdsec-spoa-bouncer DOCKER_BUILD=1 \
+    BUILD_VERSION="v${BASE_VERSION}" BUILD_TAG="${BASE_CHECKSUM}" \
+    BUILD_TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%F_%T)"
+EORUN
+
+# Server test, here because scratch has no shell to run it, and because
+# releases are automerged on it (REFERENCES.md). The shipped config, its
+# .yaml.local pulling every second, and HAProxy's side of SPOP (HAProxy's
+# doc/SPOE.txt) in bash: the HELLO, then the crowdsec-tcp message of
+# upstream's config/crowdsec.cfg for one source, whose ACK sets
+# txn.crowdsec.remediation. In order: the LAPI down at start, the bouncer
+# serves and allows (fail-open); a fake LAPI (smoke-test-lapi.go) up, its
+# ban applies at the next retry, at most 10s later; the LAPI down again,
+# the ban stays. Then a graceful stop.
+# kill (DL3001) stops the processes this step started, not a container's.
+# hadolint ignore=DL3001
+RUN --mount=type=bind,source=sysroot/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml,target=/tmp/bouncer.yaml \
+    --mount=type=bind,source=smoke-test-lapi.go,target=/tmp/lapi/main.go \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+/out/crowdsec-spoa-bouncer --version | grep -Fx "version: v${BASE_VERSION}-${BASE_CHECKSUM}"
+go -C /tmp/lapi build -o /tmp/lapi-server main.go
+
+# Bytes as \x escapes (printf %b), for the NULs a variable can't hold.
+# An SPOP string: its length, a varint of one byte under 240, then itself.
+str() { printf '\\x%02x%s' "${#1}" "$1"; }
+# A frame, from its type, metadata and payload: its length first, under
+# 256 here.
+frame() { printf '%b' "$(printf '\\x00\\x00\\x00\\x%02x' "$(printf '%b' "$1" | wc -c)")$1"; }
+# The remediation of an IPv4 source ($1, \x escapes). HELLO: version 2.0,
+# max-frame-size 16380 (varint \xfc\xf0\x06). NOTIFY: stream and frame 1.
+# The bouncer keeps the connection open: timeout ends the read.
+remediation() {
+    exec 3<>/dev/tcp/127.0.0.1/9000
+    frame "\x01\x00\x00\x00\x01\x00\x00$(str supported-versions)\x08$(str 2.0)$(str max-frame-size)\x03\xfc\xf0\x06$(str capabilities)\x08$(str '')" >&3
+    frame "\x03\x00\x00\x00\x01\x01\x01$(str crowdsec-tcp)\x01$(str src-ip)\x06$1" >&3
+    timeout 1 cat <&3 > /tmp/ack || true
+    exec 3<&-
+    if grep -qaF $'remediation\x08\x05allow' /tmp/ack; then echo allow
+    elif grep -qaF $'remediation\x08\x03ban' /tmp/ack; then echo ban
+    else od -c /tmp/ack >&2
+    fi
+}
+is() { [ "$(remediation "$1")" = "$2" ]; }
+listening() { : 3<>/dev/tcp/127.0.0.1/9000; }
+retry() { for _ in {1..29}; do "$@" && return; sleep 1; done; "$@"; }
+banned='\xc0\x00\x02\x01' # 192.0.2.1
+other='\xc0\x00\x02\x02'  # 192.0.2.2
+
+CROWDSEC_URL=http://127.0.0.1:8080/
+CROWDSEC_KEY="$(od -An -vtx1 -N16 /dev/urandom | tr -d ' \n')"
+export CROWDSEC_URL CROWDSEC_KEY
+echo 'update_frequency: 1s' > /tmp/bouncer.yaml.local
+trap 'cat /tmp/bouncer.log >&2' EXIT
+/out/crowdsec-spoa-bouncer -c /tmp/bouncer.yaml 2> /tmp/bouncer.log &
+bouncer=$!
+retry listening
+is "${banned}" allow
+retry grep -qF 'failed to connect to LAPI, retrying in 10s' /tmp/bouncer.log
+/tmp/lapi-server &
+lapi=$!
+retry is "${banned}" ban
+is "${other}" allow
+kill "${lapi}"
+wait "${lapi}" || true
+sleep 2
+is "${banned}" ban
+kill "${bouncer}"
+wait "${bouncer}"
+trap - EXIT
+rm /tmp/ack /tmp/bouncer.log /tmp/bouncer.yaml.local /tmp/lapi-server
+EORUN
+
+# Static, it execs nothing: the binary, the CA bundle for its outbound TLS
+# (an https LAPI or AppSec), its config, upstream image's Lua scripts and
+# HTML templates (for HAProxy, at the same paths), and the license.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /usr/share/doc/cs-haproxy-spoa-bouncer/
+COPY --link --from=build /src/lua/ /usr/lib/crowdsec-haproxy-spoa-bouncer/lua/
+COPY --link --from=build /src/templates/ /var/lib/crowdsec-haproxy-spoa-bouncer/html/
+COPY --link ./sysroot/ /
+# Owned by root, not by the build's user: the bouncer can't rewrite it.
+COPY --link --from=build --chown=0:0 /out/crowdsec-spoa-bouncer /usr/bin/
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+
+EXPOSE 9000/tcp 6060/tcp
+
+ENTRYPOINT ["/usr/bin/crowdsec-spoa-bouncer"]
+CMD ["-c", "/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"]
+
+# Smoke test: the binary runs on this platform (the build stage tested the
+# bouncer).
+RUN ["/usr/bin/crowdsec-spoa-bouncer", "--version"]
