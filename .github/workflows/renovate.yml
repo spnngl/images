@@ -51,11 +51,15 @@ jobs:
 
       # GITHUB_COM_TOKEN: Renovate fetches the shared preset (extends)
       # from GitHub; the token only avoids the anonymous rate limit.
+      # RENOVATE_VERSION: the shared preset's `# renovate:` manager
+      # updates it, in the same PR as the validator of AGENTS.md.
       - env:
           GITHUB_COM_TOKEN: ${{ github.token }}
+          # renovate: datasource=docker depName=ghcr.io/renovatebot/renovate
+          RENOVATE_VERSION: "44.164.6"
         run: |-
           docker run --rm -v "${PWD}:/w:ro" -w /w -e LOG_LEVEL=trace -e LOG_FORMAT=json -e GITHUB_COM_TOKEN \
-            ghcr.io/renovatebot/renovate:44.151.2 renovate --platform=local --dry-run=extract > "${RUNNER_TEMP}/renovate.log"
+            "ghcr.io/renovatebot/renovate:${RENOVATE_VERSION}" renovate --platform=local --dry-run=extract > "${RUNNER_TEMP}/renovate.log"
           # The number of dependencies of each file, from the log's list
           # of the files each manager extracted.
           jq -c 'select(.msg == "Extracted dependencies") | [.packageFiles.regex[]? | {key: .packageFile, value: (.deps | length)}] | group_by(.key) | map({key: .[0].key, value: (map(.value) | add)}) | from_entries' "${RUNNER_TEMP}/renovate.log" > "${RUNNER_TEMP}/extracted.json"

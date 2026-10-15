@@ -166,6 +166,11 @@
             "automerge": true
         },
         {
+            "description": "Renovate's image (renovate.yml's extract job, the validator of AGENTS.md's checks): several releases a day, each its own automerged PR. Proposed in a nightly window, before 5am, so about one a day. The window is 5 hours: Mend's hosted Renovate runs a repository every 4 hours (docs/usage/mend-hosted/job-scheduling.md).",
+            "matchDepNames": ["ghcr.io/renovatebot/renovate"],
+            "schedule": ["* 0-4 * * *"]
+        },
+        {
             "description": "Application releases that CI exercises (depType=automerge in the docker-bake.hcl comment: the build stage's tests, a single-node server through the S3 API for Garage): automerge minor/patch once CI is green. Not digest updates: a moved tag. Major releases by hand: Garage's need a migration (AGENTS.md, Updates).",
             "matchDepTypes": ["automerge"],
             "matchUpdateTypes": ["minor", "patch"],
