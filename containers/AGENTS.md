@@ -62,6 +62,8 @@ By what the app needs at runtime; name that need in the image's
 - A C binary linking a few Debian libraries: a Containerfile on
   distroless' `cc-debian13`, the packages it lacks copied with their
   dpkg status (`containers/haproxy`).
+- Data other images copy (lists, databases): `containers/datalists`,
+  on `scratch`, tagged `latest`.
 - Docker's hardened Debian packages and the DHI catalog's build steps:
   a DHI definition, skill `add-dhi-image`. When to pick it over Dalec
   is not decided yet.

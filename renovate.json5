@@ -181,8 +181,9 @@
             ]
         },
         {
-            "description": "GeoLite2 databases of haproxy (P3TERX/GeoLite.mmdb): a release every 3 days, deleted with its tag once two newer exist. No wait (the 3-day rule above would only ever pick a release about to be deleted), every update automerged once CI is green (the files' checksums, from Renovate's digest): an unmerged update breaks haproxy's build within about 6 days. Major too: the versioning is by date.",
+            "description": "GeoLite2 databases of datalists and haproxy (P3TERX/GeoLite.mmdb): a release every 3 days, deleted with its tag once two newer exist. No wait (the 3-day rule above would only ever pick a release about to be deleted), every update automerged once CI is green (the files' checksums, from Renovate's digest): an unmerged update breaks the build within about 6 days. Major too: the versioning is by date. One PR for every file of every image: the files of a release go together.",
             "matchDepNames": ["P3TERX/GeoLite.mmdb"],
+            "groupName": "GeoLite2",
             "minimumReleaseAge": null,
             "matchUpdateTypes": ["major", "minor", "patch"],
             "automerge": true

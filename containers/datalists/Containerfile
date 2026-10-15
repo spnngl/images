@@ -1,0 +1,87 @@
+# syntax=docker.io/docker/dockerfile:1
+#
+# Lists of IP ranges and GeoIP databases, for images to copy
+# (containers/haproxy) or for a Kubernetes image volume to mount: data
+# only, on scratch, with no shell or user and nothing to run.
+#
+# Runtime contract: the lists at the image's root, root's, read-only
+# (files 0644, folders 0755):
+# - cloudflare/: Cloudflare's IP ranges (ips-v4, ips-v6: one CIDR per
+#   line, for HAProxy's `src -f`);
+# - geolite2/: MaxMind's GeoLite2 databases
+#   (GeoLite2-{ASN,City,Country}.mmdb);
+# - as/<number>/ and country/<ISO 3166 code, lowercase>/: ipverse's
+#   prefixes of each AS and each country (ipv4-aggregated.txt,
+#   ipv6-aggregated.txt: one CIDR per line after `#` comments, for
+#   `src -f`; aggregated.json).
+
+# Versions come from containers/datalists/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# ADD gives a URL's file 0600: --chmod=u=rwX,go=rX makes it 0644, and
+# 0755 the folder ADD creates.
+# Cloudflare's ranges have no version: not pinned, BuildKit fetches them
+# again when they change.
+FROM scratch AS cloudflare
+ADD --chmod=u=rwX,go=rX https://www.cloudflare.com/ips-v4 https://www.cloudflare.com/ips-v6 /cloudflare/
+
+# GeoLite2 as P3TERX republishes it, a release every 3 days, the last 2
+# kept: --checksum pins each file, and Renovate moves the release
+# (containers/datalists/AGENTS.md, Updates).
+FROM scratch AS geolite2
+ARG GEOLITE2_ASN_VERSION
+ARG GEOLITE2_ASN_CHECKSUM
+ARG GEOLITE2_CITY_VERSION
+ARG GEOLITE2_CITY_CHECKSUM
+ARG GEOLITE2_COUNTRY_VERSION
+ARG GEOLITE2_COUNTRY_CHECKSUM
+ADD --chmod=u=rwX,go=rX \
+    --checksum=sha256:${GEOLITE2_ASN_CHECKSUM} \
+    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_ASN_VERSION}/GeoLite2-ASN.mmdb /geolite2/
+ADD --chmod=u=rwX,go=rX \
+    --checksum=sha256:${GEOLITE2_CITY_CHECKSUM} \
+    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_CITY_VERSION}/GeoLite2-City.mmdb /geolite2/
+ADD --chmod=u=rwX,go=rX \
+    --checksum=sha256:${GEOLITE2_COUNTRY_CHECKSUM} \
+    https://github.com/P3TERX/GeoLite.mmdb/releases/download/${GEOLITE2_COUNTRY_VERSION}/GeoLite2-Country.mmdb /geolite2/
+
+# The lists' check, which also unpacks ipverse's: the final image copies
+# them from here, so this stage runs. Debian trixie for its shell and
+# grep; no package installed.
+FROM docker.io/library/debian:trixie-slim@sha256:a29215f6a35e51e22adffa17f89e9d2ef06214e64a2bad10d765c46aea49f11f AS check
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# ipverse's prefixes: a release tagged `latest`, replaced daily, not
+# pinned. --unpack keeps the archives' modes (0664 files, 0775 folders)
+# and ignores --chmod: the final COPY sets them.
+ADD --unpack https://github.com/ipverse/as-ip-blocks/releases/download/latest/as-ip-blocks.tar.gz /lists/
+ADD --unpack https://github.com/ipverse/country-ip-blocks/releases/download/latest/country-ip-blocks.tar.gz /lists/
+
+# The files haproxy's smoke test loads must not be empty, and every line
+# of the text lists is a comment or a CIDR: an HTML page, a moved file
+# or a changed format fails here, before an image is pushed.
+# GeoLite2: its checksums.
+RUN --mount=type=bind,from=cloudflare,source=/cloudflare,target=/cloudflare \
+    <<EORUN
+for list in /cloudflare/ips-v{4,6} /lists/{as/13335,country/au}/ipv{4,6}-aggregated.txt; do
+    [ -s "${list}" ]
+done
+line='(#.*)?|[0-9a-f.:]+/[0-9]{1,3}'
+if grep -vxE "${line}" /cloudflare/ips-v{4,6}; then exit 1; fi
+if grep -rvxE --include='*-aggregated.txt' "${line}" /lists/as /lists/country; then exit 1; fi
+EORUN
+
+FROM scratch
+
+# source: links the ghcr.io package to this repository.
+# licenses: ipverse's CC0, MaxMind's GeoLite2 EULA (REFERENCES.md).
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="datalists" \
+    org.opencontainers.image.licenses="CC0-1.0 AND LicenseRef-GeoLite2-EULA" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# One layer per source, the one changing least first (REFERENCES.md).
+COPY --link --from=cloudflare /cloudflare/ /cloudflare/
+COPY --link --from=geolite2 /geolite2/ /geolite2/
+COPY --link --chmod=u=rwX,go=rX --from=check /lists/as/ /as/
+COPY --link --chmod=u=rwX,go=rX --from=check /lists/country/ /country/
