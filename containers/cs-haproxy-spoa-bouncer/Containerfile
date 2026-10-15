@@ -13,12 +13,20 @@
 # writes no file); CROWDSEC_URL and CROWDSEC_KEY set; overrides in
 # /etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml.local (one file
 # mounted, not the folder: it would hide the shipped config). SPOA on
-# 9000/tcp, Prometheus metrics on 6060/tcp. Runs with a read-only root
-# filesystem, no capability and no-new-privileges.
+# 9000/tcp, Prometheus metrics on 6060/tcp. GeoLite2 (ASN, City,
+# Country) in /var/lib/crowdsec/data: each source's country, in
+# txn.crowdsec.isocode. Runs with a read-only root filesystem, no
+# capability and no-new-privileges.
 # https://docs.crowdsec.net/u/bouncers/haproxy_spoa
 
 # Versions come from containers/cs-haproxy-spoa-bouncer/docker-bake.hcl:
 # build with `docker buildx bake` (containers/AGENTS.md).
+
+# GeoLite2, for the last layer and the server test's lookup. Its digest,
+# which Renovate moves, sets the databases the image ships
+# (containers/cs-haproxy-spoa-bouncer/AGENTS.md, Updates).
+FROM ghcr.io/spnngl/images/datalists:latest@sha256:56b48691c2f9e0521d5856e7b83e8a4e45f33f6e6a32419775b6012d659d526d AS lists
+
 # Debian trixie: its ca-certificates is the CA bundle copied below.
 FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
 
@@ -73,13 +81,15 @@ EORUN
 # doc/SPOE.txt) in bash: the HELLO, then the crowdsec-tcp message of
 # upstream's config/crowdsec.cfg for one source, whose ACK sets
 # txn.crowdsec.remediation. In order: the LAPI down at start, the bouncer
-# serves and allows (fail-open); a fake LAPI (smoke-test-lapi.go) up, its
+# serves and allows (fail-open), and 8.8.8.8 (Google's resolver) gets
+# its country from GeoLite2, US; a fake LAPI (smoke-test-lapi.go) up, its
 # ban applies at the next retry, at most 10s later; the LAPI down again,
 # the ban stays. Then a graceful stop.
 # kill (DL3001) stops the processes this step started, not a container's.
 # hadolint ignore=DL3001
 RUN --mount=type=bind,source=sysroot/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml,target=/tmp/bouncer.yaml \
     --mount=type=bind,source=smoke-test-lapi.go,target=/tmp/lapi/main.go \
+    --mount=type=bind,from=lists,source=/geolite2,target=/var/lib/crowdsec/data \
     --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
     <<EORUN
 /out/crowdsec-spoa-bouncer --version | grep -Fx "version: v${BASE_VERSION}-${BASE_CHECKSUM}"
@@ -110,6 +120,7 @@ listening() { : 3<>/dev/tcp/127.0.0.1/9000; }
 retry() { for _ in {1..29}; do "$@" && return; sleep 1; done; "$@"; }
 banned='\xc0\x00\x02\x01' # 192.0.2.1
 other='\xc0\x00\x02\x02'  # 192.0.2.2
+google='\x08\x08\x08\x08' # 8.8.8.8
 
 CROWDSEC_URL=http://127.0.0.1:8080/
 CROWDSEC_KEY="$(od -An -vtx1 -N16 /dev/urandom | tr -d ' \n')"
@@ -120,6 +131,8 @@ trap 'cat /tmp/bouncer.log >&2' EXIT
 bouncer=$!
 retry listening
 is "${banned}" allow
+is "${google}" allow
+grep -qaF $'isocode\x08\x02US' /tmp/ack
 retry grep -qF 'failed to connect to LAPI, retrying in 10s' /tmp/bouncer.log
 /tmp/lapi-server &
 lapi=$!
@@ -137,14 +150,17 @@ EORUN
 
 # Static, it execs nothing: the binary, the CA bundle for its outbound TLS
 # (an https LAPI or AppSec), its config, upstream image's Lua scripts and
-# HTML templates (for HAProxy, at the same paths), and the license.
+# HTML templates (for HAProxy, at the same paths), the license, and
+# GeoLite2.
 FROM scratch
 ARG BASE_VERSION
 
 # source: links the ghcr.io package to this repository.
+# licenses: the bouncer's MIT, MaxMind's GeoLite2 EULA
+# (containers/datalists/REFERENCES.md).
 # hadolint ignore=DL3050
 LABEL org.opencontainers.image.version="${BASE_VERSION}" \
-    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.licenses="MIT AND LicenseRef-GeoLite2-EULA" \
     org.opencontainers.image.source="https://github.com/spnngl/images"
 
 COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
@@ -166,3 +182,6 @@ CMD ["-c", "/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"]
 # Smoke test: the binary runs on this platform (the build stage tested the
 # bouncer).
 RUN ["/usr/bin/crowdsec-spoa-bouncer", "--version"]
+
+# Last: GeoLite2 changes every 3 days, the other layers less often.
+COPY --link --from=lists /geolite2/ /var/lib/crowdsec/data/

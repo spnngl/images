@@ -1,8 +1,9 @@
 # syntax=docker.io/docker/dockerfile:1
 #
 # Lists of IP ranges and GeoIP databases, for images to copy
-# (containers/haproxy) or for a Kubernetes image volume to mount: data
-# only, on scratch, with no shell or user and nothing to run.
+# (containers/haproxy, containers/cs-haproxy-spoa-bouncer) or for a
+# Kubernetes image volume to mount: data only, on scratch, with no shell
+# or user and nothing to run.
 #
 # Runtime contract: the lists at the image's root, root's, read-only
 # (files 0644, folders 0755):

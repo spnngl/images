@@ -3,7 +3,8 @@
 HAProxy from source, a Containerfile on distroless' `cc-debian13`: the
 binary, linked against Debian trixie's libraries, and the Debian packages
 it needs that distroless lacks, copied with their dpkg status, and the
-`containers/datalists` lists in `/data/lists`. One image per release
+`containers/datalists` lists in `/data/lists`, GeoLite2 aside (the SPOA
+bouncer's, `containers/cs-haproxy-spoa-bouncer`). One image per release
 line (`docker-bake.hcl`). Runtime contract: the Containerfile's header.
 Upstream sources and the reason for each choice:
 [REFERENCES.md](REFERENCES.md).

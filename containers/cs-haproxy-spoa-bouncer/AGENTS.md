@@ -1,62 +1,67 @@
 # cs-haproxy-spoa-bouncer
 
-CrowdSec's HAProxy SPOA bouncer, one static Go binary built from source
-on `scratch`. HAProxy's SPOE filter asks it what to do with each
-connection and request (allow, ban, captcha, challenge), from the bans
-it pulls from a CrowdSec Local API (LAPI, not in this repository) and,
-if configured, CrowdSec's AppSec. Its config fails open: traffic flows
-when the bouncer or the LAPI is down. Runtime contract: the
-Containerfile's header. Upstream sources and the reason for each
-choice: [REFERENCES.md](REFERENCES.md).
+CrowdSec's HAProxy SPOA bouncer built from source, one static binary on
+`scratch`, with GeoLite2. HAProxy's SPOE filter asks it, per connection
+and request, for a remediation (allow, ban, captcha). It answers from
+the bans it pulls from a CrowdSec Local API (LAPI) and, if configured,
+from AppSec. Together, the bouncer and HAProxy are **fail-open**: every
+failure ends in allow. Runtime contract: the Containerfile's header.
+Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Fail-open
 
-Every failure ends in "allow", on two sides:
+A change keeps every failure ending in allow, on both sides:
 
-- **The bouncer** serves SPOA without the LAPI
-  (`retry_initial_connect: true`): no decision yet means allow. Once
-  pulled, bans stay while the LAPI is down. An AppSec timeout or error
-  allows the request. A missing GeoIP database disables the geo checks.
-- **HAProxy** must allow when the bouncer doesn't answer (down,
-  restarting, slower than `timeout processing`). In the frontend, rules
-  act only on an explicit `var(txn.crowdsec.remediation)` (`ban`,
-  `captcha`), never on its absence, as upstream's `config/haproxy.cfg`.
-  Shorter waits than upstream's: the agents' backend health-checked
-  (`check inter 1s`) with a `timeout connect` of about 100ms, so a dead
-  agent fails fast. `option continue-on-error` in the SPOE file keeps
-  the HTTP messages (AppSec) after a failed TCP one.
-
-No readiness or startup probe gates HAProxy on the bouncer: a liveness
-probe on 9000/tcp at most.
+- **The bouncer** serves SPOA from start, before its first pull succeeds
+  (`retry_initial_connect: true`), and answers allow until a ban
+  arrives. Pulled bans stay while the LAPI is down. AppSec errors and
+  timeouts allow. A GeoLite2 path to a missing file turns the country
+  lookups off, and the bouncer serves on.
+- **HAProxy** allows when the bouncer is down, restarting, or slower
+  than `timeout processing`:
+  - frontend rules act on an explicit `var(txn.crowdsec.remediation)`
+    (`ban`, `captcha`), as upstream's `config/haproxy.cfg`;
+  - the agents' backend is health-checked (`check inter 1s`), with a
+    `timeout connect` of about 100ms, so a dead agent fails fast;
+  - `option continue-on-error` in the SPOE file keeps the HTTP messages
+    (AppSec) after a failed TCP one;
+  - a liveness probe on 9000/tcp is the bouncer's only probe: a
+    readiness or startup probe would gate HAProxy on it.
 
 ## Rules
 
-- Keep `retry_initial_connect: true`: without it the bouncer exits when
-  the first pull fails, a crash loop while the LAPI is down.
-- `api_url` and `api_key` come from `CROWDSEC_URL` and `CROWDSEC_KEY`;
-  no other setting from the environment.
-- The server test checks fail-open at start (LAPI down: allow), a ban
-  once the LAPI is up, and the ban kept when it goes down again. A
-  change to the shipped config passes it.
+- Keep `retry_initial_connect: true`: `false` exits when the first pull
+  fails, a crash loop while the LAPI is down.
+- The environment carries the LAPI's URL and key (`CROWDSEC_URL`,
+  `CROWDSEC_KEY`); every other setting is an override in `.yaml.local`.
+- Ship the datalists `geolite2/` folder whole: the three databases.
+- The server test is the gate: Renovate automerges on it. A change to
+  the shipped config passes it.
 
 ## Updates
 
-Renovate follows upstream's tags, automerged for patch and minor on the
-server test. Before merging a major, compare upstream's
-`config/crowdsec-spoa-bouncer.yaml` and `config/crowdsec.cfg` between the
-two tags
-(`https://github.com/crowdsecurity/cs-haproxy-spoa-bouncer/compare/v<old>...v<new>`),
-and the build against the `binary` target of the `Makefile`. The test
-sends only `crowdsec-tcp`: a deployment bumping its tag compares
-`config/crowdsec.cfg` too, for HAProxy's side.
+- **Releases:** Renovate follows upstream's tags and automerges patch
+  and minor. For a major, diff the two tags
+  (`https://github.com/crowdsecurity/cs-haproxy-spoa-bouncer/compare/v<old>...v<new>`):
+  `config/crowdsec-spoa-bouncer.yaml` against the shipped config, the
+  `Makefile`'s `binary` target against the build, and
+  `config/crowdsec.cfg`, HAProxy's side, which the test leaves out (it
+  sends `crowdsec-tcp` only). A deployment bumping its tag diffs
+  `config/crowdsec.cfg` too.
+- **GeoLite2:** Renovate moves the datalists digest (the `lists` stage's
+  `FROM`) with haproxy's each time datalists is pushed, and automerges
+  it on the server test. A red test means the databases changed: fix
+  the lookup or `containers/datalists`.
 
 ## Limits
 
-- A restart while the LAPI is down starts with no ban: bans live in
-  memory only.
+- Bans live in memory: a restart while the LAPI is down starts with
+  none.
 - A decision without `origin` or `scope` crashes the bouncer
-  (`pkg/dataset/root.go`, unchecked pointers): it restarts, and HAProxy
-  allows meanwhile.
-- The Lua scripts and HTML templates serve HAProxy (`lf-file`), not the
-  bouncer: HAProxy in another container reads them through a volume of
-  this image (a Kubernetes image volume, a compose named volume).
+  (`pkg/dataset/root.go`, unchecked pointers); it restarts while HAProxy
+  allows.
+- An override with a GeoLite2 path the container lacks turns every
+  country lookup off, silently.
+- The Lua scripts and HTML templates serve HAProxy (`lf-file`): HAProxy
+  in another container reads them through a volume of this image (a
+  Kubernetes image volume, a compose named volume).

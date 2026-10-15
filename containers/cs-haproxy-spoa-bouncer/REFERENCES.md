@@ -11,6 +11,9 @@
   `github.com/crowdsecurity/go-cs-lib` (`csyaml`: the `.local` merge,
   `csstring`: `${VAR}` expansion), `github.com/dropmorepackets/haproxy-go`
   (SPOP agent)
+- GeoIP: `internal/geo/root.go` (the databases opened, read, or turned
+  off), `pkg/spoa/root.go` (`isocode`, country decisions); GeoLite2's
+  source: `containers/datalists/REFERENCES.md`
 - SPOP: `doc/SPOE.txt` in `github.com/haproxy/haproxy`
 - Docs: <https://docs.crowdsec.net/u/bouncers/haproxy_spoa>
 
@@ -34,8 +37,9 @@
   does. A root-owned binary can't be rewritten by the bouncer.
 - **Server test in the build stage, against a fake LAPI**
   (`smoke-test-lapi.go`, standard library only) **and SPOP in bash:**
-  releases and `golang` bumps are automerged on it. It covers what this
-  image adds: fail-open at start, then a ban pulled and kept. HAProxy
+  releases, `golang` and datalists bumps are automerged on it. It
+  covers what this image adds: fail-open at start, a ban pulled and
+  kept, and GeoLite2's country (8.8.8.8: US). HAProxy
   isn't in the test: its SPOE is HAProxy's own code, not this image's.
 - **Config at the path of upstream's packages,
   `/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml`,** with
@@ -50,10 +54,21 @@
   shared with HAProxy. Metrics on `0.0.0.0:6060`, as upstream's image
   exposes; reachable by whoever reaches the pod, like 9000.
 - **The image holds the binary, Debian's CA bundle** (an `https` LAPI
-  or AppSec), the config, `LICENSE`, and upstream's Lua scripts and
-  HTML templates at upstream image's paths, for HAProxy. No `VOLUME`:
+  or AppSec), the config, `LICENSE`, GeoLite2, and upstream's Lua
+  scripts and HTML templates at upstream image's paths, for HAProxy. No `VOLUME`:
   upstream's are for sharing those with HAProxy, which a named volume
   or a Kubernetes image volume does without, and `/run` and `/var/log`
   are unused here. No challenge listener (9100): off in the default
   config.
+- **GeoLite2 here, from `containers/datalists`, pinned by digest:**
+  the bouncer reads it and hands HAProxy the country
+  (`txn.crowdsec.isocode`), so the databases ship with their reader
+  and haproxy's image leaves them out. All three, as datalists has
+  them: v0.4.0 reads City alone (`GetASN` has no caller, Country has
+  no config key), and a release reading another finds it in place. At
+  `/var/lib/crowdsec/data`, the path of upstream's default config,
+  clear of `/data/lists`, where a deployment may mount the lists it
+  shares with HAProxy. The last layer: it changes every 3 days. A
+  missing or unreadable file turns the lookups off silently, hence the
+  server test's lookup.
 - **No `HEALTHCHECK`:** nothing in the image can run a check.

@@ -21,7 +21,8 @@
   update per image using them (Renovate), instead of each image
   fetching them.
 - **At the root:** a `COPY --from` or an image volume puts them where
-  its image needs them (haproxy: `/data/lists`).
+  its image needs them (haproxy: `/data/lists`; cs-haproxy-spoa-bouncer:
+  `geolite2/` in `/var/lib/crowdsec/data`).
 - **One layer per source** (a `COPY --link` of a stage each), the one
   changing least first: Cloudflare's, then GeoLite2, then ipverse's
   (as/, then country/). A layer's digest depends only on its files
@@ -50,6 +51,7 @@
   makes the check run (a build only runs the stages the final one
   uses), and the `COPY --chmod` sets their modes, which `ADD --unpack`
   keeps from the archives.
-- **The check, the lists' format only:** lookups are haproxy's smoke
-  test, which gates its digest update; the files it loads are the ones
-  checked not empty.
+- **The check, the lists' format only:** lookups are the users' smoke
+  tests, each the gate of its digest update: haproxy's for the lists
+  (the files it loads are the ones checked not empty), the bouncer's
+  for GeoLite2.

@@ -19,6 +19,12 @@ retry_initial_connect: true
 # SPOA, for HAProxy's SPOE filter.
 listen_tcp: 0.0.0.0:9000
 
+# GeoLite2, the image's: each source's country, for txn.crowdsec.isocode
+# and country decisions. A path to a missing file turns every lookup
+# off; the bouncer serves on, without countries.
+asn_database_path: /var/lib/crowdsec/data/GeoLite2-ASN.mmdb
+city_database_path: /var/lib/crowdsec/data/GeoLite2-City.mmdb
+
 prometheus:
   enabled: true
   listen_addr: 0.0.0.0

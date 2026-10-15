@@ -1,9 +1,10 @@
 # datalists
 
 Lists of IP ranges and GeoIP databases, data only on `scratch`, for
-images to copy (`containers/haproxy`). Runtime contract, the lists
-included: the Containerfile's header. Upstream sources and the reason
-for each choice: [REFERENCES.md](REFERENCES.md).
+images to copy (`containers/haproxy`: the lists;
+`containers/cs-haproxy-spoa-bouncer`: GeoLite2). Runtime contract, the
+lists included: the Containerfile's header. Upstream sources and the
+reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
