@@ -1,0 +1,25 @@
+# The image's config (containers/cs-haproxy-spoa-bouncer), at the path of
+# upstream's packages. Overrides go in crowdsec-spoa-bouncer.yaml.local,
+# next to this file: merged over it (maps key by key, any other value
+# replaced), then ${VAR} expanded from the environment (an unset one stays
+# as written). Every key: upstream's config/crowdsec-spoa-bouncer.yaml.
+
+log_mode: stdout
+log_level: info
+
+# The Local API. Credentials from the runtime, no default.
+api_url: ${CROWDSEC_URL}
+api_key: ${CROWDSEC_KEY}
+update_frequency: 10s
+# Fail-open: when the first pull fails, retry every 10s and serve SPOA
+# meanwhile, answering allow (no decision yet). false, upstream's default,
+# exits. Later failures are only logged, and the bans already pulled stay.
+retry_initial_connect: true
+
+# SPOA, for HAProxy's SPOE filter.
+listen_tcp: 0.0.0.0:9000
+
+prometheus:
+  enabled: true
+  listen_addr: 0.0.0.0
+  listen_port: 6060
