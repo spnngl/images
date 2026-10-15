@@ -125,9 +125,10 @@ data, and their sources differ.
 ## Updates: `renovate.json5`
 
 PRs open as releases come; the Debian snapshot and base digests wait for
-Saturday, the day before the weekly rebuild. `renovate.yml` validates the
-config; the shared preset sets timezone, labels, semantic commits, action
-digests and automerge under `.github/`.
+Saturday, the day before the weekly rebuild; Renovate's image waits
+for the night. `renovate.yml` validates the config; the shared preset sets
+timezone, labels, semantic commits, action digests and automerge under
+`.github/`.
 
 - **One PR per dependency, every file at once:** an unmatched pin goes
   stale silently.
@@ -150,9 +151,19 @@ digests and automerge under `.github/`.
   `extract` job fails on a comment Renovate doesn't pick up. The
   `debian-snapshot` custom datasource lists `snapshot.debian.org`'s
   timestamps; Debian's packages follow the weekly bump.
+- **Renovate's image, one version:** `renovate.yml`'s `extract` job
+  and the validator of `AGENTS.md`'s checks. The workflow holds it in
+  `RENOVATE_VERSION`, after a `# renovate:` comment: the shared preset's
+  manager for workflow versions reads it.
+- **Renovate's image in a nightly window, before 5am:** it releases
+  several times a day, each release its own merged PR. The window is 5
+  hours: Mend's hosted Renovate runs every 4 hours, and also on pushes,
+  so a release during the window after the first merge opens a second
+  PR. A release age can't space them: ghcr.io gives no release date
+  (above).
 - **Automerged once CI passes:** actions (grouped), and minor and patch
-  releases of what CI exercises (build tools, applications with a server
-  test) or the docs only use (hadolint, Renovate's validator). Each
+  releases of what CI exercises (build tools, Renovate, applications
+  with a server test) or the docs only use (hadolint). Each
   image's `AGENTS.md` says which.
 - **By hand:** base images, image-builder-cli, every major release, and
   the images whose `AGENTS.md` says so. A new base major or Kubernetes
