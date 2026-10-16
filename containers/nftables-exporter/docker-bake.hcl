@@ -12,7 +12,7 @@ target "nftables-exporter" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=metal-stack/nftables-exporter extractVersion=^v(?<version>\d+\.\d+\.\d+)$
-      { version = "0.5.0", checksum = "5cbcae05623eaa30339bd2e6fc14a9a24f575eb8" },
+      { version = "0.5.1", checksum = "6cd7e3e19ba4702043446b3b27d4c29e9b19c1af" },
     ]
   }
   args = {
