@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # Git (https://git-scm.com), the client, built from source as static musl
 # binaries, with a static OpenSSH client (ssh) for ssh:// remotes, on this
@@ -230,7 +230,7 @@ cmp work/object https/object
 kill "${server}"
 EORUN
 
-FROM ghcr.io/spnngl/images/busybox:1.38.0@sha256:6c1e457f951ce58e92e57bc0b8f281140d45de13e2062accad72ac15e85e513e
+FROM ghcr.io/spnngl/images/busybox:1.38.0@sha256:6a852a5498bfb42b22dd7ee71cdd85f20c105063a8f7958498f70f31760903c4
 ARG BASE_VERSION
 
 # Licenses: git's and OpenSSH's; busybox's comes with the base image.

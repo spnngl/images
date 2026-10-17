@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # A Flux toolbox: flux, flux-operator, kustomize, kubectl and nushell
 # (with its plugins) on this repository's git image, so with git, ssh and
@@ -25,8 +25,8 @@
 # Versions come from containers/flux-toolbox/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md); git's and kubectl's are
 # these FROM lines, their images' tags.
-FROM ghcr.io/spnngl/images/git:2.56.0@sha256:81eeb6832f65a99ca9836386d150b2004bcb83f52940073b9b30133cea27ff14 AS base
-FROM ghcr.io/spnngl/images/kubectl:1.37.1@sha256:14659cc0f9e7997935a36d64f13e1f8589154e98a97534e3aa9b7f717d58c02c AS kubectl
+FROM ghcr.io/spnngl/images/git:2.56.0@sha256:ae5fcdf83e2ca2d5b6b60f7c51aa7d84962761ea823ab4593d0e9935ccc6ac83 AS base
+FROM ghcr.io/spnngl/images/kubectl:1.37.1@sha256:99ab26c7c6eb3e3a67965bf7a28d373cb88b0c41249fe198ab2656065b01d284 AS kubectl
 
 # The build stage is the base itself: busybox has what checking and
 # unpacking need (sha256sum, tar, gzip), and the binaries are tested on
