@@ -15,7 +15,7 @@ variable "DEBIAN" {
 # every Debian release.
 variable "DEBIAN_SNAPSHOT" {
   # renovate: datasource=custom.debian-snapshot depName=debian-snapshot
-  default = "20261016T202809Z"
+  default = "20261017T023327Z"
 }
 
 # <major>.<minor> of a version: a release line.
