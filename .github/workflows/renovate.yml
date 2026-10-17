@@ -56,7 +56,7 @@ jobs:
       - env:
           GITHUB_COM_TOKEN: ${{ github.token }}
           # renovate: datasource=docker depName=ghcr.io/renovatebot/renovate
-          RENOVATE_VERSION: "44.164.7"
+          RENOVATE_VERSION: "44.165.1"
         run: |-
           docker run --rm -v "${PWD}:/w:ro" -w /w -e LOG_LEVEL=trace -e LOG_FORMAT=json -e GITHUB_COM_TOKEN \
             "ghcr.io/renovatebot/renovate:${RENOVATE_VERSION}" renovate --platform=local --dry-run=extract > "${RUNNER_TEMP}/renovate.log"
