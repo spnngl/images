@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 #
 # MinIO server (S3-compatible object storage) built from source, on scratch.
 # Upstream is archived and source-only (no binaries or images after its last
@@ -19,7 +19,7 @@
 # Versions come from containers/minio/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
 # Debian trixie: its ca-certificates is the CA bundle copied below.
-FROM docker.io/library/golang:1.27-trixie@sha256:2f84bc93ecfb2689f782b153fdcd368b5a7ab96c1386c65cdaccf35e726d6a44 AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM

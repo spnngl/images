@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # Garage, S3-compatible distributed object store
 # (https://garagehq.deuxfleurs.fr), built from source as one static musl
@@ -17,7 +17,7 @@
 # `docker buildx bake` (containers/AGENTS.md).
 # Debian trixie: its musl-tools build the C libraries, its ca-certificates
 # is the CA bundle copied below.
-FROM docker.io/library/rust:1.99-trixie@sha256:81015672d6939b0265f09adf96d5de125482bb1330106076956b0518e74edc90 AS build
+FROM docker.io/library/rust:1.99-trixie@sha256:e259494b14672950a909b4c54527e19d29cae6ebf980672114c8bb85e5594e4a AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
