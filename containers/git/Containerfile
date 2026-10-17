@@ -230,7 +230,7 @@ cmp work/object https/object
 kill "${server}"
 EORUN
 
-FROM ghcr.io/spnngl/images/busybox:1.38.0@sha256:6a852a5498bfb42b22dd7ee71cdd85f20c105063a8f7958498f70f31760903c4
+FROM ghcr.io/spnngl/images/busybox:1.38.0@sha256:3281aad061d4f82e17a379d525ca804b1f4b76284888f70e9ee84a232f7dd866
 ARG BASE_VERSION
 
 # Licenses: git's and OpenSSH's; busybox's comes with the base image.
