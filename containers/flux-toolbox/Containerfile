@@ -25,8 +25,8 @@
 # Versions come from containers/flux-toolbox/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md); git's and kubectl's are
 # these FROM lines, their images' tags.
-FROM ghcr.io/spnngl/images/git:2.56.0@sha256:ae5fcdf83e2ca2d5b6b60f7c51aa7d84962761ea823ab4593d0e9935ccc6ac83 AS base
-FROM ghcr.io/spnngl/images/kubectl:1.37.1@sha256:99ab26c7c6eb3e3a67965bf7a28d373cb88b0c41249fe198ab2656065b01d284 AS kubectl
+FROM ghcr.io/spnngl/images/git:2.56.0@sha256:100678265f22515b97f978f1cf915e3fe611005fee2ec2537cf52addd18bdc33 AS base
+FROM ghcr.io/spnngl/images/kubectl:1.37.1@sha256:fdaa4685717804265a6906f223fce1b2dd42a7a947519d8842372d45af9eb566 AS kubectl
 
 # The build stage is the base itself: busybox has what checking and
 # unpacking need (sha256sum, tar, gzip), and the binaries are tested on
