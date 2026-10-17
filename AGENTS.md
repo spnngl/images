@@ -43,7 +43,7 @@ that fixes it.
 ```sh
 git ls-files -z '*.sh' | xargs -0 shellcheck
 docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint bootc/*/Containerfile containers/*/Containerfile
-docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.164.7 renovate-config-validator --strict
+docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.165.1 renovate-config-validator --strict
 f=(-f containers/docker-bake.hcl); for x in containers/*/docker-bake.hcl; do f+=(-f "${x}"); done; docker buildx bake "${f[@]}" --print '*' > /dev/null
 ```
 
