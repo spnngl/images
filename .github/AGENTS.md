@@ -29,8 +29,9 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
   `.trivyignore.yaml`, each with its reason.
 - Application images' registries live in `tags()`
   (`containers/docker-bake.hcl`), ghcr.io first: `build-apps.yml`
-  builds, scans and logs in there (`repositories[0]`). A new registry
-  also needs its login and an attestation step in `build-apps.yml`'s
-  `push` job, and a scope in the hosts' signature policy: every
+  builds, scans, logs in and attests there (`repositories[0]`); its
+  `push` job signs in every registry but Docker Hub. A new registry
+  also needs its login in that job and, if signed, a scope in the
+  hosts' signature policy: every
   `bootc/*/sysroot/*/etc/containers/policy.json`, `policy.jq`'s
   `$scopes`, `registries.d/spnngl-images.yaml`.

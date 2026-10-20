@@ -1,10 +1,7 @@
-# Signatures of ghcr.io/spnngl/images/* and their Docker Hub copies,
-# docker.io/loladelannoy/*, are sigstore attachments (sha256-<digest>.sig
-# tags next to the image), signed by CI. Needed to read them (bootc,
-# podman, skopeo) and, on the CI runner, to write them.
+# Signatures of ghcr.io/spnngl/images/* are sigstore attachments
+# (sha256-<digest>.sig tags next to the image), signed by CI. Needed to
+# read them (bootc, podman, skopeo) and, on the CI runner, to write them.
 # See containers-registries.d(5) and bootc/REFERENCES.md, "Signing".
 docker:
   ghcr.io/spnngl/images:
-    use-sigstore-attachments: true
-  docker.io/loladelannoy:
     use-sigstore-attachments: true
