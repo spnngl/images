@@ -5,7 +5,9 @@ which runs `bootc/k3s/install.sh`) ship k3s for both roles, with the
 same binary:
 
 - `k3s.service`: `k3s server`, the control-plane. One per cluster: the
-  datastore is k3s' default, SQLite.
+  datastore is k3s' default, SQLite, with kine's compaction timeout
+  raised to 60s (`k3s.service.d/20-kine-compact-timeout.conf`, reason in
+  `bootc/k3s/REFERENCES.md`).
 - `k3s-agent.service`: `k3s agent`, the workers. Any number.
 
 Both are disabled in the image: each host picks its role once, by hand.
