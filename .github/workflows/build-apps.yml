@@ -100,7 +100,6 @@ jobs:
       # Each target of the Bake files, resolved, as one item:
       # - id: the target's name, <image>-debian<N> or one per release line
       #   (busybox: <image>).
-      # - name: the image, the folder of its context.
       # - file, target: Dalec images' target is the minimal image, from
       #   scratch (see the specs); Containerfiles: none, the last stage.
       # - tags: the first is the scan's baseline.
@@ -153,7 +152,6 @@ jobs:
                 | .value as $target
                 | {
                     id: $id,
-                    name: ($target.context | split("/")[1]),
                     context: $target.context,
                     file: "\($target.context)/\($target.dockerfile)",
                     target: ($target.target // ""),
@@ -236,7 +234,10 @@ jobs:
           - arch: arm64
             runner: ubuntu-26.04-arm
     env:
-      IMAGE: ghcr.io/spnngl/images/${{ matrix.image.name }}
+      # The first tag's repository, ghcr.io's (tags() in
+      # containers/docker-bake.hcl): the platforms are pushed there, the
+      # push job copies them to the others.
+      IMAGE: ${{ matrix.image.repositories[0] }}
       # Same as the push job's: <target>_<arch>.
       ARTIFACT: ${{ matrix.image.id }}_${{ matrix.platform.arch }}
     steps:
@@ -367,7 +368,8 @@ jobs:
     env:
       # The build job's platform list.
       ARCHES: amd64 arm64
-      IMAGE: ghcr.io/spnngl/images/${{ matrix.image.name }}
+      # Where the build job pushed the platforms.
+      IMAGE: ${{ matrix.image.repositories[0] }}
       # Space-separated, the target's tags and their repositories.
       TAGS: ${{ join(matrix.image.tags, ' ') }}
       REPOSITORIES: ${{ join(matrix.image.repositories, ' ') }}
