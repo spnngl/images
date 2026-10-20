@@ -23,5 +23,5 @@ target "kustomize" {
     HELM_VERSION  = helm.version
     HELM_CHECKSUM = helm.checksum
   })
-  tags = tags("kustomize", debian, [base.version])
+  tags = tags("kustomize", [base.version])
 }

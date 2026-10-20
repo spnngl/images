@@ -19,5 +19,5 @@ target "nftables-exporter" {
     BASE_VERSION  = base.version
     BASE_CHECKSUM = base.checksum
   }
-  tags = tags("nftables-exporter", debian, [base.version])
+  tags = tags("nftables-exporter", [base.version])
 }

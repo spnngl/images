@@ -35,7 +35,8 @@ what is tested enough to merge alone (patch and minor),
 `automerge-all` for majors too (`renovate.json5`).
 
 Tags are `<version>`, plus `<major.minor>` for an image with several
-lines. The Containerfile or spec gets the versions as build arguments
+lines, made by `tags()`: on `ghcr.io/spnngl/images/<name>` and
+`docker.io/loladelannoy/<name>`. The Containerfile or spec gets the versions as build arguments
 **without a default** (a Dalec spec: an empty one): a build without
 Bake fails on the first `RUN`, never on a stale version. What differs
 between release lines goes in the Containerfile, as a `case` on

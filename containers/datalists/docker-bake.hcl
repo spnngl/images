@@ -30,5 +30,5 @@ target "datalists" {
     GEOLITE2_COUNTRY_VERSION  = geolite2.country.version
     GEOLITE2_COUNTRY_CHECKSUM = geolite2.country.checksum
   }
-  tags = ["ghcr.io/spnngl/images/datalists:latest"]
+  tags = tags("datalists", ["latest"])
 }

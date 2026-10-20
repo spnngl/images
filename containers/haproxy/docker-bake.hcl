@@ -24,5 +24,5 @@ target "haproxy" {
     BASE_VERSION  = base.version
     BASE_CHECKSUM = base.checksum
   })
-  tags = tags("haproxy", debian, [base.version, line(base.version)])
+  tags = tags("haproxy", [base.version, line(base.version)])
 }

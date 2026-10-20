@@ -19,5 +19,5 @@ target "jellyfin" {
   args = {
     BASE_VERSION = base.version
   }
-  tags = tags("jellyfin", debian, [base.version])
+  tags = tags("jellyfin", [base.version])
 }

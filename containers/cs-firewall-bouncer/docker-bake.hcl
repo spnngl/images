@@ -16,5 +16,5 @@ target "cs-firewall-bouncer" {
     BASE_VERSION  = base.version
     BASE_CHECKSUM = base.checksum
   })
-  tags = tags("cs-firewall-bouncer", debian, [base.version])
+  tags = tags("cs-firewall-bouncer", [base.version])
 }

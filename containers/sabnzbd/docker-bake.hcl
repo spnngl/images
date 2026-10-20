@@ -27,5 +27,5 @@ target "sabnzbd" {
     PAR2_CHECKSUM = par2.checksum
     UV_VERSION    = uv.version
   }
-  tags = tags("sabnzbd", debian, [base.version])
+  tags = tags("sabnzbd", [base.version])
 }

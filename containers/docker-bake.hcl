@@ -26,9 +26,15 @@ function "line" {
 
 # Tags name the upstream version alone (haproxy:3.2.25): Debian only
 # builds the image, and most images are scratch, with no Debian file.
+# Pushed to ghcr.io and Docker Hub, ghcr.io's first: build-apps.yml's scan
+# baseline. Docker Hub has no nested namespace: one repository per image,
+# which the first push creates.
 function "tags" {
-  params = [name, debian, versions]
-  result = [for v in versions : "ghcr.io/spnngl/images/${name}:${v}"]
+  params = [name, versions]
+  result = concat(
+    [for v in versions : "ghcr.io/spnngl/images/${name}:${v}"],
+    [for v in versions : "docker.io/loladelannoy/${name}:${v}"],
+  )
 }
 
 # Arguments of every Containerfile. Not for Dalec specs: Dalec fails on

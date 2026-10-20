@@ -62,7 +62,9 @@
 ## Signing
 
 CI signs every image it pushes with a cosign key pair; hosts refuse
-`ghcr.io/spnngl/images/*` without that signature. Local builds aren't
+`ghcr.io/spnngl/images/*` without that signature, and the application
+images' Docker Hub copies, `docker.io/loladelannoy/*`: the whole
+namespace, so an unsigned image pushed there by hand is refused too. Local builds aren't
 signed: a host installed from one upgrades from CI's signed images.
 
 - **Keys:** the private key is the `COSIGN_PRIVATE_KEY` repository
@@ -83,12 +85,13 @@ signed: a host installed from one upgrades from CI's signed images.
   (`subjectEmail`, `image/signature/fulcio_cert.go`), and a GitHub
   Actions certificate carries the workflow's URL.
 - **`etc/containers/registries.d/spnngl-images.yaml`** turns on
-  `use-sigstore-attachments` for our namespace: to read signatures on
+  `use-sigstore-attachments` for our namespaces: to read signatures on
   hosts and write them in CI.
 - **`etc/containers/policy.json`, one per image and base release**
   (`sysroot/<BASE_VERSION>/`; AlmaLinux 9 uses GPG keys for Red Hat's
   registries, 10 sigstore): the base's file plus `"default": reject` and
-  a `sigstoreSigned` requirement for `ghcr.io/spnngl/images`. It
+  a `sigstoreSigned` requirement for `ghcr.io/spnngl/images` and
+  `docker.io/loladelannoy`. It
   replaces containers-common's (in `/etc`, or `/usr/share/containers`
   on CentOS Stream 10), since `policy.json` has no drop-in folder.
   `bootc/fedora/policy.jq` checks ours is still the base's plus those
