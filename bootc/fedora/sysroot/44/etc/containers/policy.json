@@ -12,12 +12,6 @@
                     "keyPath": "/usr/share/pki/containers/spnngl-images.pub"
                 }
             ],
-            "docker.io/loladelannoy": [
-                {
-                    "type": "sigstoreSigned",
-                    "keyPath": "/usr/share/pki/containers/spnngl-images.pub"
-                }
-            ],
             "": [{ "type": "insecureAcceptAnything" }]
         },
         "containers-storage": { "": [{ "type": "insecureAcceptAnything" }] },
