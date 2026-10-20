@@ -23,7 +23,7 @@
 # Versions come from containers/kustomize/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
 # Debian trixie: its ca-certificates is the CA bundle copied below.
-FROM docker.io/library/golang:1.27-trixie@sha256:47667934874913a449b96faa7ef4777fa285d9ec29126ee80ed61c45b7cccf0e AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:1896654cfc5c2b5ad74c07f29cb36f5d2d1cbed42e3054070fbfe444e521e83c AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
