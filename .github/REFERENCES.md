@@ -90,23 +90,23 @@ Dalec, and one way to build, attest and sign is simpler.
   only this one, by the workflow file's identity. Renaming
   `build-apps.yml` breaks deployments until the policy follows.
 - **Pushed by digest per platform**, merged with attestations by one
-  `docker buildx imagetools create` for all the item's tags, each tag
-  signed with `cosign sign` and checked with `cosign verify`; the scan's
-  baseline is the first tag.
+  `docker buildx imagetools create` for all the item's tags, each
+  ghcr.io tag signed with `cosign sign` and checked with `cosign
+  verify`; the scan's baseline is the first tag.
 - **Docker Hub too:** `tags()` (`containers/docker-bake.hcl`) gives
   each version on ghcr.io and on `docker.io/loladelannoy/<name>`: Docker
   Hub has no nested namespace, so one repository per image, created by
   its first push. Built and scanned once, on ghcr.io; `imagetools create`
   copies the blobs to Docker Hub (`commands/imagetools/create.go` of
-  `github.com/docker/buildx`, one copy per repository of the tags). Each
-  repository gets its own signatures and provenance attestation: both
-  name it. `actions/attest` takes one subject, so one step per
-  repository; `@sigstore/oci` falls back to the referrers tag schema
-  where a registry has no referrers API, and reads Docker Hub's
-  credentials under any of its names (0.7.1+). Credentials:
+  `github.com/docker/buildx`, one copy per repository of the tags), with
+  BuildKit's attestations: one digest on both. Docker Hub's copy isn't
+  signed nor given signed provenance: cosign's manifest reads there hit
+  its pull rate limit (`TOOMANYREQUESTS`), and hosts and Kubernetes
+  admission trust ghcr.io alone. Credentials:
   `vars.DOCKERHUB_USERNAME` and `secrets.DOCKERHUB_TOKEN`, a personal
-  access token, Read & Write. Kubernetes admission still trusts ghcr.io
-  alone.
+  access token, Read & Write; the build jobs log in too, before the
+  builder starts, for authenticated pulls (`moby/buildkit`, the
+  `docker.io` bases).
 - **One `gate` job, the check the `main` ruleset requires:** passes
   when every lint and build job passed or was skipped. The build jobs
   are named after the images that changed, so none can be required

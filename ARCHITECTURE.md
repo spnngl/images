@@ -1,8 +1,8 @@
 # Architecture
 
 Two kinds of OCI image, built by CI and pushed, signed, to
-`ghcr.io/spnngl/images/<name>:<BASE_VERSION>`, application images also
-to Docker Hub, `docker.io/loladelannoy/<name>:<BASE_VERSION>`:
+`ghcr.io/spnngl/images/<name>:<BASE_VERSION>`, application images also,
+unsigned, to Docker Hub, `docker.io/loladelannoy/<name>:<BASE_VERSION>`:
 
 - **bootc images** (`bootc/`): bootable operating systems. A host boots
   from one and updates by pulling a newer one (`bootc upgrade`). Built
