@@ -1,0 +1,162 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.1
+#
+# Transmission (daemon, web UI and transmission-remote) built with Dalec
+# (https://project-dalec.github.io/dalec/): one Debian trixie package,
+# installed into the minimal image of the trixie/container target, built
+# from scratch out of the package's dependency closure: no shell, no apt.
+#
+# Runtime contract: runs as UID/GID 65532 (no passwd entry); /config
+# (settings, torrents, resume data), /downloads and /watch must be writable
+# by it; RPC and web UI on 9091/tcp, peers on 51413/tcp+udp. The image
+# sets no setting: mount a settings.json (AGENTS.md, Settings: what to
+# set, and a read-only mount). The image has no shell: torrent-done
+# scripts must be executables.
+#
+# Renovate bumps the version and checksum in docker-bake.hcl (AGENTS.md,
+# Updates).
+
+# Set by docker-bake.hcl; empty here, Dalec needs them declared
+# (containers/AGENTS.md).
+args:
+  # Transmission's release (the tag has no v) and its tag's commit.
+  BASE_VERSION: ""
+  BASE_CHECKSUM: ""
+
+name: transmission
+description: Transmission, a BitTorrent daemon with a web UI
+website: https://transmissionbt.com
+license: GPL-2.0-only OR GPL-3.0-only
+packager: spnngl/images
+vendor: spnngl/images
+version: ${BASE_VERSION}
+revision: 1
+
+sources:
+  transmission:
+    git:
+      url: https://github.com/transmission/transmission.git
+      commit: ${BASE_VERSION}
+      # The tag must resolve to this commit: tags can be moved.
+      checksum: ${BASE_CHECKSUM}
+
+dependencies:
+  build:
+    build-essential: {}
+    cmake: {}
+    libb64-dev: {}
+    libcurl4-openssl-dev: {}
+    libdeflate-dev: {}
+    libevent-dev: {}
+    libminiupnpc-dev: {}
+    libnatpmp-dev: {}
+    libpsl-dev: {}
+    libssl-dev: {}
+    pkgconf: {}
+    zlib1g-dev: {}
+  runtime:
+    # Trackers' and blocklists' HTTPS (libcurl).
+    ca-certificates: {}
+
+build:
+  env:
+    # Steps don't expand args: the first one reads this.
+    BASE_CHECKSUM: ${BASE_CHECKSUM}
+    # No transmission-dbgsym package: the image would install it.
+    DEB_BUILD_OPTIONS: noautodbgsym
+  # Steps run with sh (dash) from the folder holding one folder per source.
+  steps:
+    # What -V shows after the version: upstream reads it from git, or from
+    # this file when the source has no .git (CMakeLists.txt, TR_VCS_REVISION).
+    - command: |
+        echo "${BASE_CHECKSUM}" > transmission/REVISION
+    # Debian's libraries wherever upstream has a switch, forced (=ON) so a
+    # missing -dev package fails the build instead of bundling silently:
+    # not in trixie, DHT and µTP stay bundled (submodules). The web UI is
+    # prebuilt in the source (no Node.js). No GUI, systemd or translations.
+    # Only the daemon and transmission-remote are built.
+    - command: |
+        cmake -S transmission -B build \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DENABLE_DAEMON=ON -DENABLE_UTILS=ON -DENABLE_CLI=OFF \
+          -DENABLE_GTK=OFF -DENABLE_QT=OFF -DENABLE_MAC=OFF \
+          -DENABLE_TESTS=OFF -DENABLE_NLS=OFF -DINSTALL_DOC=OFF \
+          -DREBUILD_WEB=OFF -DWITH_CRYPTO=openssl -DWITH_SYSTEMD=OFF \
+          -DWITH_INOTIFY=ON \
+          -DUSE_SYSTEM_EVENT2=ON -DUSE_SYSTEM_DEFLATE=ON \
+          -DUSE_SYSTEM_PSL=ON -DUSE_SYSTEM_MINIUPNPC=ON \
+          -DUSE_SYSTEM_NATPMP=ON -DUSE_SYSTEM_B64=ON \
+          -DUSE_SYSTEM_DHT=OFF -DUSE_SYSTEM_UTP=OFF
+        cmake --build build -j"$(nproc)" \
+          --target transmission-daemon transmission-remote
+    # What goes in /usr/lib/transmission: the web UI, where
+    # TRANSMISSION_WEB_HOME points.
+    - command: |
+        mkdir -p out/transmission
+        cp -a transmission/web/public_html out/transmission/
+
+artifacts:
+  binaries:
+    build/daemon/transmission-daemon: {}
+    build/utils/transmission-remote: {}
+  libs:
+    # Installed as /usr/lib/transmission.
+    out/transmission: {}
+  licenses:
+    transmission/COPYING: {}
+    # Bundled third-party code (libutp, libdht, fmt, ...), their texts.
+    transmission/licenses: {}
+
+image:
+  # In the foreground, logging to stderr. The args (cmd) are left to the
+  # user: the settings come from the files (header).
+  entrypoint: /usr/bin/transmission-daemon --foreground
+  env:
+    # The settings, state and torrents. No HOME: only upstream's default
+    # download folder reads it, which settings.json replaces.
+    - TRANSMISSION_HOME=/config
+    # The web UI, not in /usr/share: the image drops it.
+    - TRANSMISSION_WEB_HOME=/usr/lib/transmission/public_html
+  # Not root, numeric so Kubernetes' runAsNonRoot can check it. The image has
+  # no such user: the mounted folders must be writable by this UID/GID.
+  user: "65532:65532"
+  working_dir: /config
+  volumes:
+    /config: {}
+    /downloads: {}
+    /watch: {}
+  labels:
+    org.opencontainers.image.title: transmission
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: GPL-2.0-only OR GPL-3.0-only
+    org.opencontainers.image.source: https://github.com/spnngl/images
+    # RPC and web UI on 9091/tcp, peers on 51413/tcp+udp: Dalec has no
+    # EXPOSE equivalent.
+
+tests:
+  # -V prints to stderr.
+  - name: Transmission starts
+    steps:
+      - command: /usr/bin/transmission-daemon -V
+        stderr:
+          contains:
+            - "transmission-daemon ${BASE_VERSION}"
+      - command: /usr/bin/transmission-remote -V
+        stderr:
+          contains:
+            - "transmission-remote ${BASE_VERSION}"
+  # -d prints the settings the daemon would run with and exits without
+  # writing anything: upstream's defaults, the image sets none. The
+  # checks' quotes are escaped (REFERENCES.md).
+  - name: no image settings
+    steps:
+      - command: /usr/bin/transmission-daemon -d
+        stdout:
+          contains:
+            - '\"rpc_whitelist_enabled\": true'
+            - '\"watch_dir_enabled\": false'
+            - '\"speed_limit_down\": 100'
+  - name: web UI and licenses
+    files:
+      /usr/lib/transmission/public_html/index.html:
+        contains:
+          - Transmission
