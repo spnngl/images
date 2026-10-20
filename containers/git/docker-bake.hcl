@@ -25,5 +25,5 @@ target "git" {
     OPENSSH_VERSION  = openssh.version
     OPENSSH_CHECKSUM = openssh.checksum
   }
-  tags = ["ghcr.io/spnngl/images/git:${base.version}"]
+  tags = tags("git", [base.version])
 }

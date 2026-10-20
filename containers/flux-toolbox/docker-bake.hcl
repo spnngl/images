@@ -44,5 +44,5 @@ target "flux-toolbox" {
     NUSHELL_VERSION        = nushell.version
     NUSHELL_CHECKSUM       = nushell.checksum
   }
-  tags = ["ghcr.io/spnngl/images/flux-toolbox:${trimprefix(base.version, "v")}"]
+  tags = tags("flux-toolbox", [trimprefix(base.version, "v")])
 }

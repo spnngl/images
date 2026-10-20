@@ -12,6 +12,12 @@
                     "keyPath": "/usr/share/pki/containers/spnngl-images.pub"
                 }
             ],
+            "docker.io/loladelannoy": [
+                {
+                    "type": "sigstoreSigned",
+                    "keyPath": "/usr/share/pki/containers/spnngl-images.pub"
+                }
+            ],
             "registry.access.redhat.com": [
                 {
                     "type": "signedBy",

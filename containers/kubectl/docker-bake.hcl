@@ -49,5 +49,5 @@ target "kubectl" {
     GOLANG_TAG    = base.golang.tag
     GOLANG_DIGEST = base.golang.digest
   })
-  tags = tags("kubectl", debian, [base.version, line(base.version)])
+  tags = tags("kubectl", [base.version, line(base.version)])
 }

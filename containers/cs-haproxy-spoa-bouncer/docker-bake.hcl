@@ -16,5 +16,5 @@ target "cs-haproxy-spoa-bouncer" {
     BASE_VERSION  = base.version
     BASE_CHECKSUM = base.checksum
   })
-  tags = tags("cs-haproxy-spoa-bouncer", debian, [base.version])
+  tags = tags("cs-haproxy-spoa-bouncer", [base.version])
 }

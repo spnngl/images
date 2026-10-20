@@ -32,5 +32,5 @@ target "nzbget" {
     RAPIDYENC_VERSION  = rapidyenc.version
     RAPIDYENC_CHECKSUM = rapidyenc.checksum
   }
-  tags = tags("nzbget", debian, [base.version])
+  tags = tags("nzbget", [base.version])
 }
