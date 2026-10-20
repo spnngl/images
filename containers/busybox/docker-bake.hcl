@@ -17,5 +17,5 @@ target "busybox" {
     BASE_VERSION  = replace(base.version, "_", ".")
     BASE_CHECKSUM = base.checksum
   })
-  tags = ["ghcr.io/spnngl/images/busybox:${replace(base.version, "_", ".")}"]
+  tags = tags("busybox", [replace(base.version, "_", ".")])
 }

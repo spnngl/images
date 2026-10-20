@@ -93,6 +93,20 @@ Dalec, and one way to build, attest and sign is simpler.
   `docker buildx imagetools create` for all the item's tags, each tag
   signed with `cosign sign` and checked with `cosign verify`; the scan's
   baseline is the first tag.
+- **Docker Hub too:** `tags()` (`containers/docker-bake.hcl`) gives
+  each version on ghcr.io and on `docker.io/loladelannoy/<name>`: Docker
+  Hub has no nested namespace, so one repository per image, created by
+  its first push. Built and scanned once, on ghcr.io; `imagetools create`
+  copies the blobs to Docker Hub (`commands/imagetools/create.go` of
+  `github.com/docker/buildx`, one copy per repository of the tags). Each
+  repository gets its own signatures and provenance attestation: both
+  name it. `actions/attest` takes one subject, so one step per
+  repository; `@sigstore/oci` falls back to the referrers tag schema
+  where a registry has no referrers API, and reads Docker Hub's
+  credentials under any of its names (0.7.1+). Credentials:
+  `vars.DOCKERHUB_USERNAME` and `secrets.DOCKERHUB_TOKEN`, a personal
+  access token, Read & Write. Kubernetes admission still trusts ghcr.io
+  alone.
 - **One `gate` job, the check the `main` ruleset requires:** passes
   when every lint and build job passed or was skipped. The build jobs
   are named after the images that changed, so none can be required

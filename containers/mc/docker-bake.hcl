@@ -15,5 +15,5 @@ target "mc" {
     BASE_VERSION  = base.version
     BASE_CHECKSUM = base.checksum
   })
-  tags = tags("mc", debian, [base.version])
+  tags = tags("mc", [base.version])
 }

@@ -23,5 +23,5 @@ target "crowdsec" {
     BASE_CHECKSUM = base.checksum
     HUB_CHECKSUM  = hub.checksum
   }
-  tags = tags("crowdsec", debian, [base.version])
+  tags = tags("crowdsec", [base.version])
 }

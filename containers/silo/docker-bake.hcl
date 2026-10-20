@@ -15,5 +15,5 @@ target "silo" {
     BASE_VERSION  = base.version
     BASE_CHECKSUM = base.checksum
   })
-  tags = tags("silo", debian, [base.version])
+  tags = tags("silo", [base.version])
 }

@@ -15,5 +15,5 @@ target "minio" {
     BASE_VERSION  = base.version
     BASE_CHECKSUM = base.checksum
   })
-  tags = tags("minio", debian, [base.version])
+  tags = tags("minio", [base.version])
 }
