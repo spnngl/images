@@ -1,4 +1,4 @@
-# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.1
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.2
 #
 # nftables-exporter (Prometheus metrics of the host's nftables counters,
 # sets, chains and rules) built with Dalec
