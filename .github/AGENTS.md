@@ -23,8 +23,9 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
   same Renovate replacement (`autoReplaceStringTemplate`).
 - An application image needs no `renovate.json5` entry
   (`containers/AGENTS.md`, "Versions"); its PRs point to the *Updates*
-  section of its `AGENTS.md`. A bootc image has a `packageRules` entry,
-  with `prBodyNotes`.
+  section of its `AGENTS.md`. Exceptions: a group for versions that
+  must move in one PR (`nzbget`, `flux-aio`). A bootc image has a
+  `packageRules` entry, with `prBodyNotes`.
 - Vulnerability false positives go in `.grype.yaml` and
   `.trivyignore.yaml`, each with its reason.
 - Application images' registries live in `tags()`

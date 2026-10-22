@@ -1,0 +1,253 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# check=skip=InvalidDefaultArgInFrom
+#
+# Flux (GitOps for Kubernetes) in one image: every controller of one Flux
+# release, each built from source at the tag flux2's manifests/bases/
+# names, on scratch. Upstream ships one Alpine image per controller; these
+# binaries are stripped, and SOPS decrypts without OpenPGP (age, cloud KMS
+# and Vault keys work). Made for flux-aio's Pod
+# (github.com/stefanprodan/flux-aio): one Deployment, hostNetwork, one
+# container per controller. Reasons: containers/flux-aio/REFERENCES.md.
+#
+# Runtime contract:
+# - Each container sets its command, /usr/bin/<controller> (the image has
+#   no ENTRYPOINT), and runs as UID/GID 65532 (no passwd entry) with a
+#   read-only root filesystem, no capability and no-new-privileges.
+# - Ports, all HTTP. Under hostNetwork the controllers share the node's
+#   network, where the defaults collide: each container sets every flag
+#   below. 127.0.0.1 ports serve the other controllers only (a consumer
+#   outside the Pod needs :<port> and a Service). The metrics ports also
+#   serve /debug/pprof/, unauthenticated, on every node address: bind
+#   127.0.0.1:<port> when nothing scrapes them. Probes: /healthz
+#   (liveness) and /readyz (readiness) on the health port.
+#     controller                   flag            default  contract
+#     source-controller            --storage-addr  :9090    127.0.0.1:9790  artifacts
+#                                  --metrics-addr  :8080    :9791
+#                                  --health-addr   :9440    :9792
+#     kustomize-controller         --metrics-addr  :8080    :9793
+#                                  --health-addr   :9440    :9794
+#     helm-controller              --metrics-addr  :8080    :9795
+#                                  --health-addr   :9440    :9796
+#     notification-controller      --events-addr   :9090    127.0.0.1:9690  events
+#                                  --receiverAddr  :9292    :9797  webhook receivers (a Service)
+#                                  --metrics-addr  :8080    :9798
+#                                  --health-addr   :9440    :9799
+#     source-watcher               --storage-addr  :9090    127.0.0.1:9691  artifacts
+#                                  --metrics-addr  :8080    :9692
+#                                  --health-addr   :9440    :9693
+#     image-reflector-controller   --metrics-addr  :8080    :9694
+#                                  --health-addr   :9440    :9695
+#     image-automation-controller  --metrics-addr  :8080    :9696
+#                                  --health-addr   :9440    :9697
+# - Sibling calls: every controller but notification-controller
+#   --events-addr=http://127.0.0.1:9690. kustomize-controller and
+#   helm-controller fetch artifacts through SOURCE_CONTROLLER_LOCALHOST=
+#   127.0.0.1:9790 and SOURCE_WATCHER_LOCALHOST=127.0.0.1:9691,
+#   source-watcher through SOURCE_CONTROLLER_LOCALHOST: they replace the
+#   artifact URL's host with it, choosing source-watcher's when that host
+#   starts with source-watcher. Hence the hosts the artifact servers
+#   advertise, --storage-adv-addr=<controller>.$(RUNTIME_NAMESPACE).svc.cluster.local.
+#   for source-controller and source-watcher (without, the bound address).
+# - kustomize-controller --no-remote-bases=true: Kustomize fetches a
+#   remote base by running git, which the image lacks. Its SOPS decryption
+#   Secret holds no .asc key: importing one runs gpg.
+# - Environment: RUNTIME_NAMESPACE, the Pod's namespace; GOMEMLIMIT, each
+#   container's memory limit.
+# - Volumes: /tmp writable in every container (Git clones, Helm charts,
+#   TUF_ROOT). /data, the artifact storage (--storage-path=/data) of
+#   source-controller and source-watcher, may be one volume for both.
+#   image-reflector-controller's tag database, also /data by default, needs
+#   a volume of its own: it fills the folder's root, and a change of its
+#   storage backend (FluxStorage feature gate) wipes the folder.
+# - Cluster: the CRDs and RBAC of the same Flux release's install.yaml; the
+#   Deployment and CRDs labelled app.kubernetes.io/part-of=flux, which
+#   `flux check` selects. One replica, strategy Recreate: two Pods on one
+#   node collide on the ports.
+
+# Versions come from containers/flux-aio/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md). The golang image too, tag
+# and digest: the Go minor release upstream builds with, not the newest.
+# No default, as for every version: hence the skipped
+# InvalidDefaultArgInFrom check (top of file), and outside Bake the build
+# fails here. Debian trixie: its ca-certificates is the CA bundle copied
+# below.
+ARG GOLANG_TAG
+ARG GOLANG_DIGEST
+FROM docker.io/library/golang:${GOLANG_TAG}@${GOLANG_DIGEST} AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG SOURCE_CONTROLLER_VERSION
+ARG SOURCE_CONTROLLER_CHECKSUM
+ARG KUSTOMIZE_CONTROLLER_VERSION
+ARG KUSTOMIZE_CONTROLLER_CHECKSUM
+ARG HELM_CONTROLLER_VERSION
+ARG HELM_CONTROLLER_CHECKSUM
+ARG NOTIFICATION_CONTROLLER_VERSION
+ARG NOTIFICATION_CONTROLLER_CHECKSUM
+ARG SOURCE_WATCHER_VERSION
+ARG SOURCE_WATCHER_CHECKSUM
+ARG IMAGE_REFLECTOR_CONTROLLER_VERSION
+ARG IMAGE_REFLECTOR_CONTROLLER_CHECKSUM
+ARG IMAGE_AUTOMATION_CONTROLLER_VERSION
+ARG IMAGE_AUTOMATION_CONTROLLER_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): git and go read theirs,
+# and root's (/root) is closed to it. Before SHELL: hadolint (2.15.1)
+# checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: each tag must resolve to its commit. flux2 only gives the
+# versions to check. --keep-git-dir: go build stamps the binaries with the
+# tag and commit (go version -m), which scanners match.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/fluxcd/flux2.git#v${BASE_VERSION} /src/flux2
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${SOURCE_CONTROLLER_CHECKSUM} \
+    https://github.com/fluxcd/source-controller.git#v${SOURCE_CONTROLLER_VERSION} /src/source-controller
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${KUSTOMIZE_CONTROLLER_CHECKSUM} \
+    https://github.com/fluxcd/kustomize-controller.git#v${KUSTOMIZE_CONTROLLER_VERSION} /src/kustomize-controller
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${HELM_CONTROLLER_CHECKSUM} \
+    https://github.com/fluxcd/helm-controller.git#v${HELM_CONTROLLER_VERSION} /src/helm-controller
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${NOTIFICATION_CONTROLLER_CHECKSUM} \
+    https://github.com/fluxcd/notification-controller.git#v${NOTIFICATION_CONTROLLER_VERSION} /src/notification-controller
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${SOURCE_WATCHER_CHECKSUM} \
+    https://github.com/fluxcd/source-watcher.git#v${SOURCE_WATCHER_VERSION} /src/source-watcher
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${IMAGE_REFLECTOR_CONTROLLER_CHECKSUM} \
+    https://github.com/fluxcd/image-reflector-controller.git#v${IMAGE_REFLECTOR_CONTROLLER_VERSION} /src/image-reflector-controller
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${IMAGE_AUTOMATION_CONTROLLER_CHECKSUM} \
+    https://github.com/fluxcd/image-automation-controller.git#v${IMAGE_AUTOMATION_CONTROLLER_VERSION} /src/image-automation-controller
+
+# git refuses a repository another user owns: trust the checkouts, while
+# root.
+RUN git config --system --add safe.directory '/src/*'
+
+# Build as the image's user, not root: upstream's code gets no root, and
+# the source stays root's. WORKDIR creates its folder owned by USER: /out
+# takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Lockstep first: the controllers are exactly flux2's manifests/bases/,
+# each at the tag its kustomization.yaml downloads, and built with the Go
+# minor release of its Dockerfile, or the build fails before compiling (a
+# controller pin moved alone, a controller added, upstream on a new Go).
+# Then upstream's release build (each repository's Dockerfile), without -a
+# and stripped (-s -w), checked from its build info and ELF sections, and
+# run. Reasons: REFERENCES.md.
+# Caches: ids of their own, as root's caches (cs-firewall-bouncer) aren't
+# writable by this user (containers/minio).
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+declare -A version=(
+    [source-controller]="${SOURCE_CONTROLLER_VERSION}"
+    [kustomize-controller]="${KUSTOMIZE_CONTROLLER_VERSION}"
+    [helm-controller]="${HELM_CONTROLLER_VERSION}"
+    [notification-controller]="${NOTIFICATION_CONTROLLER_VERSION}"
+    [source-watcher]="${SOURCE_WATCHER_VERSION}"
+    [image-reflector-controller]="${IMAGE_REFLECTOR_CONTROLLER_VERSION}"
+    [image-automation-controller]="${IMAGE_AUTOMATION_CONTROLLER_VERSION}"
+)
+[ "$(ls flux2/manifests/bases)" = "$(printf '%s\n' "${!version[@]}" | sort)" ]
+go_minor="$(go env GOVERSION | grep -Eo '^go[0-9]+\.[0-9]+')"
+for c in "${!version[@]}"; do
+    grep -F "/releases/download/v${version[${c}]}/${c}.crds.yaml" "flux2/manifests/bases/${c}/kustomization.yaml"
+    grep -Fx "ARG GO_VERSION=${go_minor#go}" "${c}/Dockerfile"
+done
+mkdir /out/bin /out/doc /out/data /out/tmp
+for c in "${!version[@]}"; do
+    case "${c}" in
+        source-watcher) main=./cmd ;;
+        *) main=. ;;
+    esac
+    CGO_ENABLED=0 go build -C "${c}" -trimpath -ldflags "-s -w" -o "/out/bin/${c}" "${main}"
+    info="$(go version -m "/out/bin/${c}")"
+    grep -Fx $'\tbuild\tCGO_ENABLED=0' <<<"${info}"
+    # -trimpath keeps -ldflags out of the build info: the sections tell.
+    # readelf outside the if, so its failure fails the build.
+    sections="$(readelf -S --wide "/out/bin/${c}")"
+    if grep -E ' \.(symtab|debug_[a-z_]+) ' <<<"${sections}"; then exit 1; fi
+    grep -Fx $'\tmod\t'"$(go -C "${c}" list -m)"$'\tv'"${version[${c}]}"$'\t' <<<"${info}"
+    "/out/bin/${c}" --help > /dev/null
+    mkdir "/out/doc/${c}"
+    cp "${c}/LICENSE" "/out/doc/${c}/"
+done
+EORUN
+
+# Under the contract the controllers exec nothing (git for remote bases
+# and gpg for OpenPGP keys, the exceptions, are off) and have no C
+# library: the binaries, the CA bundle for their outbound TLS
+# (Kubernetes API, Git, Helm and OCI registries, notification providers),
+# and the licenses.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Owned by root, not by the build's user: the controllers can't rewrite
+# them.
+COPY --link --from=build --chown=0:0 /out/doc/ /usr/share/doc/flux-aio/
+COPY --link --from=build --chown=0:0 /out/bin/ /usr/bin/
+# Owned by the user: a new Docker volume takes this ownership.
+COPY --link --from=build --chown=65532:65532 /out/data /data
+COPY --link --from=build --chown=65532:65532 /out/tmp /tmp
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+# Sigstore's trust root (source-controller's cosign verification): its
+# default is under HOME, which is / without a passwd entry: read-only.
+ENV TUF_ROOT=/tmp/.sigstore
+
+# Not the 127.0.0.1 ports: nothing outside the Pod reaches them.
+EXPOSE 9791/tcp \
+    9792/tcp \
+    9793/tcp \
+    9794/tcp \
+    9795/tcp \
+    9796/tcp \
+    9797/tcp \
+    9798/tcp \
+    9799/tcp \
+    9692/tcp \
+    9693/tcp \
+    9694/tcp \
+    9695/tcp \
+    9696/tcp \
+    9697/tcp
+VOLUME ["/data", "/tmp"]
+
+# Smoke test: the binaries run on this platform, from scratch. One is
+# enough: the build stage ran each, built alike.
+RUN ["/usr/bin/source-controller", "--help"]
