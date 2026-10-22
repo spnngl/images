@@ -204,6 +204,22 @@
             "groupName": "nzbget"
         },
         {
+            "description": "flux2 and the controllers of its manifests/bases/ (containers/flux-aio): one PR, so a Flux release comes with the controller tags it names. The build fails while a controller's tag is one flux2 doesn't name yet (lockstep): the PR waits for the Flux release. A controller's major release too (separateMajorMinor): alone, it fails lockstep the same way. Not containers/flux-toolbox's flux2: its own automerged PR.",
+            "matchFileNames": ["containers/flux-aio/docker-bake.hcl"],
+            "matchDepNames": [
+                "fluxcd/flux2",
+                "fluxcd/source-controller",
+                "fluxcd/kustomize-controller",
+                "fluxcd/helm-controller",
+                "fluxcd/notification-controller",
+                "fluxcd/source-watcher",
+                "fluxcd/image-reflector-controller",
+                "fluxcd/image-automation-controller"
+            ],
+            "groupName": "flux-aio",
+            "separateMajorMinor": false
+        },
+        {
             "description": "The application images' FROM lines carry a digest. Not the bootc images': see ignorePresets.",
             "matchManagers": ["dockerfile"],
             "matchFileNames": ["containers/**"],
@@ -226,7 +242,7 @@
             "automerge": true
         },
         {
-            "description": "Digests of the images a docker-bake.hcl pins (kubectl's golang builders: one per release line, which a FROM line can't vary): the same as the FROM lines' above.",
+            "description": "Digests of the images a docker-bake.hcl pins (the golang builders of kubectl, one per release line, which a FROM line can't vary, and of flux-aio, upstream's Go minor release): the same as the FROM lines' above.",
             "matchFileNames": ["containers/*/docker-bake.hcl"],
             "matchDatasources": ["docker"],
             "matchUpdateTypes": ["digest"],
