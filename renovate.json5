@@ -155,6 +155,7 @@
             "description": "Build tools that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates (pinned FROM lines: see the weekly rule below).",
             "matchDepNames": [
                 "docker.io/library/golang",
+                "docker.io/library/node",
                 "docker.io/library/rust",
                 "golang-go",
                 "ghcr.io/nushell/nushell",
