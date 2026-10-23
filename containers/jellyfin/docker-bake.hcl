@@ -13,7 +13,7 @@ target "jellyfin" {
     debian = ["13"]
     base = [
       # renovate: datasource=deb depName=jellyfin-server registryUrl=https://repo.jellyfin.org/debian?suite=trixie&components=main&binaryArch=amd64 versioning=loose extractVersion=^(?<version>\d+\.\d+(?:\.\d+)?)\+deb13$
-      { version = "12.2" },
+      { version = "12.3" },
     ]
   }
   args = {
