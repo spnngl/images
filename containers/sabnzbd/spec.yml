@@ -1,4 +1,4 @@
-# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.2
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.3
 #
 # SABnzbd built with Dalec (https://project-dalec.github.io/dalec/): one
 # Debian trixie package (the app, its Python modules, par2cmdline-turbo),
