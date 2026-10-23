@@ -1,4 +1,4 @@
-# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.2
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.3
 #
 # CrowdSec's security engine (crowdsec: the agent and the Local API, cscli,
 # the notification plugins) built with Dalec
