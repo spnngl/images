@@ -22,7 +22,7 @@
 # links (OpenSSL, nghttp2, brotli, zstd, c-ares, libpsl, libidn2), Debian
 # has no static libcurl (containers/git/REFERENCES.md). Its
 # ca-certificates-bundle is the CA bundle copied below.
-FROM docker.io/library/alpine:3.24@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS build
+FROM docker.io/library/alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
@@ -230,7 +230,7 @@ cmp work/object https/object
 kill "${server}"
 EORUN
 
-FROM ghcr.io/spnngl/images/busybox:1.38.0@sha256:71664aa40e24c6274f5ee9a9ea48046058271d90ff7c5a155342a48d7340d138
+FROM ghcr.io/spnngl/images/busybox:1.38.0@sha256:899b79bb57546be5178bd7878d40c8297a0c81c796c1443f9a34771767a0ec94
 ARG BASE_VERSION
 
 # Licenses: git's and OpenSSH's; busybox's comes with the base image.
