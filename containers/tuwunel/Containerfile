@@ -1,0 +1,217 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+
+# Tuwunel, Matrix homeserver (https://tuwunel.chat), built from source as
+# one static glibc binary on scratch: upstream's release image (profile
+# release, feature set all, docker/bake.hcl) with the same paths, but not
+# root, and on an x86-64-v2 baseline.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); /var/lib/tuwunel
+# (database and media) writable by it; TUWUNEL_SERVER_NAME, or a config
+# file (TUWUNEL_CONFIG), none shipped; secrets (registration_token_file
+# and the like) from files, not readable by others. Listens on
+# 0.0.0.0:8008 (TUWUNEL_ADDRESS, TUWUNEL_PORT); 8448 only with direct TLS
+# configured. amd64 needs an x86-64-v2 CPU (SSE4.2, any since ~2009).
+# Probe: exec ["/usr/bin/tuwunel", "--health-check"], no shell needed.
+# Run with --read-only, --cap-drop all, no-new-privileges. A host with
+# many cores needs --pids-limit 16384 or TUWUNEL_DB_POOL_MAX_WORKERS=512,
+# or startup fails with EAGAIN; the default seccomp profile blocks
+# io_uring, and the database falls back to synchronous reads.
+# https://github.com/matrix-construct/tuwunel/blob/main/docs/deploying/container-security.md
+
+# Versions come from containers/tuwunel/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its libclang-dev, liburing-dev and gcc build RocksDB, its
+# ca-certificates is the CA bundle copied below.
+FROM docker.io/library/rust:1.99-trixie@sha256:e259494b14672950a909b4c54527e19d29cae6ebf980672114c8bb85e5594e4a AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# The image's own toolchain (RUST_VERSION is its environment): without it,
+# rustup reads the source's rust-toolchain.toml and downloads upstream's
+# MSRV with rust-analyzer, clippy and four targets.
+ENV RUSTUP_TOOLCHAIN=${RUST_VERSION}
+# No passwd entry for the build user below: HOME is for the tools that
+# still look (git, for the rust-rocksdb checkout).
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# libclang-dev: bindgen generates RocksDB's bindings (none pregenerated).
+# liburing-dev: io_uring, with the liburing.a linked below. pkg-config:
+# finds liburing. cargo-auditable: embeds the dependency list in the
+# binary, for the SBOM and the vulnerability scans. ca-certificates:
+# copied into the image below. gcc, g++ and libc6-dev (libc.a) come with
+# the base image.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates cargo-auditable libclang-dev liburing-dev pkg-config
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# No .git: the version is the crate's (src/core/info/version.rs).
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/matrix-construct/tuwunel.git#v${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: neither the crates' build
+# scripts nor the server get root, and the source stays root's. No passwd
+# entry needed: CARGO_HOME and RUSTUP_HOME are set. WORKDIR creates its
+# folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Static glibc binary, as upstream's release image (docker/bake.hcl,
+# static_rustflags and static_libs): crt-static, static relocation model,
+# the C++ runtime, libc and liburing archives. glibc, not musl: RocksDB
+# is C++ (Debian has no musl libstdc++) and on musl its allocations
+# bypass jemalloc. CXXSTDLIB="": rust-rocksdb's cc build would add a
+# dynamic libstdc++, which leaves unresolved relocations in a static
+# binary (upstream's docker/Dockerfile.cargo). --target: RUSTFLAGS then
+# skip build scripts and proc macros, which must stay dynamic to load
+# libclang. x86-64-v2: RocksDB's build.rs follows target features and
+# enables SSE4.2, its hardware CRC; arm64 keeps the default baseline.
+# Features: upstream's `all` set (docker/bake.hcl, cargo_feat_sets):
+# tokio_console and tuwunel_mods need cfg flags upstream only sets on
+# nightly, so they are compiled in and inactive, as upstream's image.
+# Caches: uid sets the owner of a new cache only, and one is shared by
+# every build that uses its id (the target by default): ids of their own,
+# as containers/garage does. The git cache: rust-rocksdb is a git
+# dependency, with the RocksDB submodule.
+RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-git-65532,uid=65532,gid=65532,target=/usr/local/cargo/git \
+    --mount=type=cache,id=tuwunel-target-65532,uid=65532,gid=65532,target=/src/target \
+    <<EORUN
+target="$(uname -m)-unknown-linux-gnu"
+export CXXSTDLIB=""
+RUSTFLAGS="-C relocation-model=static -C target-feature=+crt-static -C link-arg=-l:libstdc++.a -C link-arg=-l:libc.a -C link-arg=-l:libm.a -C link-arg=-l:liburing.a"
+case "$(uname -m)" in
+x86_64) RUSTFLAGS+=" -C target-cpu=x86-64-v2" ;;
+esac
+export RUSTFLAGS
+cargo auditable build \
+    --locked --release --target "${target}" --package tuwunel --bin tuwunel \
+    --no-default-features \
+    --features brotli_compression,bzip2_compression,console,direct_tls,element_hacks,gzip_compression,io_uring,jemalloc,jemalloc_conf,jemalloc_prof,jemalloc_stats,ldap,lz4_compression,media_thumbnail,perf_measurements,release_max_log_level,sentry_telemetry,systemd,tokio_console,tuwunel_mods,url_preview,zstd_compression
+cp "target/${target}/release/tuwunel" /out/
+# A dynamic binary does not run on scratch.
+if ldd /out/tuwunel > /dev/null 2>&1; then
+    echo "expected a static binary" >&2
+    exit 1
+fi
+EORUN
+
+# Server smoke test, here because scratch has no shell to run it: the
+# version, then a server with registration by token and no federation (no
+# key fetch from other servers), a user, a room and a message written and
+# read back through the client API, then a graceful stop, and the same
+# database reopened with the message still there. Random throwaway
+# secrets. The JSON is read with sed: no jq in this image.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN <<EORUN
+/out/tuwunel --version | grep -F "${BASE_VERSION}"
+hex() { od -An -vtx1 -N16 /dev/urandom | tr -d ' \n'; }
+export TUWUNEL_SERVER_NAME=localhost
+export TUWUNEL_ADDRESS=127.0.0.1
+export TUWUNEL_DATABASE_PATH=/tmp/smoke-db
+export TUWUNEL_ALLOW_FEDERATION=false
+export TUWUNEL_ALLOW_REGISTRATION=true
+TUWUNEL_REGISTRATION_TOKEN="token$(hex)"
+export TUWUNEL_REGISTRATION_TOKEN
+export TUWUNEL_ERROR_ON_UNKNOWN_CONFIG_OPTS=true
+api=http://127.0.0.1:8008/_matrix/client/v3
+serve() {
+    /out/tuwunel &
+    server=$!
+    curl -fsS --retry 300 --retry-delay 1 --retry-connrefused http://127.0.0.1:8008/_tuwunel/server_version
+    /out/tuwunel --health-check
+}
+stop() {
+    kill "${server}"
+    wait "${server}"
+}
+json() { sed -n "s/.*\"$1\":\"\([^\"]*\)\".*/\1/p"; }
+
+serve
+password="$(hex)"
+session="$(curl -sS -X POST "${api}/register" -d '{}' | json session)"
+token="$(curl -fsS -X POST "${api}/register" -d "{\"username\":\"smoke\",\"password\":\"${password}\",\"auth\":{\"type\":\"m.login.registration_token\",\"token\":\"${TUWUNEL_REGISTRATION_TOKEN}\",\"session\":\"${session}\"}}" | json access_token)"
+auth=(-H "Authorization: Bearer ${token}")
+room="$(curl -fsS "${auth[@]}" -X POST "${api}/createRoom" -d '{"name":"smoke"}' | json room_id | sed 's/!/%21/;s/:/%3A/')"
+body="hello-$(hex)"
+curl -fsS "${auth[@]}" -X PUT "${api}/rooms/${room}/send/m.room.message/smoke" -d "{\"msgtype\":\"m.text\",\"body\":\"${body}\"}"
+curl -fsS "${auth[@]}" "${api}/rooms/${room}/messages?dir=b&limit=10" | grep -F "${body}"
+stop
+
+serve
+curl -fsS "${auth[@]}" "${api}/rooms/${room}/messages?dir=b&limit=10" | grep -F "${body}"
+stop
+rm -r /tmp/smoke-db
+EORUN
+
+# State directory, owned by the image's user: a named volume mounted
+# there starts with that owner, so it is writable without a chown.
+RUN mkdir -p /out/var/lib/tuwunel
+
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# Upstream image's paths (/usr/bin/tuwunel, /var/lib/tuwunel), so upstream's
+# docs apply as is. CA bundle: federation, URL previews, LDAP, Sentry
+# (rustls-platform-verifier reads this path); refreshed by the weekly
+# rebuild. root's, not the build user's: the server can't replace its own
+# binary.
+COPY --link --from=build --chown=0:0 /out/tuwunel /usr/bin/tuwunel
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Apache-2.0: the source is upstream's tag.
+COPY --link --from=build /src/LICENSE /usr/share/doc/tuwunel/
+COPY --link --from=build --chown=65532:65532 /out/var/lib/tuwunel/ /var/lib/tuwunel/
+
+# Numeric, so runAsNonRoot can check it. No privilege needed: every port
+# is above 1024.
+USER 65532:65532
+
+# The default address is loopback, unreachable from outside a container.
+# One address, not ["0.0.0.0", "::"]: an address set must bind or the
+# server refuses to start, and "::" is dual-stack on Linux, so the pair
+# collides, and "::" alone fails where IPv6 is off. IPv6-only: set it to
+# "::".
+ENV TUWUNEL_ADDRESS=0.0.0.0
+
+# Client and federation API (8008, upstream's default), and 8448, the
+# federation port, used only with direct TLS configured. Documentation
+# only.
+EXPOSE 8008/tcp 8448/tcp
+# Database and media.
+VOLUME ["/var/lib/tuwunel"]
+
+# Arguments are Tuwunel's: `docker run <image> --config /etc/tuwunel.toml`.
+ENTRYPOINT ["/usr/bin/tuwunel"]
+
+# Smoke test: the binary is static and runs on this platform (the build
+# stage tested the server).
+RUN ["/usr/bin/tuwunel", "--version"]
