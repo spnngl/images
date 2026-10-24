@@ -130,6 +130,10 @@ Dalec, and one way to build, attest and sign is simpler.
   limits. A mirror's path goes after `/v2`
   (`newMirrorRegistryHost`): `library/<image>` is fetched as
   `public.ecr.aws/docker/library/<image>`, checked with a local build.
+  Not Microsoft's `mcr.microsoft.com/mirror/docker/library`: a few
+  hand-picked images and tags (it has `debian:trixie`, but not
+  `debian:trixie-slim`, `golang`, `rust`, `node` nor `alpine` at the
+  tags pinned here), so nearly every pull would miss and cost a request.
   Not a mirror of our own: nothing to copy, sign or update.
 - **One `gate` job, the check the `main` ruleset requires:** passes
   when every lint and build job passed or was skipped. The build jobs
