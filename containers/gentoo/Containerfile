@@ -1,8 +1,9 @@
 # syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 #
 # Gentoo's stage3 (https://wiki.gentoo.org/wiki/Stage_file) of one
-# flavor, the image's tag (musl-hardened-systemd), as Gentoo ships it: a
-# build environment for CI jobs that compile Gentoo packages.
+# flavor, named by the image's tag (musl-hardened: OpenRC;
+# musl-hardened-systemd), as Gentoo ships it: a build environment for CI
+# jobs that compile Gentoo packages.
 #
 # Runtime contract: root (emerge installs into the system), bash by
 # default. The ebuild repository is the job's: run `emerge-webrsync`
