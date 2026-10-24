@@ -65,6 +65,9 @@ By what the app needs at runtime; name that need in the image's
   dpkg status (`containers/haproxy`).
 - Data other images copy (lists, databases): `containers/datalists`,
   on `scratch`, tagged `latest`.
+- A distribution's root filesystem, for CI jobs that build its
+  packages: `containers/gentoo`, Gentoo's stage3 on `scratch`, unpinned
+  and tagged by flavor.
 - Docker's hardened Debian packages and the DHI catalog's build steps:
   a DHI definition, skill `add-dhi-image`. When to pick it over Dalec
   is not decided yet.
@@ -80,11 +83,15 @@ By what the app needs at runtime; name that need in the image's
   (kubectl's golang) comes from Bake instead: a `FROM` line can't vary.
 - **Shell-less**: the final image has no shell, so everything it runs is
   exec form, with absolute paths. Busybox excepted: a shell is its
-  purpose; and git, built `FROM` busybox: hooks, aliases and some of
-  its commands run through `/bin/sh`.
+  purpose; git, built `FROM` busybox: hooks, aliases and some of its
+  commands run through `/bin/sh`; and gentoo, a build environment.
 - **User** `65532:65532`, numeric so `runAsNonRoot` can check it. Root
   only when the app needs it, with the reason in the header
-  (`cs-firewall-bouncer`, `nftables-exporter`).
+  (`cs-firewall-bouncer`, `nftables-exporter`, `gentoo`).
+- **File times**: CI clamps the layers' file times to
+  `SOURCE_DATE_EPOCH`. An image whose file times matter sets
+  `output = ["type=image,rewrite-timestamp=false"]` on its target;
+  `build-apps.yml` reads that option alone (`containers/gentoo`).
 - **Runtime contract** (ports, volumes, environment) lives in the
   Containerfile's or spec's header, or in the image's `AGENTS.md`.
 
