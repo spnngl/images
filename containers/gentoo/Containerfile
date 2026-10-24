@@ -1,0 +1,84 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Gentoo's stage3 (https://wiki.gentoo.org/wiki/Stage_file) of one
+# flavor, the image's tag (musl-hardened-systemd), as Gentoo ships it: a
+# build environment for CI jobs that compile Gentoo packages.
+#
+# Runtime contract: root (emerge installs into the system), bash by
+# default. The ebuild repository is the job's: run `emerge-webrsync`
+# first. No port, no volume.
+
+# The flavor comes from containers/gentoo/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md). Each build takes Gentoo's
+# latest stage3 (containers/gentoo/REFERENCES.md).
+# Debian trixie fetches, checks and unpacks it.
+FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS fetch
+
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG FLAVOR
+ARG TARGETARCH
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Checks first: the build args come from Bake, the Debian release is the
+# one they name, the platform one Gentoo names as Docker does.
+# curl and ca-certificates fetch the stage3; xz-utils decompresses it.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${FLAVOR:?build with docker buildx bake, see containers/AGENTS.md}"
+case "${TARGETARCH}" in amd64 | arm64) ;; *) exit 1 ;; esac
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl xz-utils
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# Gentoo's service keys, and the flavor's latest file (the newest
+# stage3's path, signed). BuildKit fetches both on every build: the next
+# step reruns when they changed.
+ADD --link https://qa-reports.gentoo.org/output/service-keys.gpg /stage3/
+ADD --link https://distfiles.gentoo.org/releases/${TARGETARCH}/autobuilds/latest-stage3-${TARGETARCH}-${FLAVOR}.txt /stage3/latest.txt
+
+# Every signature matches the pinned fingerprint of Gentoo's release key;
+# the stage3's path comes from the verified latest file and names this
+# platform and flavor. Unpacked as Gentoo's handbook does: owners by
+# number, extended attributes kept (REFERENCES.md).
+WORKDIR /stage3
+RUN <<EORUN
+key=13EBBDBEDE7A12775DFDB1BABB572E0E2D182910
+[ "$(sqv --keyring service-keys.gpg --cleartext --output latest.verified latest.txt)" = "${key}" ]
+stamp='[0-9]{8}T[0-9]{6}Z'
+path="$(grep -xE "${stamp}/stage3-${TARGETARCH}-${FLAVOR}-${stamp}\.tar\.xz [0-9]+" latest.verified | cut -d ' ' -f 1)"
+stage3="$(basename "${path}")"
+url="https://distfiles.gentoo.org/releases/${TARGETARCH}/autobuilds/${path}"
+curl -fsSL --proto '=https' --remote-name-all "${url}" "${url}.asc"
+[ "$(sqv --keyring service-keys.gpg --signature-file "${stage3}.asc" "${stage3}")" = "${key}" ]
+mkdir /rootfs
+tar -xpf "${stage3}" -C /rootfs --xattrs --xattrs-include='*.*' --numeric-owner
+rm "${stage3}" "${stage3}.asc"
+EORUN
+
+FROM scratch
+
+# source: links the ghcr.io package to this repository. Version and
+# licenses: see REFERENCES.md.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="gentoo" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=fetch /rootfs/ /
+
+CMD ["/bin/bash"]
+
+# Smoke test: portage runs, and gcc builds a program that runs against
+# the stage3's libc. Exec form, so images built on this one inherit no
+# SHELL; /tmp a tmpfs, so the layer stays empty.
+RUN --mount=type=tmpfs,target=/tmp \
+    ["/bin/bash", "-xeuc", "emerge --version; gcc -x c -o /tmp/hello - <<< 'int puts(const char *); int main(void) { return puts(\"ok\") < 0; }'; [ \"$(/tmp/hello)\" = ok ]"]

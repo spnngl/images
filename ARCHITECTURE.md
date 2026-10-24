@@ -9,8 +9,9 @@ unsigned, to Docker Hub, `docker.io/loladelannoy/<name>:<BASE_VERSION>`:
   with podman; `bootc/build.sh` also turns one into a qcow2 disk image
   for the first install, with image-builder.
 - **Application images** (`containers/`): upstream apps the hosts run,
-  shell-less (busybox excepted: a shell is its purpose; and git, built
-  on it: its hooks and aliases need one), from a
+  shell-less (busybox excepted: a shell is its purpose; git, built on
+  it: its hooks and aliases need one; and gentoo, a build environment
+  for CI jobs), from a
   Containerfile on `scratch`, a Dalec spec, or a DHI definition. Built with `docker buildx`.
 
 The two share no build input: different builders, workflows and rules.
@@ -20,6 +21,7 @@ The two share no build input: different builders, workflows and rules.
 1. **Pin:** Renovate tracks every version (base image, upstream
    release, checksum; application images: in `docker-bake.hcl`) and
    proposes bumps (the Debian snapshot and digests on Saturdays).
+   Gentoo's stage3 excepted: each build takes the latest.
 2. **Build:** on a change, CI builds each platform natively, runs the
    image's tests, and pushes one manifest list per image.
 3. **Rebuild:** every Sunday, so images pick up base and package fixes
