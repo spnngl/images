@@ -253,7 +253,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Docker Hub: the pulls the mirror below misses are authenticated,
+      # Docker Hub: the pulls the mirrors below miss are authenticated,
       # under the account's rate limit rather than the runner IP's
       # anonymous one.
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
@@ -263,16 +263,17 @@ jobs:
 
       # A docker-container builder: the default docker driver can't add
       # provenance and SBOM attestations.
-      # Pulls go to mirror.gcr.io, outside Docker Hub's pull rate limit
-      # (.github/REFERENCES.md): the builder's image (setup-buildx's
-      # default tag), then BuildKit's docker.io pulls, which fall back to
-      # docker.io for an image the cache lacks.
+      # Pulls go to mirrors, outside Docker Hub's pull rate limit
+      # (.github/REFERENCES.md): the builder's image to mirror.gcr.io
+      # (setup-buildx's default tag); BuildKit's docker.io pulls to
+      # mirror.gcr.io, then public.ecr.aws (official images only), then
+      # docker.io.
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
         with:
           driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
           buildkitd-config-inline: |
             [registry."docker.io"]
-              mirrors = ["mirror.gcr.io"]
+              mirrors = ["mirror.gcr.io", "public.ecr.aws/docker"]
 
       # The discover item's fields; no target for a Containerfile (its
       # last stage).
