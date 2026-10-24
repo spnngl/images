@@ -1,0 +1,144 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Artifact Hub exporter (Prometheus metrics of Artifact Hub packages and
+# repositories, Go) built from source as tagged, no patch, one static
+# binary on scratch. Upstream (spnngl/artifacthub-exporter) publishes a
+# deb and an rpm, no image: this is the one its README names.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); metrics on 8080/tcp
+# at /metrics (WEB_ADDR, WEB_PATH); at least one target among
+# ARTIFACTHUB_ORGS, ARTIFACTHUB_USERS, ARTIFACTHUB_REPOSITORIES,
+# ARTIFACTHUB_PACKAGES and ARTIFACTHUB_HUB_STATS, or it exits; outbound
+# https to ARTIFACTHUB_URL (https://artifacthub.io by default, verified
+# against the CA bundle), with ARTIFACTHUB_API_KEY_ID and
+# ARTIFACTHUB_API_KEY_SECRET optional, both or neither. No volume: it
+# writes nothing. Runs with a read-only root filesystem, no capability
+# and no-new-privileges.
+
+# Versions come from containers/artifacthub-exporter/docker-bake.hcl:
+# build with `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates is the CA bundle copied below, and
+# the one the server test reaches Artifact Hub with.
+FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads it, and
+# root's (/root) is closed to it. Before SHELL: hadolint (2.15.1) checks
+# the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# ca-certificates: copied into the image below.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# No .git: -X main.version below sets the version.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/spnngl/artifacthub-exporter.git#v${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: the exporter doesn't get
+# root, and the source stays root's. WORKDIR creates its folder owned by
+# USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (.goreleaser.yaml: CGO_ENABLED=0, -trimpath,
+# -s -w), with the version its --version prints
+# (cmd/artifacthub-exporter/main.go).
+# Caches: containers/minio's ids, the same user.
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=${BASE_VERSION}" \
+    -o /out/artifacthub-exporter ./cmd/artifacthub-exporter
+
+# Server smoke test, here because scratch has no shell to run it, and
+# because exporter releases and golang bumps are automerged on it. The
+# real Artifact Hub (https://artifacthub.io), through the CA bundle the
+# image ships, with five requests: one package, Artifact Hub's own chart
+# (repository search, package search, details, views; its repository
+# holds fewer packages than a search page), and the hub's totals, in that order,
+# one request a second. Live numbers: the checks want each metric, not
+# its value. Then a clean stop: SIGTERM exits 0.
+# kill (DL3001) stops the exporter this step started, not a container's.
+# hadolint ignore=DL3001
+RUN <<EORUN
+/out/artifacthub-exporter --version | grep -Fx "artifacthub-exporter ${BASE_VERSION}"
+ARTIFACTHUB_PACKAGES=helm/artifact-hub/artifact-hub ARTIFACTHUB_HUB_STATS=true \
+    WEB_ADDR=127.0.0.1:8080 /out/artifacthub-exporter &
+exporter=$!
+# The hub is collected last: its timestamp ends the collection. 180 s: the
+# exporter waits 30 s, then 60 s, on a 429 (client.go).
+# kill -0: an exporter that exited (a renamed variable) fails the step
+# at once, instead of after the whole wait.
+for _ in $(seq 180); do
+    kill -0 "${exporter}"
+    if curl -fsS -o /tmp/metrics http://127.0.0.1:8080/metrics &&
+        grep -q '^artifacthub_collection_last_success_timestamp_seconds{target="hub"} ' /tmp/metrics; then
+        break
+    fi
+    sleep 1
+done
+grep -E '^artifacthub_package_stars\{kind="helm",package="artifact-hub",repository="artifact-hub"\} [0-9]' /tmp/metrics
+grep -E '^artifacthub_package_info\{.*,package="artifact-hub",.*,version="[0-9][^"]*"\} 1$' /tmp/metrics
+grep -E '^artifacthub_hub_packages [1-9]' /tmp/metrics
+# A failed call holds a target's timestamp back: the package's proves none.
+grep -q '^artifacthub_collection_last_success_timestamp_seconds{target="package:helm/artifact-hub/artifact-hub"} ' /tmp/metrics
+kill "${exporter}"
+wait "${exporter}"
+rm /tmp/metrics
+EORUN
+
+# The exporter execs nothing and has no C library: the binary, the CA
+# bundle for https to Artifact Hub, and the license (Apache-2.0: its text
+# ships with the binary; upstream has no NOTICE).
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /usr/share/doc/artifacthub-exporter/
+# Owned by root, not by the build's user: the exporter can't rewrite its
+# binary.
+COPY --link --from=build --chown=0:0 /out/artifacthub-exporter /usr/bin/
+
+# Numeric, so runAsNonRoot can check it. No privilege needed: the port is
+# above 1024.
+USER 65532:65532
+
+EXPOSE 8080/tcp
+
+# Settings are variables (upstream's Config): nothing in CMD to replace.
+ENTRYPOINT ["/usr/bin/artifacthub-exporter"]
+
+# Smoke test: the binary runs on this platform (the build stage tested the
+# server).
+RUN ["/usr/bin/artifacthub-exporter", "--version"]
