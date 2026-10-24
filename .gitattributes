@@ -1,0 +1,16 @@
+# Line endings and diffs. Rules from github.com/gitattributes/gitattributes
+# (Common, Go), only for the files this repository has.
+
+# LF on every platform: every file ends up on Linux, in an image or a
+# host (Containerfile heredocs, scripts, sysroot configs), where a CR
+# breaks bash, sudoers, sysctl and systemd. Git detects binaries.
+*          text=auto eol=lf
+
+# Hunk headers name the enclosing section or function: git's built-in
+# diff drivers.
+*.md       diff=markdown
+*.go       diff=golang
+*.sh       diff=bash
+
+# Patches apply to upstream's files: kept byte for byte, CRs included.
+*.patch    -text
