@@ -113,11 +113,17 @@ Dalec, and one way to build, attest and sign is simpler.
   limit. The builder's image is pulled from it (setup-buildx's
   `driver-opts`, its default tag), and BuildKit's `docker.io` pulls go to
   it first: the bases, the `# syntax=` frontend, the SBOM scanner
-  (`buildkitd-config-inline`). BuildKit falls back to `docker.io` for an
-  image the cache lacks (`util/resolver/resolver.go` of
-  `github.com/moby/buildkit`, `NewRegistryConfig`: the mirrors, then the
-  host); the builder's image has no fallback. Not a mirror of our own:
-  nothing to copy, sign or update.
+  (`buildkitd-config-inline`). BuildKit tries the mirrors in order, then
+  `docker.io` (`util/resolver/resolver.go` of `github.com/moby/buildkit`,
+  `NewRegistryConfig`); the builder's image has no fallback. Second
+  mirror, in case Google's cache lacks an image or fails:
+  `public.ecr.aws/docker`, AWS's copy of Docker Hub's official images
+  (`docker.io/library/*` only: not `docker/dockerfile`, `moby/buildkit`
+  nor the SBOM scanner), anonymous pulls under ECR Public's per-IP
+  limits. A mirror's path goes after `/v2`
+  (`newMirrorRegistryHost`): `library/<image>` is fetched as
+  `public.ecr.aws/docker/library/<image>`, checked with a local build.
+  Not a mirror of our own: nothing to copy, sign or update.
 - **One `gate` job, the check the `main` ruleset requires:** passes
   when every lint and build job passed or was skipped. The build jobs
   are named after the images that changed, so none can be required
