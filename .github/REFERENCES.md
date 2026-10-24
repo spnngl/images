@@ -104,9 +104,20 @@ Dalec, and one way to build, attest and sign is simpler.
   its pull rate limit (`TOOMANYREQUESTS`), and hosts and Kubernetes
   admission trust ghcr.io alone. Credentials:
   `vars.DOCKERHUB_USERNAME` and `secrets.DOCKERHUB_TOKEN`, a personal
-  access token, Read & Write; the build jobs log in too, before the
-  builder starts, for authenticated pulls (`moby/buildkit`, the
-  `docker.io` bases).
+  access token, Read & Write; the build jobs log in too, for
+  authenticated pulls of what the mirror below misses.
+- **Pulls through `mirror.gcr.io`:** Docker Hub's pull rate limit
+  (`429 Too Many Requests`) is the account's, shared by every build job.
+  `mirror.gcr.io`, Google's cache of Docker Hub, serves its images
+  unchanged (same digests, so the pinned ones still hold), outside that
+  limit. The builder's image is pulled from it (setup-buildx's
+  `driver-opts`, its default tag), and BuildKit's `docker.io` pulls go to
+  it first: the bases, the `# syntax=` frontend, the SBOM scanner
+  (`buildkitd-config-inline`). BuildKit falls back to `docker.io` for an
+  image the cache lacks (`util/resolver/resolver.go` of
+  `github.com/moby/buildkit`, `NewRegistryConfig`: the mirrors, then the
+  host); the builder's image has no fallback. Not a mirror of our own:
+  nothing to copy, sign or update.
 - **One `gate` job, the check the `main` ruleset requires:** passes
   when every lint and build job passed or was skipped. The build jobs
   are named after the images that changed, so none can be required
