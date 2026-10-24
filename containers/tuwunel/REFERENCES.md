@@ -30,7 +30,10 @@
 - **`CXXSTDLIB=""` and the `-l:lib*.a` arguments:** rust-rocksdb's build
   emits a dynamic `stdc++`, which leaves unresolved relocations in a
   static binary with no loader (`docker/Dockerfile.cargo`). The C++
-  runtime, libc, libm and liburing come from their archives instead.
+  runtime, libc, libm, liburing and libgcc come from their archives
+  instead. libgcc last: rustc links with `-nodefaultlibs`, and without it
+  libstdc++.a leaves `__aarch64_swp4_acq_rel` and `__eqtf2` undefined on
+  arm64 (first CI run).
 - **`--target` given:** `RUSTFLAGS` then skip build scripts and proc
   macros, which must stay dynamic to load libclang (bindgen).
 - **gcc, not clang:** upstream compiles with clang and rust-lld. The
