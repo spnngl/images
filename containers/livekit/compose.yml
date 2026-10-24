@@ -1,0 +1,24 @@
+# By-hand test of LiveKit's media path, and an example deployment: the build's
+# server test covers HTTP, keys and the room API, not ICE, DTLS or RTP.
+#
+#   export LIVEKIT_VERSION=<BASE_VERSION>
+#   export LIVEKIT_KEYS="devkey: $(openssl rand -hex 32)"
+#   docker compose -f containers/livekit/compose.yml up
+#
+# Then join one room from two browsers (https://meet.livekit.io, custom
+# server ws://<host>:7880, tokens from `lk token create`): audio and video
+# flow both ways. Host network: the server advertises the address of its
+# interfaces; a bridge network would advertise the container's.
+services:
+  livekit:
+    image: ghcr.io/spnngl/images/livekit:${LIVEKIT_VERSION:?set LIVEKIT_VERSION}
+    network_mode: host
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # SIGTERM drains: the server waits for every participant to leave.
+    stop_grace_period: 10m
+    environment:
+      LIVEKIT_KEYS: ${LIVEKIT_KEYS:?set LIVEKIT_KEYS}
+    volumes:
+      - ./config.yaml:/etc/livekit/config.yaml:ro

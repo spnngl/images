@@ -1,0 +1,171 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# LiveKit server (https://livekit.io), the WebRTC SFU, built from source as
+# one static Go binary on scratch: close to upstream's livekit/livekit
+# (same build, same entrypoint), but on scratch rather than Alpine, not
+# root, and with a default config path.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); no volume, the server
+# writes nothing. Config at /etc/livekit/config.yaml (the default CMD;
+# config.yaml next to this file is an example), or in LIVEKIT_CONFIG,
+# which wins over the file. API keys in LIVEKIT_KEYS ("<key>: <secret>"),
+# or a key_file: an absolute path (a "~" makes the server run a shell the
+# image doesn't have) not readable by others (mode 0440 or 0400; a Docker
+# secret's 0444 is refused, Kubernetes needs defaultMode 0440).
+# Ports: 7880/tcp (HTTP, WebSocket, API, health: GET / answers 200 once
+# the node is ready), 7881/tcp (WebRTC over TCP), 7882/udp (WebRTC over
+# UDP, config.yaml's udp_port; upstream's default outside --dev is
+# 50000-60000/udp); optional: TURN (turn.*), Prometheus (prometheus.port).
+# The server advertises the address of its network interfaces: run it on
+# the host network, or set NODE_IP (or rtc.node_ip) and publish the
+# ports. No ENV here: the variables and flags the server reads (NODE_IP,
+# UDP_PORT, REDIS_HOST...) override the config file. Runs with a
+# read-only root filesystem, no capability and no-new-privileges. SIGTERM
+# drains: the server waits, without limit, for every participant to
+# leave; a second signal forces the stop. Set the orchestrator's grace
+# period to match (compose.yml).
+# https://docs.livekit.io/transport/self-hosting/deployment/
+
+# Versions come from containers/livekit/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates is the CA bundle copied below, and
+# openssl signs the smoke test's token.
+FROM docker.io/library/golang:1.27-trixie@sha256:1896654cfc5c2b5ad74c07f29cb36f5d2d1cbed42e3054070fbfe444e521e83c AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads its own, and
+# root's (/root) is closed to it. GOTOOLCHAIN: build with this image's Go
+# (as upstream's Dockerfile does), never download another: a go.mod that
+# needs a newer one fails the build. Before SHELL: hadolint (2.15.1)
+# checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+ENV GOTOOLCHAIN=local
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# openssl: signs the smoke test's API token. ca-certificates: copied into
+# the image below.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates openssl
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# No .git: the version is a constant in version/version.go.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/livekit/livekit.git#v${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: neither the module's code
+# nor the server get root, and the source stays root's. WORKDIR creates
+# its folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release regenerates pkg/service/wire_gen.go before building
+# (goreleaser's `go generate ./...`, docker.yaml's `mage generate`); this
+# build uses the committed file. `wire diff` only reads: it exits 1 if the
+# tag's file is stale, so the binary would differ from upstream's. Wire
+# is the version go.mod's tool directive pins. The other go:generate
+# directives (counterfeiter) write test fakes, not in the binary.
+# Caches: uid sets the owner of a new cache only, and one is shared by
+# every build that uses its id (the target by default): ids of their own,
+# as containers/minio does.
+# Then upstream's release build (Dockerfile, .goreleaser.yaml):
+# CGO_ENABLED=0, ./cmd/server, no flags, no tags. -trimpath: no build
+# path in the binary.
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+go tool wire diff ./pkg/service
+CGO_ENABLED=0 go build -trimpath -o /out/livekit-server ./cmd/server
+EORUN
+
+# Server smoke test, here because scratch has no shell to run it: the
+# example config (config.yaml, next to this file, at the path of the
+# default CMD) with random throwaway keys; the health endpoint; a room
+# created and listed through the Twirp API with a signed token, which
+# checks the keys and the HTTP stack; then a graceful stop. Media (ICE,
+# DTLS, RTP) is not covered: compose.yml is the by-hand test of it.
+# The server parses the config strictly: a release that drops a key the
+# example uses fails here, not in a deployment.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN --mount=type=bind,source=config.yaml,target=/etc/livekit/config.yaml \
+    <<EORUN
+/out/livekit-server --version | grep -Fx "livekit-server version ${BASE_VERSION}"
+hex() { od -An -vtx1 -N"$1" /dev/urandom | tr -d ' \n'; }
+key="API$(hex 8)"
+secret="$(hex 32)"
+LIVEKIT_KEYS="${key}: ${secret}" /out/livekit-server \
+    --config /etc/livekit/config.yaml --bind 127.0.0.1 --node-ip 127.0.0.1 &
+server=$!
+# 406 until the node's stats are published: --retry-all-errors retries it
+# (--retry-connrefused alone doesn't).
+curl -fsS --retry 30 --retry-delay 1 --retry-all-errors http://127.0.0.1:7880/
+b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+jwt="$(printf '{"alg":"HS256","typ":"JWT"}' | b64url).$(printf '{"iss":"%s","sub":"smoke-test","exp":%s,"video":{"roomCreate":true,"roomList":true}}' "${key}" "$(( $(date +%s) + 600 ))" | b64url)"
+jwt="${jwt}.$(printf '%s' "${jwt}" | openssl dgst -sha256 -hmac "${secret}" -binary | b64url)"
+api=(curl -fsS -H "Authorization: Bearer ${jwt}" -H 'Content-Type: application/json')
+"${api[@]}" -d '{"name":"smoke-test"}' http://127.0.0.1:7880/twirp/livekit.RoomService/CreateRoom
+"${api[@]}" -d '{}' http://127.0.0.1:7880/twirp/livekit.RoomService/ListRooms | grep -F '"name":"smoke-test"'
+kill "${server}"
+wait "${server}"
+EORUN
+
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The server execs nothing and has no C library: the binary, the CA bundle
+# for its outbound TLS (webhooks, Redis TLS, TURN TLS), and the license
+# and notices.
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /src/NOTICE /usr/share/doc/livekit/
+# Owned by root, not by the build's user: the server can't rewrite its
+# binary.
+COPY --link --from=build --chown=0:0 /out/livekit-server /usr/bin/
+
+# Numeric, so runAsNonRoot can check it. No privilege needed: every port
+# is above 1024.
+USER 65532:65532
+
+# HTTP, WebRTC over TCP, WebRTC over UDP (config.yaml's). Documentation
+# only.
+EXPOSE 7880/tcp 7881/tcp 7882/udp
+
+# Arguments are the server's: `docker run <image> --config <path>`. They
+# replace CMD: to add a flag, repeat `--config /etc/livekit/config.yaml`.
+# The config is the operator's, mounted: the server stops at start, naming
+# the path, without it. LIVEKIT_CONFIG, when set, wins and the file is not
+# read.
+ENTRYPOINT ["/usr/bin/livekit-server"]
+CMD ["--config", "/etc/livekit/config.yaml"]
+
+# Smoke test: the binary runs on this platform (the build stage tested the
+# server).
+RUN ["/usr/bin/livekit-server", "--version"]
