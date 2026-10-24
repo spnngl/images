@@ -80,7 +80,9 @@ WORKDIR /src
 
 # Static glibc binary, as upstream's release image (docker/bake.hcl,
 # static_rustflags and static_libs): crt-static, static relocation model,
-# the C++ runtime, libc and liburing archives. glibc, not musl: RocksDB
+# the C++ runtime, libc, liburing and libgcc archives (libgcc last: rustc
+# links with -nodefaultlibs, and libstdc++.a needs its outline atomics and
+# soft-float helpers on arm64). glibc, not musl: RocksDB
 # is C++ (Debian has no musl libstdc++) and on musl its allocations
 # bypass jemalloc. CXXSTDLIB="": rust-rocksdb's cc build would add a
 # dynamic libstdc++, which leaves unresolved relocations in a static
@@ -101,7 +103,7 @@ RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/l
     <<EORUN
 target="$(uname -m)-unknown-linux-gnu"
 export CXXSTDLIB=""
-RUSTFLAGS="-C relocation-model=static -C target-feature=+crt-static -C link-arg=-l:libstdc++.a -C link-arg=-l:libc.a -C link-arg=-l:libm.a -C link-arg=-l:liburing.a"
+RUSTFLAGS="-C relocation-model=static -C target-feature=+crt-static -C link-arg=-l:libstdc++.a -C link-arg=-l:libc.a -C link-arg=-l:libm.a -C link-arg=-l:liburing.a -C link-arg=-l:libgcc.a"
 case "$(uname -m)" in
 x86_64) RUSTFLAGS+=" -C target-cpu=x86-64-v2" ;;
 esac
