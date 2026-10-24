@@ -1,0 +1,14 @@
+# The example configuration: compose.yml mounts it, and the build stage's
+# server test starts the server from it (containers/livekit/Containerfile).
+# No keys here: LIVEKIT_KEYS ("<key>: <secret>") sets them. The secret
+# should be 32 characters or more.
+# Reference: https://github.com/livekit/livekit/blob/master/config-sample.yaml
+
+# HTTP, WebSocket, Twirp API and health endpoint (GET /).
+port: 7880
+rtc:
+  # WebRTC over TCP, the fallback when UDP is blocked.
+  tcp_port: 7881
+  # One UDP port for every WebRTC connection. Upstream's default outside
+  # --dev is the range 50000-60000, one socket per connection.
+  udp_port: 7882
