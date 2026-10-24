@@ -22,7 +22,7 @@
 # `docker buildx bake` (containers/AGENTS.md).
 # Debian trixie: its libclang-dev, liburing-dev and gcc build RocksDB, its
 # ca-certificates is the CA bundle copied below.
-FROM docker.io/library/rust:1.99-trixie@sha256:e259494b14672950a909b4c54527e19d29cae6ebf980672114c8bb85e5594e4a AS build
+FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
