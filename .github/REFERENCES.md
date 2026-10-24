@@ -63,6 +63,13 @@ Dalec, and one way to build, attest and sign is simpler.
   excepted. Per image, not per commit as `build-bootc.yml`: the
   Containerfiles set it as `ENV` before their first `RUN`, so each new
   value misses the build cache. Bake can't read git history.
+- **`rewrite-timestamp` from the target's `output`, on by default:**
+  an image whose file times matter turns it off (`containers/gentoo`:
+  portage records each file's time, and skips a file whose time
+  differs). `output` is the one Bake attribute that holds an export
+  option, and the workflow reads that option alone: its own outputs
+  replace the rest. Not an `args` entry: a Containerfile warns on an
+  argument it doesn't read, Dalec fails on it.
 - **`docker/build-push-action`** on a `docker-container` builder (the
   docker driver can't attest). The image sets its own
   `org.opencontainers.image.source` label.

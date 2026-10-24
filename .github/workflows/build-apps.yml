@@ -113,6 +113,8 @@ jobs:
       #   with it. The last commit of the target's context or of the
       #   shared Bake file, docs excepted: per image, so other images'
       #   commits keep the build cache (.github/REFERENCES.md).
+      # - rewritetimestamp: the target's output's rewrite-timestamp, true
+      #   when it sets none (see build).
       # Bake takes one -f per file, and contexts from the repo root:
       # relative paths, from where it runs.
       # nullglob: no Bake file gives no target, not the pattern.
@@ -159,6 +161,7 @@ jobs:
                     tags: $target.tags,
                     repositories: (reduce ($target.tags[] | sub(":[^:/]+$"; "")) as $r ([]; if index([$r]) then . else . + [$r] end)),
                     buildargs: (($target.args // {}) + {SOURCE_DATE_EPOCH: $epochs[$target.context]} | to_entries | map("\(.key)=\(.value)") | join("\n")),
+                    rewritetimestamp: (first($target.output[]? | ."rewrite-timestamp" // empty) // "true"),
                     resolved: $target
                   }
               )
@@ -275,8 +278,9 @@ jobs:
       # outputs: pushed by digest, untagged (not on pull requests); the push
       # job tags the manifest list. rewrite-timestamp: BuildKit also clamps
       # the layers' file times to SOURCE_DATE_EPOCH, otherwise they keep the
-      # build's time. Pull requests: also an OCI layout, for the scan below
-      # (nothing else keeps the image on the runner).
+      # build's time; off for an image whose file times matter
+      # (containers/AGENTS.md). Pull requests: also an OCI layout, for the
+      # scan below (nothing else keeps the image on the runner).
       # An empty line is no output.
       # Build cache, one scope per target and platform; mode=max: the
       # build stages hold the work. ignore-error: fork pull requests can't
@@ -297,7 +301,7 @@ jobs:
           cache-to: type=gha,scope=${{ env.ARTIFACT }},mode=max,ignore-error=true
           no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
           outputs: |
-            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }},rewrite-timestamp=true
+            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }},rewrite-timestamp=${{ matrix.image.rewritetimestamp }}
             ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/oci,tar=false', runner.temp) || '' }}
 
       # Pull requests fail on a Critical vulnerability with a fix that the
