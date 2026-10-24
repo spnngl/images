@@ -8,8 +8,8 @@
     // land in `ARG BASE_VERSION`, the image's tag (see the pinDigests rule
     // below).
     "ignorePresets": ["docker:pinDigests"],
-    // Any time; the Debian snapshot rules below wait for Saturday, the day
-    // before the weekly rebuild.
+    // Any time; the Debian snapshot rules below wait for Saturday,
+    // midnight to 5am, the day before the weekly rebuild.
     "schedule": ["at any time"],
     "automergeSchedule": ["at any time"],
     // dockerfile: FROM lines, with `ARG BASE_VERSION` resolved, so the
@@ -226,10 +226,11 @@
             "pinDigests": true
         },
         {
-            "description": "What follows Debian between two image releases, one PR on Saturday (the day before the weekly rebuild), automerged once CI is green: the archive snapshot of docker-bake.hcl, and the digests of the application images' FROM lines.",
+            "description": "What follows Debian between two image releases, one PR on Saturday (the day before the weekly rebuild), automerged once CI is green: the archive snapshot of docker-bake.hcl, and the digests of the application images' FROM lines. Proposed between midnight and 5am, as Renovate's image above: snapshots come every few hours, so a whole-day schedule merged several each Saturday. An open PR isn't updated outside the window either (updateNotScheduled). Every rule of the group has this schedule: the group is one branch.",
             "matchDepNames": ["debian-snapshot"],
             "groupName": "Debian snapshot and base digests",
-            "schedule": ["on saturday"],
+            "schedule": ["* 0-4 * * 6"],
+            "updateNotScheduled": false,
             "automerge": true
         },
         {
@@ -238,7 +239,8 @@
             "matchFileNames": ["containers/**"],
             "matchUpdateTypes": ["digest", "pin", "pinDigest"],
             "groupName": "Debian snapshot and base digests",
-            "schedule": ["on saturday"],
+            "schedule": ["* 0-4 * * 6"],
+            "updateNotScheduled": false,
             "automerge": true
         },
         {
@@ -247,7 +249,8 @@
             "matchDatasources": ["docker"],
             "matchUpdateTypes": ["digest"],
             "groupName": "Debian snapshot and base digests",
-            "schedule": ["on saturday"],
+            "schedule": ["* 0-4 * * 6"],
+            "updateNotScheduled": false,
             "automerge": true
         },
         {
@@ -261,7 +264,8 @@
             "description": "CrowdSec's hub, pinned to a commit of its master branch (containers/crowdsec): several commits a day, so weekly with the snapshot above, automerged once the spec's tests (hub items installed offline) pass.",
             "matchDepNames": ["crowdsecurity/hub"],
             "groupName": "Debian snapshot and base digests",
-            "schedule": ["on saturday"],
+            "schedule": ["* 0-4 * * 6"],
+            "updateNotScheduled": false,
             "automerge": true
         },
         {
