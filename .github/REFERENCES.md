@@ -139,8 +139,8 @@ data, and their sources differ.
 ## Updates: `renovate.json5`
 
 PRs open as releases come; the Debian snapshot and base digests wait for
-Saturday, the day before the weekly rebuild; Renovate's image waits
-for the night. `renovate.yml` validates the config; the shared preset sets
+Saturday, midnight to 5am, the day before the weekly rebuild; Renovate's
+image waits for the night. `renovate.yml` validates the config; the shared preset sets
 timezone, labels, semantic commits, action digests and automerge under
 `.github/`.
 
@@ -175,6 +175,11 @@ timezone, labels, semantic commits, action digests and automerge under
   so a release during the window after the first merge opens a second
   PR. A release age can't space them: ghcr.io gives no release date
   (above).
+- **Debian snapshot group in the same window, on Saturday:** a new
+  snapshot comes every few hours, so all of Saturday merged several.
+  Nor is an open PR updated outside the window (`updateNotScheduled`):
+  it waits for CI and merges as proposed. Every rule of the group
+  carries the schedule: the group is one branch.
 - **Automerged once CI passes:** actions (grouped), and minor and patch
   releases of what CI exercises (build tools, Renovate, applications
   with a server test) or the docs only use (hadolint). Each
