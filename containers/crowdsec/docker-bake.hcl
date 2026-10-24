@@ -15,7 +15,7 @@ target "crowdsec" {
     # (cmd/crowdsec-cli/core/require/branch.go): master, at a commit.
     hub = [
       # renovate: datasource=git-refs depName=crowdsecurity/hub packageName=https://github.com/crowdsecurity/hub
-      { version = "master", checksum = "739f691d411eb29ff556faeeb22e19593389ef37" },
+      { version = "master", checksum = "b2eae0e79e3026b942d476a85fd968d836445d67" },
     ]
   }
   args = {
