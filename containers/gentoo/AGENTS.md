@@ -1,7 +1,8 @@
 # gentoo
 
-Gentoo's stage3, one flavor per tag (`musl-hardened-systemd`): a build
-environment for CI jobs that compile Gentoo packages. Runtime contract:
+Gentoo's stage3, one flavor per tag (`musl-hardened`: OpenRC;
+`musl-hardened-systemd`): a build environment for CI jobs that compile
+Gentoo packages. Runtime contract:
 the Containerfile's header. Upstream sources and the reason for each
 choice: [REFERENCES.md](REFERENCES.md).
 
@@ -21,7 +22,8 @@ choice: [REFERENCES.md](REFERENCES.md).
 ## Updates
 
 Each build takes Gentoo's latest stage3; the weekly rebuild, a newer
-one. A new flavor: an entry of `docker-bake.hcl`'s matrix.
+one. A new flavor: an entry of `docker-bake.hcl`'s matrix, its tag
+the flavor, OpenRC's without `-openrc`.
 
 A build failing on the key check means Gentoo changed its release key.
 Confirm the new fingerprint on <https://www.gentoo.org/downloads/signatures/>
