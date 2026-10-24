@@ -20,8 +20,13 @@
 - **Gentoo's tarball, over Docker Hub's `gentoo/stage3`:** the files
   come from Gentoo's mirror, checked against Gentoo's key; this
   repository builds, scans and signs the image.
-- **systemd flavor:** the profile sets the USE flags of what jobs build;
-  the image itself never boots.
+- **OpenRC and systemd flavors** (the owner's choice): the profile sets
+  the USE flags of what jobs build; the image itself never boots.
+  Gentoo's binhost (`releases/<arch>/binpackages/23.0/`,
+  `x86-64_musl_hardened` and `arm64_musl_hardened`, their `Packages`)
+  serves both: most packages with a `systemd` flag are built both ways.
+  `dbus` and `libudev` are built with systemd only, so an OpenRC job
+  compiles them.
 - **The latest stage3 on each build** (the owner's choice): a pinned one
   is deleted after about six weeks. `ADD` fetches the latest file on
   every build, cache or not, and the unpack step reruns when it changed.
@@ -29,7 +34,9 @@
   weekly rebuild (`build-apps.yml`, Sunday morning) takes the previous
   week's. amd64 and arm64 build at different times: their stage3s
   differ.
-- **Tag: the flavor, rolling** (the owner's choice), as `datalists`'
+- **Tag: the flavor, rolling** (the owner's choice), OpenRC's without
+  `-openrc` (`musl-hardened`), as Gentoo's profiles name OpenRC's
+  without a suffix; as `datalists`'
   `latest`: a user pins the digest. No `version` label, its platforms
   carrying different stage3s; no `licenses` label, each package having
   its own (`/var/db/pkg/*/*/LICENSE`).
