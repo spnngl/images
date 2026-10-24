@@ -38,6 +38,7 @@ Each folder's `AGENTS.md` describes what is inside it.
 .
 ├── .agents/skills/             # add-*-image: recipes for a new application image
 ├── .github/                    # CI workflows
+├── .gitattributes              # line endings (LF everywhere) and diff drivers
 ├── .hadolint.yaml              # hadolint config for every Containerfile
 ├── .shellcheckrc               # shellcheck config for every script
 ├── .grype.yaml                 # vulnerability false positives, Grype
