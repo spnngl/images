@@ -1,0 +1,204 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Miniflux (https://miniflux.app), a minimalist feed reader with a web UI
+# and an API, built from source as one static binary on scratch. Close to
+# upstream's distroless image (same user, LISTEN_ADDR), without its C
+# library and with a health check.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); web UI and API on
+# 8080/tcp; a PostgreSQL database in DATABASE_URL (or DATABASE_URL_FILE),
+# the only state: the image has no volume. RUN_MIGRATIONS=1 to create or
+# upgrade its schema at start, else `-migrate` once. CREATE_ADMIN=1 with
+# ADMIN_USERNAME and ADMIN_PASSWORD (or their *_FILE variants) creates that
+# admin at start, if absent. TZ names the server's time zone. Runs with a
+# read-only root filesystem, no capability and no-new-privileges: Miniflux
+# writes a file only where LOG_FILE or a Unix socket in LISTEN_ADDR points,
+# a mount then.
+# TLS belongs in a reverse proxy: the HEALTHCHECK speaks plain HTTP to the
+# first LISTEN_ADDR, so with Miniflux's own TLS (CERT_FILE and KEY_FILE, or
+# CERT_DOMAIN) or a Unix socket there, override or disable it.
+# CERT_DOMAIN also answers ACME's challenge on port 80: Docker's own network
+# namespace lets any user bind it; host networking and Kubernetes take the
+# sysctl net.ipv4.ip_unprivileged_port_start=0 (UID 65532 holds no
+# capability).
+# https://miniflux.app/docs/docker.html
+# https://miniflux.app/docs/configuration.html
+
+# Versions come from containers/miniflux/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates and tzdata are copied below, its
+# PostgreSQL runs the server test.
+FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below: go reads it, and root's (/root) is
+# closed to it. Before SHELL: hadolint (2.15.1) checks the RUNs after an
+# ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# postgresql: the database of the server test, never in the image. Its
+# default cluster is not created: the test makes its own.
+# A passwd entry for the build user: initdb and postgres refuse to run
+# without one (getpwuid). The build stage's only: the image has none.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+mkdir -p /etc/postgresql-common/createcluster.d
+echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.d/no-main.conf
+apt-get update
+apt-get install -y --no-install-recommends postgresql
+rm -rf /var/lib/apt/lists/*
+groupadd -g 65532 build
+useradd -l -u 65532 -g 65532 -d /tmp -M -s /usr/sbin/nologin build
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# --keep-git-dir: go build stamps the commit and its date (vcs.revision,
+# vcs.time), which internal/version reads for `-info`.
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/miniflux/v2.git#${BASE_VERSION} /src
+
+# git refuses a repository another user owns: trust this one, while root.
+RUN git config --system --add safe.directory /src
+
+# Build and test as the image's user, not root, as containers/minio does:
+# the server runs as in the image, and the source stays root's. WORKDIR
+# creates its folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (Makefile's linux-<arch> targets, run by
+# .github/workflows/build_binaries.yml): no cgo, stripped, the version as
+# the tag (the Makefile's `git describe` sees two tags here, <x.y.z> and
+# v<x.y.z>: named instead).
+# Caches: ids of their own, shared with containers/minio (its comment).
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+CGO_ENABLED=0 go build \
+    -ldflags "-s -w -X 'miniflux.app/v2/internal/version.Version=${BASE_VERSION}'" \
+    -o /out/miniflux
+EORUN
+
+# Server smoke test, here because scratch has no shell to run it, and
+# because golang bumps are automerged on it (REFERENCES.md). A throwaway
+# PostgreSQL on 127.0.0.1, Miniflux migrating its schema and creating its
+# admin, both with random throwaway credentials; the image's health check;
+# the login page rendered; a category created through the API, then a
+# feed in it, served on 127.0.0.1 by a file server built here (private
+# networks allowed in this test alone), fetched, parsed and its entry read
+# back; then a graceful stop.
+# On failure, PostgreSQL's log is printed: Miniflux's goes to stderr.
+# Cache: the file server's build, as the build above.
+# kill (DL3001) stops the servers this step started, not a container's.
+# hadolint ignore=DL3001
+RUN --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+/out/miniflux -info | grep -Fx "Version: ${BASE_VERSION}"
+/out/miniflux -info | grep -Fx "Commit: ${BASE_CHECKSUM:0:8}"
+hex() { od -An -vtx1 -N16 /dev/urandom | tr -d ' \n'; }
+trap 'cat /tmp/pg.log >&2' ERR
+pg=(/usr/lib/postgresql/*/bin)
+PGPASSWORD="$(hex)"
+export PGPASSWORD
+"${pg[0]}/initdb" -D /tmp/pgdata -U postgres --auth=scram-sha-256 \
+    --pwfile=<(echo "${PGPASSWORD}") --encoding=UTF8 --locale=C.UTF-8
+"${pg[0]}/pg_ctl" -D /tmp/pgdata -l /tmp/pg.log -w \
+    -o "-c listen_addresses=127.0.0.1 -k /tmp" start
+"${pg[0]}/createdb" -h 127.0.0.1 -U postgres miniflux
+user="$(hex)"
+password="$(hex)"
+category="$(hex)"
+entry="$(hex)"
+mkdir /tmp/feed
+echo 'package main; import "net/http"; func main() { panic(http.ListenAndServe("127.0.0.1:8081", http.FileServer(http.Dir("/tmp/feed")))) }' > /tmp/feedserver.go
+go build -o /tmp/feedserver /tmp/feedserver.go
+printf '<?xml version="1.0" encoding="UTF-8"?>\n<rss version="2.0"><channel><title>smoke test</title><link>http://127.0.0.1:8081/</link><item><title>%s</title><link>http://127.0.0.1:8081/%s</link><guid>%s</guid></item></channel></rss>\n' \
+    "${entry}" "${entry}" "${entry}" > /tmp/feed/feed.xml
+/tmp/feedserver &
+feedserver=$!
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused -o /dev/null http://127.0.0.1:8081/feed.xml
+DATABASE_URL="postgres://postgres:${PGPASSWORD}@127.0.0.1/miniflux?sslmode=disable" \
+    RUN_MIGRATIONS=1 CREATE_ADMIN=1 ADMIN_USERNAME="${user}" ADMIN_PASSWORD="${password}" \
+    FETCHER_ALLOW_PRIVATE_NETWORKS=1 LISTEN_ADDR=127.0.0.1:8080 /out/miniflux &
+server=$!
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/healthcheck
+# The image's own check: LISTEN_ADDR as the image sets it, so the URL is
+# http://0.0.0.0:8080/healthcheck, which Linux connects to the loopback.
+LISTEN_ADDR=0.0.0.0:8080 /out/miniflux -healthcheck auto
+curl -fsSL http://127.0.0.1:8080/ | grep -F 'name="username"'
+[ "$(curl -sS -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/v1/me)" = 401 ]
+api=(curl -fsS --user "${user}:${password}" -H 'Content-Type: application/json')
+"${api[@]}" -o /dev/null http://127.0.0.1:8080/v1/me
+[[ "$("${api[@]}" -d "{\"title\":\"${category}\"}" http://127.0.0.1:8080/v1/categories)" =~ ^\{\"id\":([0-9]+), ]]
+category_id="${BASH_REMATCH[1]}"
+"${api[@]}" http://127.0.0.1:8080/v1/categories | grep -F "\"title\":\"${category}\""
+[[ "$("${api[@]}" -d "{\"feed_url\":\"http://127.0.0.1:8081/feed.xml\",\"category_id\":${category_id}}" http://127.0.0.1:8080/v1/feeds)" =~ ^\{\"feed_id\":([0-9]+)\}$ ]]
+"${api[@]}" "http://127.0.0.1:8080/v1/feeds/${BASH_REMATCH[1]}/entries" | grep -F "\"title\":\"${entry}\""
+kill "${server}" "${feedserver}"
+wait "${server}"
+"${pg[0]}/pg_ctl" -D /tmp/pgdata -w stop
+rm -r /tmp/pgdata /tmp/pg.log /tmp/feed /tmp/feedserver /tmp/feedserver.go
+EORUN
+
+# Miniflux execs nothing and has no C library: the binary, the CA bundle
+# for its outbound TLS (feeds, integrations, Let's Encrypt), Debian's time
+# zones and the license (Apache-2.0, no NOTICE).
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# Go's time package reads them: each user's time zone
+# (internal/timezone), feed dates (internal/reader/date), TZ.
+COPY --link --from=build /usr/share/zoneinfo /usr/share/zoneinfo
+COPY --link --from=build /src/LICENSE /usr/share/doc/miniflux/
+# Owned by root, not by the build's user: Miniflux can't rewrite its binary.
+COPY --link --from=build --chown=0:0 /out/miniflux /usr/bin/
+
+# Numeric, so runAsNonRoot can check it. No privilege needed: the port is
+# above 1024.
+USER 65532:65532
+# A variable, not a flag, so that it stays when CMD is replaced, as
+# upstream's image sets it: the default, 127.0.0.1:8080, is unreachable
+# from outside the container.
+ENV LISTEN_ADDR=0.0.0.0:8080
+
+EXPOSE 8080/tcp
+
+# Upstream's (contrib/docker-compose/basic.yml): the binary queries its
+# own /healthcheck (PostgreSQL reachable), at LISTEN_ADDR and BASE_URL's
+# path (internal/cli/health_check.go).
+HEALTHCHECK --interval=15s --start-period=10s --start-interval=1s \
+    CMD ["/usr/bin/miniflux", "-healthcheck", "auto"]
+
+# Arguments are Miniflux's: `docker run <image> -migrate`.
+ENTRYPOINT ["/usr/bin/miniflux"]
+
+# Smoke test: the binary runs on this platform (the build stage tested the
+# server).
+RUN ["/usr/bin/miniflux", "-version"]
