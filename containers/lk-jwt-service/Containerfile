@@ -1,0 +1,270 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+
+# MatrixRTC Authorization Service
+# (https://github.com/element-hq/lk-jwt-service): issues LiveKit tokens
+# to Matrix users and delegates their delayed leave events. Built from
+# source as two static musl binaries, the service and its health check,
+# on scratch: upstream's ghcr.io/element-hq/lk-jwt-service paths and
+# HEALTHCHECK, but not root, and with an entrypoint.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry). Settings are
+# upstream's environment variables; required: LIVEKIT_URL,
+# LIVEKIT_FULL_ACCESS_HOMESERVERS, and the LiveKit key and secret,
+# best as files (LIVEKIT_KEY_FROM_FILE and LIVEKIT_SECRET_FROM_FILE, or
+# LIVEKIT_KEY_FILE). As an application service: LIVEKIT_HS_SERVER_NAME,
+# and LIVEKIT_AS_REGISTRATION_FILE (or LIVEKIT_AS_TOKEN and
+# LIVEKIT_HS_TOKEN). HTTP on 8080/tcp (LIVEKIT_JWT_BIND), behind a TLS
+# reverse proxy; LiveKit posts its events to /sfu_webhook. Delayed leave
+# jobs live in memory, lost on restart, or in Redis (LIVEKIT_REDIS_URL,
+# plain redis:// only). LIVEKIT_REDIS_PASSWORD has no file variant, and
+# the info startup log shows it: LIVEKIT_LOG_LEVEL=warn hides it.
+# Outbound HTTP honours HTTP(S)_PROXY, the health check's too: with a
+# proxy, NO_PROXY=127.0.0.1,localhost. Runs with a read-only root
+# filesystem, no capability and no-new-privileges: it writes nothing to
+# disk. Stops on SIGKILL (STOPSIGNAL below): on Kubernetes, a preStop
+# sleep handler for the endpoints' removal.
+# https://github.com/element-hq/lk-jwt-service#%EF%B8%8F-configuration
+
+# Versions come from containers/lk-jwt-service/docker-bake.hcl: build
+# with `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: the packages below come from its snapshot.
+FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# musl-tools: musl-gcc, for the C code of the crates (ring, aws-lc-sys).
+# cargo-auditable: embeds the dependency list in the binaries, for the
+# SBOM and the vulnerability scans. ca-certificates: copied into the
+# image below. valkey-server (and its valkey-cli), python3: the smoke
+# test's Redis and stub; the rust image's python3 comes with its base.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# rustup's musl target is installed here too, while root.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates cargo-auditable musl-tools python3 valkey-server
+rm -rf /var/lib/apt/lists/*
+rustup target add "$(uname -m)-unknown-linux-musl"
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# No .git: nothing in the build reads it.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/element-hq/lk-jwt-service.git#v${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: neither the crates' build
+# scripts nor the server get root, and the source stays root's. No passwd
+# entry needed: CARGO_HOME and RUSTUP_HOME are set, /usr/local/cargo is
+# writable by all. WORKDIR creates its folder owned by USER: /out takes
+# the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (.github/workflows/release.yaml), static:
+# rustup's musl targets link statically by default. CC_<target>: cc-rs
+# builds the C code with musl-gcc, matching the musl target. --package:
+# the root crate, with both binaries (the service and healthcheck), out
+# of a workspace of test crates. Caches: uid sets the owner of a new
+# cache only, and one is shared by every build that uses its id (the
+# target by default): ids of their own, as containers/garage does.
+RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=lk-jwt-service-target-65532,uid=65532,gid=65532,target=/src/target \
+    <<EORUN
+target="$(uname -m)-unknown-linux-musl"
+export "CC_${target//-/_}=musl-gcc"
+cargo auditable build --locked --release --target "${target}" --package lk-jwt-service
+cp "target/${target}/release/lk-jwt-service" /out/
+cp "target/${target}/release/healthcheck" /out/lk-jwt-service-healthcheck
+# grep without -q reads all of readelf's output (no SIGPIPE) and prints
+# the entries it finds.
+for binary in /out/*; do
+    if readelf -dW "${binary}" | grep -F NEEDED; then exit 1; fi
+done
+EORUN
+
+# The smoke test's homeserver and LiveKit server, on one port: just the
+# two calls a token costs (src/helper.rs, is_joined and create_room).
+# The homeserver answers MSC4502's membership check, given the service's
+# as_token: only USER_ID is in ROOM_ID. LiveKit's CreateRoom takes a
+# token with roomCreate, signed with LIVEKIT_SECRET; its request is kept
+# for `verify`, which checks the token issued to the user: a local user,
+# so it may publish.
+COPY <<'EOPY' /test/stub.py
+import base64, hashlib, hmac, http.server, json, os, sys, urllib.parse
+
+CREATE_ROOM = "/tmp/create-room"
+
+
+def claims(jwt, grant):
+    def decode(part):
+        return base64.urlsafe_b64decode(part + "=" * (-len(part) % 4))
+
+    head, body, sig = jwt.split(".")
+    mac = hmac.new(os.environ["LIVEKIT_SECRET"].encode(), f"{head}.{body}".encode(), hashlib.sha256)
+    payload = json.loads(decode(body))
+    if not (
+        json.loads(decode(head))["alg"] == "HS256"
+        and hmac.compare_digest(decode(sig), mac.digest())
+        and payload["iss"] == os.environ["LIVEKIT_KEY"]
+        and payload["video"].get(grant) is True
+    ):
+        sys.exit(f"bad token: {payload}")
+    return payload
+
+
+class Stub(http.server.BaseHTTPRequestHandler):
+    def reply(self, status, content_type, body):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        url = urllib.parse.urlsplit(self.path)
+        room = os.environ["ROOM_ID"]
+        if urllib.parse.unquote(url.path) != f"/_matrix/client/unstable/io.element.msc4502/rooms/{room}/is_joined":
+            return self.reply(404, "application/json", b"{}")
+        if self.headers["Authorization"] != f"Bearer {os.environ['LIVEKIT_AS_TOKEN']}":
+            return self.reply(401, "application/json", b"{}")
+        joined = urllib.parse.parse_qs(url.query).get("mxid") == [os.environ["USER_ID"]]
+        self.reply(200, "application/json", json.dumps({"joined": joined}).encode())
+
+    def do_POST(self):
+        auth = self.headers["Authorization"] or ""
+        if self.path != "/twirp/livekit.RoomService/CreateRoom" or not auth.startswith("Bearer "):
+            return self.reply(404, "application/json", b"{}")
+        claims(auth.removeprefix("Bearer "), "roomCreate")
+        with open(CREATE_ROOM, "wb") as f:
+            f.write(self.rfile.read(int(self.headers["Content-Length"])))
+        # An empty protobuf Room: every field at its default.
+        self.reply(200, "application/protobuf", b"")
+
+
+if sys.argv[1] == "serve":
+    http.server.HTTPServer(("127.0.0.1", 7880), Stub).serve_forever()
+else:
+    token = claims(json.load(sys.stdin)["jwt"], "roomJoin")
+    if not (token["sub"] and token["video"].get("canPublish") is True):
+        sys.exit(f"bad grants: {token}")
+    with open(CREATE_ROOM, "rb") as f:
+        if token["video"]["room"].encode() not in f.read():
+            sys.exit(f"token's room isn't the one created: {token}")
+EOPY
+
+# Smoke test, here because scratch has no shell to run it: the
+# service as an application service, with random throwaway LiveKit keys
+# and tokens, its delayed leave jobs in Valkey with a password, then:
+# - the health endpoint, and the health check binary the image's
+#   HEALTHCHECK runs;
+# - the homeserver's ping, which checks hs_token: answered with the
+#   right one, refused with another;
+# - a token for a room's member, signed with LIVEKIT_SECRET, for the
+#   room it created on LiveKit; refused to a user not in the room.
+# What it leaves uncovered: containers/lk-jwt-service/AGENTS.md.
+# kill (DL3001) stops the servers this step started, not a container's.
+# Neither the service nor the stub has a SIGTERM handler: they die of it
+# (143).
+# hadolint ignore=DL3001
+RUN <<EORUN
+hex() { od -An -vtx1 -N32 /dev/urandom | tr -d ' \n'; }
+LIVEKIT_KEY="$(hex)"
+LIVEKIT_SECRET="$(hex)"
+LIVEKIT_AS_TOKEN="$(hex)"
+LIVEKIT_HS_TOKEN="$(hex)"
+LIVEKIT_REDIS_PASSWORD="$(hex)"
+export LIVEKIT_KEY LIVEKIT_SECRET LIVEKIT_AS_TOKEN LIVEKIT_HS_TOKEN LIVEKIT_REDIS_PASSWORD
+export LIVEKIT_URL=ws://127.0.0.1:7880
+export LIVEKIT_FULL_ACCESS_HOMESERVERS=example.org
+export LIVEKIT_HS_SERVER_NAME=example.org
+export LIVEKIT_CS_API_URL_OVERRIDES=example.org=http://127.0.0.1:7880
+export LIVEKIT_REDIS_URL=redis://127.0.0.1:6379
+export LIVEKIT_JWT_BIND=127.0.0.1:8080
+export ROOM_ID='!room:example.org' USER_ID='@alice:example.org'
+valkey-server --bind 127.0.0.1 --port 6379 --save '' --appendonly no --dir /tmp --requirepass "${LIVEKIT_REDIS_PASSWORD}" &
+valkey=$!
+python3 /test/stub.py serve &
+stub=$!
+# valkey-cli reads REDISCLI_AUTH, and exits 0 on an error reply (NOAUTH):
+# hence the PONG.
+export REDISCLI_AUTH="${LIVEKIT_REDIS_PASSWORD}"
+for _ in {1..30}; do [ "$(valkey-cli ping)" = PONG ] && break; sleep 1; done
+[ "$(valkey-cli ping)" = PONG ]
+curl -sS -o /dev/null --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:7880/
+# Exits at startup when Redis refuses it.
+/out/lk-jwt-service &
+server=$!
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/healthz
+/out/lk-jwt-service-healthcheck
+ping=(curl -sS -o /tmp/ping -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' http://127.0.0.1:8080/_matrix/app/v1/ping)
+[ "$("${ping[@]}" -H "Authorization: Bearer ${LIVEKIT_HS_TOKEN}")" = 200 ]
+[ "$(cat /tmp/ping)" = '{}' ]
+[ "$("${ping[@]}" -H "Authorization: Bearer $(hex)")" = 401 ]
+grep -qF '"errcode":"M_UNKNOWN_TOKEN"' /tmp/ping
+get_token=(curl -sS -o /tmp/token -w '%{http_code}' -X POST -H 'Content-Type: application/json' -H "Authorization: Bearer ${LIVEKIT_HS_TOKEN}" -d "{\"url\":\"${LIVEKIT_URL}\",\"room_id\":\"${ROOM_ID}\",\"slot_id\":\"m.call#ROOM\",\"member_id\":\"device\"}" http://127.0.0.1:8080/_matrix/client/unstable/io.element.msc4195/rtc/livekit/get_token)
+[ "$("${get_token[@]}" -H "X-Matrix-User-Identifier: ${USER_ID}")" = 200 ]
+python3 /test/stub.py verify < /tmp/token
+[ "$("${get_token[@]}" -H 'X-Matrix-User-Identifier: @mallory:example.org')" = 403 ]
+grep -qF '"errcode":"M_FORBIDDEN"' /tmp/token
+kill "${server}" "${stub}" "${valkey}"
+wait "${server}" || [ "$?" -eq 143 ]
+wait "${stub}" || [ "$?" -eq 143 ]
+wait "${valkey}"
+rm /tmp/ping /tmp/token /tmp/create-room
+EORUN
+
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="AGPL-3.0-only" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# Upstream image's paths, so its docs and the charts that run it apply
+# as is. CA bundle: outbound TLS (rustls-native-certs reads this path),
+# refreshed by the weekly rebuild. Binaries owned by root: the server
+# can't replace them.
+COPY --link --from=build --chown=0:0 /out/lk-jwt-service /out/lk-jwt-service-healthcheck /
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+# AGPL: the source is upstream's tag.
+COPY --link --from=build /src/LICENSE /usr/share/doc/lk-jwt-service/
+
+# Numeric, so runAsNonRoot can check it. No privilege needed: the port is
+# above 1024.
+USER 65532:65532
+
+# LIVEKIT_JWT_BIND's default.
+EXPOSE 8080/tcp
+# The server has no SIGTERM handler, and the kernel drops a signal PID 1
+# doesn't handle: SIGTERM would only delay the SIGKILL by the stop
+# timeout. Nothing to drain (REFERENCES.md).
+STOPSIGNAL SIGKILL
+
+# No arguments: settings are environment variables.
+ENTRYPOINT ["/lk-jwt-service"]
+
+# Upstream's: GET /healthz on LIVEKIT_JWT_BIND, which the check reads
+# from the same environment. Docker only: Kubernetes ignores it, probe
+# /healthz there.
+HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD ["/lk-jwt-service-healthcheck"]
