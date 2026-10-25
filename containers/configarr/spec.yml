@@ -1,0 +1,169 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.3
+#
+# Configarr built with Dalec (https://project-dalec.github.io/dalec/): one
+# Debian trixie package (upstream's bundle and the node binary it runs
+# on), installed into the minimal image of the trixie/container target
+# (see containers/sabnzbd/spec.yml).
+#
+# A job: each run syncs TRaSH-Guides custom formats and quality profiles
+# into the configured Sonarr, Radarr, Lidarr, Readarr, Whisparr and
+# Prowlarr instances, then exits (cron, Kubernetes CronJob). No port.
+#
+# Runtime contract: runs as UID/GID 65532 (no passwd entry). Upstream's
+# paths (docs/docs/installation/docker.md): /app/config holds config.yml
+# and secrets.yml (read-only is enough); /app/repos, the git clones of
+# TRaSH-Guides and Recyclarr's templates, must be writable by 65532 (a
+# cache: a new one clones again). Local custom formats and templates,
+# when config.yml names them, conventionally /app/cfs and /app/templates
+# (read-only). Settings: upstream's environment variables (DRY_RUN,
+# LOG_LEVEL...). The root filesystem can be read-only.
+#
+# Renovate bumps the versions in docker-bake.hcl (AGENTS.md, Updates).
+
+# Set by docker-bake.hcl; empty here, Dalec needs them declared
+# (containers/AGENTS.md).
+args:
+  # Configarr's release and its tag's commit.
+  BASE_VERSION: ""
+  BASE_CHECKSUM: ""
+  # The node image, by tag and digest, and its Node.js version.
+  NODE_IMAGE: ""
+  NODE_VERSION: ""
+  # The pnpm release that installs the build's modules.
+  PNPM_VERSION: ""
+
+name: configarr
+description: Configarr, TRaSH-Guides and custom formats synced into the *arr apps
+website: https://configarr.de
+license: AGPL-3.0-only
+packager: spnngl/images
+vendor: spnngl/images
+version: ${BASE_VERSION}
+revision: 1
+
+sources:
+  configarr:
+    git:
+      url: https://github.com/raydak-labs/configarr.git
+      commit: v${BASE_VERSION}
+      # The tag must resolve to this commit: tags can be moved.
+      checksum: ${BASE_CHECKSUM}
+  # Node.js at upstream's major (its Dockerfile), for the build and at
+  # runtime: trixie's nodejs is older. The image's /usr/local: node, its
+  # LICENSE, and corepack for pnpm.
+  node:
+    image:
+      ref: ${NODE_IMAGE}
+    path: /usr/local
+
+build:
+  # pnpm downloads the modules from npm; pnpm-lock.yaml pins each one by
+  # hash (--frozen-lockfile). Corepack downloads pnpm itself, checked
+  # against npm's signing keys.
+  network_mode: sandbox
+  env:
+    COREPACK_HOME: /tmp/corepack
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    # No configarr-dbgsym package: the image would install it.
+    DEB_BUILD_OPTIONS: noautodbgsym
+  # Steps run with sh (dash) from the folder holding one folder per source.
+  steps:
+    # Upstream's Dockerfile build: one file, bundle.cjs, every module in
+    # it. esbuild writes CONFIGARR_VERSION into it, the version it logs.
+    # Dalec expands args in env, not in the command.
+    - env:
+        CONFIGARR_VERSION: ${BASE_VERSION}
+        PNPM: pnpm@${PNPM_VERSION}
+      command: |
+        export PATH="${PWD}/node/bin:${PATH}"
+        cd configarr
+        corepack "${PNPM}" install --frozen-lockfile --store-dir /tmp/pnpm-store
+        corepack "${PNPM}" run build
+
+artifacts:
+  binaries:
+    # Installed as /usr/bin/node.
+    node/bin/node: {}
+  libs:
+    # Installed as /usr/lib/configarr/bundle.cjs.
+    configarr/bundle.cjs:
+      subpath: configarr
+  licenses:
+    # In /usr/share/doc/configarr/: configarr's AGPL-3.0, and Node's, with
+    # the licenses of the libraries its binary embeds.
+    configarr/LICENSE: {}
+    node/LICENSE:
+      subpath: node
+
+dependencies:
+  runtime:
+    # The libraries the node binary links, besides glibc.
+    libstdc++6: {}
+    libgcc-s1: {}
+    # Configarr clones and checks out its repositories with git (simple-git),
+    # over https: git-remote-https, and the CA bundle git only recommends.
+    git: {}
+    ca-certificates: {}
+    # PID 1, as upstream: forwards SIGTERM and SIGINT, which node as PID 1
+    # ignores, and reaps git's processes.
+    dumb-init: {}
+
+image:
+  entrypoint: /usr/bin/dumb-init /usr/bin/node /usr/lib/configarr/bundle.cjs
+  env:
+    # No /etc/passwd entry for the user: git's ~ would not resolve.
+    - HOME=/app/repos
+    # Upstream's default is the working directory: the same, made explicit.
+    - ROOT_PATH=/app
+    # git's safe.directory=*, as upstream (issues #240, #241): git refuses
+    # a repository its user doesn't own, so clones owned by another UID but
+    # writable through their group (a volume reused with another runAsUser,
+    # the same fsGroup) stay usable. Through the environment: no gitconfig
+    # file to ship.
+    - GIT_CONFIG_COUNT=1
+    - GIT_CONFIG_KEY_0=safe.directory
+    - GIT_CONFIG_VALUE_0=*
+  # Not root, numeric so Kubernetes' runAsNonRoot can check it. The image has
+  # no such user: /app/repos must be writable by this UID/GID.
+  user: "65532:65532"
+  working_dir: /app
+  volumes:
+    /app/config: {}
+    /app/repos: {}
+  labels:
+    org.opencontainers.image.title: configarr
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: AGPL-3.0-only
+    org.opencontainers.image.source: https://github.com/spnngl/images
+
+tests:
+  # The tools configarr runs, from the paths it finds first. The image has
+  # no shell: a wrapper script would fail here.
+  - name: tools configarr runs work
+    steps:
+      # dumb-init runs node and passes its exit code on.
+      - command: /usr/bin/dumb-init /usr/bin/node --version
+        stdout:
+          contains:
+            - v${NODE_VERSION}
+      - command: /usr/bin/git --version
+        stdout:
+          contains:
+            - git version
+    files:
+      # git's https transport, and the CA bundle it reads.
+      /usr/lib/git-core/git-remote-https: {}
+      /etc/ssl/certs/ca-certificates.crt: {}
+  # Configarr has no --version: it logs its version, then fails without a
+  # config. That failure is an unhandled promise rejection: warn makes it a
+  # warning, so the step exits 0. Reaching the config proves the whole
+  # bundle loaded.
+  - name: configarr starts
+    steps:
+      - command: /usr/bin/node --unhandled-rejections=warn /usr/lib/configarr/bundle.cjs
+        stdout:
+          contains:
+            - "Configarr Version: ${BASE_VERSION}"
+        stderr:
+          contains:
+            - Config file not found.
