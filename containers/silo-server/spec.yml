@@ -1,0 +1,228 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.3
+#
+# Silo media server, its web app embedded, built with Dalec
+# (https://project-dalec.github.io/dalec/): one Debian trixie package,
+# installed into the minimal image of the trixie/container target (see
+# containers/sabnzbd/spec.yml) with jellyfin-ffmpeg8 from Jellyfin's
+# repository.
+#
+# Runtime contract: runs as UID/GID 65532 (no passwd entry). Volumes,
+# writable by it: /var/lib/silo (artwork, user databases, plugins:
+# mounted with exec, they run from it) and /tmp (transcodes, prepared
+# downloads, uploads: upstream's paths, which the database stores as
+# settings). Media mounted wherever the libraries point (read-only is
+# enough). The root filesystem can be read-only.
+# Environment: SECRET_KEY (32+ characters; it encrypts the credentials
+# in the database: back it up apart), DATABASE_URL (PostgreSQL with
+# pgvector), REDIS_URL; MODE: integrated (default), proxy or transcode.
+# HTTP on 8080/tcp (web app, API), Jellyfin-compatible API on 8096/tcp,
+# Audiobookshelf-compatible API on 13378/tcp. Probes: GET /api/v1/health
+# on 8080 (Dalec images have no HEALTHCHECK). A start first migrates the
+# database, for up to SILO_MIGRATE_TIMEOUT (20m): the startup probe must
+# wait that long. A stop takes up to 2 minutes (upstream's
+# stop_grace_period): in-flight requests finish.
+# Hardware transcoding, with the drivers jellyfin-ffmpeg bundles: pass
+# /dev/dri and add the GID owning it (VA-API, QSV); NVIDIA: the NVIDIA
+# Container Toolkit (see image.env). No Intel OpenCL: HDR tone mapping on
+# Intel uses VPP only. No Jellyfin Web (silo compat-web): it needs git,
+# Node.js and npm at runtime (REFERENCES.md).
+#
+# Renovate bumps the commit in docker-bake.hcl, and the Go toolchain below
+# (AGENTS.md, Updates).
+
+# Set by docker-bake.hcl; empty here, Dalec needs them declared
+# (containers/AGENTS.md).
+args:
+  # The commit of upstream's main branch, and its first 8 characters: the
+  # revision Silo displays (internal/buildinfo).
+  BASE_VERSION: ""
+  BASE_CHECKSUM: ""
+  # The node image, by tag and digest.
+  NODE_IMAGE: ""
+
+name: silo-server
+description: Silo, a self-hosted media server
+website: https://siloserver.org
+license: AGPL-3.0-or-later
+packager: spnngl/images
+vendor: spnngl/images
+# A Debian version starts with a digit; a commit may not.
+version: 0~git${BASE_VERSION}
+revision: 1
+
+sources:
+  silo-server:
+    git:
+      url: https://github.com/Silo-Server/silo-server.git
+      commit: ${BASE_CHECKSUM}
+    # Downloads the Go modules before the build; go.sum pins each one by
+    # hash.
+    generate:
+      - gomod: {}
+  # Builds the web app (web/): Node.js 24, which Silo's frontend needs
+  # (upstream's Dockerfile) and trixie lacks, with its npm and corepack.
+  node:
+    image:
+      ref: ${NODE_IMAGE}
+    path: /usr/local
+
+dependencies:
+  build:
+    # trixie's golang-go is 1.24: go.mod needs 1.26 or later. From
+    # trixie-backports, see extra_repos. Dalec puts its
+    # /usr/lib/go-<version>/bin on the PATH.
+    golang-1.27-go: {}
+    # cgo: libvips (bimg, internal/imageutil) and mattn/go-sqlite3.
+    build-essential: {}
+    libvips-dev: {}
+    pkgconf: {}
+  runtime:
+    # The ffmpeg fork Silo looks for first (/usr/lib/jellyfin-ffmpeg,
+    # internal/playback/remux.go), upstream's, with its own VA-API, QSV
+    # and Vulkan drivers. Not pinned, like Debian's packages: a rebuild
+    # picks up its fixes.
+    jellyfin-ffmpeg8: {}
+    # HTTPS to metadata providers and plugin downloads; tzdata for Go's
+    # time zones (Silo doesn't embed time/tzdata).
+    ca-certificates: {}
+    tzdata: {}
+    # Subtitle burn-in finds fonts through fontconfig. Noto: Latin and
+    # most scripts, CJK; upstream's image has them.
+    fonts-noto-core: {}
+    fonts-noto-cjk: {}
+    # Not used by Silo: Dalec 0.22.1 purges it before its last dpkg run,
+    # which then fails and leaves the shell in the image.
+    # TODO: drop when Dalec keeps the libraries dpkg links
+    # (containers/jellyfin/REFERENCES.md).
+    libmd0: {}
+  extra_repos:
+    # trixie-backports for Go, only for the build: the image gets nothing
+    # from it. Same mirror and signing key as the worker's own
+    # /etc/apt/sources.list.d/debian.sources. Dalec only takes the one-line
+    # format (it names the file *.list).
+    - config:
+        backports:
+          inline:
+            file:
+              contents: |
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian trixie-backports main
+      envs:
+        - build
+    # Jellyfin's repository, for jellyfin-ffmpeg8 in the image. The key is
+    # at /usr/share/keyrings/<key name>.
+    - keys:
+        # .asc: ASCII armored, apt ignores the key otherwise.
+        jellyfin.asc:
+          http:
+            url: https://repo.jellyfin.org/jellyfin_team.gpg.key
+            digest: sha256:a0cde241ae297fa6f0265c0bf15ce9eb9ee97c008904a59ab367a67d59532839
+            permissions: 0o644
+      config:
+        jellyfin:
+          inline:
+            file:
+              contents: |
+                deb [signed-by=/usr/share/keyrings/jellyfin.asc] https://repo.jellyfin.org/debian trixie main
+      envs:
+        - install
+
+build:
+  # pnpm downloads the web app's modules from npm; web/pnpm-lock.yaml pins
+  # each one by hash (--frozen-lockfile). Corepack downloads the pnpm
+  # release web/package.json names, checked against npm's signing keys.
+  network_mode: sandbox
+  env:
+    # libvips and SQLite are C.
+    CGO_ENABLED: "1"
+    # Fail with go.mod's requirement rather than try to download a newer Go:
+    # a new go directive needs a newer golang-<version>-go.
+    GOTOOLCHAIN: local
+    COREPACK_HOME: /tmp/corepack
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    # No silo-server-dbgsym package: the image would install it.
+    DEB_BUILD_OPTIONS: noautodbgsym
+  # Steps run with sh (dash) from the folder holding one folder per source.
+  steps:
+    # The web app, into web/dist, which the binary embeds (web/embed.go).
+    # vite build alone: upstream's build script also typechecks, which
+    # writes nothing.
+    - command: |
+        export PATH="${PWD}/node/bin:${PATH}"
+        cd silo-server/web
+        corepack pnpm install --frozen-lockfile --store-dir /tmp/pnpm-store
+        corepack pnpm exec vite build
+    # Upstream's Dockerfile build, without git (the source has no .git):
+    # the revision Silo displays is the commit, its build time
+    # SOURCE_DATE_EPOCH (CI: build-apps.yml's). -trimpath: module paths, not
+    # the build folder's, in the binary and its stack traces. Dalec expands
+    # args in env, not in the command.
+    - env:
+        COMMIT: ${BASE_CHECKSUM}
+      command: |
+        cd silo-server
+        pkg=github.com/Silo-Server/silo-server/internal/buildinfo
+        go build -trimpath -ldflags "-X ${pkg}.revisionOverride=${COMMIT} \
+          -X ${pkg}.builtAtOverride=$(date -u -d "@${SOURCE_DATE_EPOCH}" +%FT%TZ)" \
+          -o ../out/silo ./cmd/silo
+
+artifacts:
+  binaries:
+    out/silo: {}
+  licenses:
+    # Installed in /usr/share/doc/silo-server/. Declaring them also makes
+    # trixie/container keep the Debian packages' copyright files.
+    silo-server/LICENSE: {}
+    silo-server/THIRD_PARTY_NOTICES.md: {}
+
+image:
+  entrypoint: /usr/bin/silo
+  env:
+    # No /etc/passwd entry for the user: ~ would not resolve (fontconfig's
+    # cache goes in ~/.cache).
+    - HOME=/var/lib/silo
+    # Installed plugins, kept across restarts, as upstream's
+    # docker-compose.yml (default: under /tmp).
+    - SILO_PLUGIN_CACHE_DIR=/var/lib/silo/plugins
+    # The toolkit's default (utility, compute) lacks video: no NVENC/NVDEC.
+    - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+  # Not root, numeric so Kubernetes' runAsNonRoot can check it. The image has
+  # no such user: the mounted folders must be writable by this UID/GID.
+  user: "65532:65532"
+  working_dir: /var/lib/silo
+  volumes:
+    /var/lib/silo: {}
+    /tmp: {}
+  labels:
+    org.opencontainers.image.title: silo-server
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: AGPL-3.0-or-later
+    org.opencontainers.image.source: https://github.com/spnngl/images
+    # 8080/tcp, 8096/tcp, 13378/tcp: Dalec has no EXPOSE equivalent.
+
+tests:
+  - name: jellyfin-ffmpeg runs
+    steps:
+      - command: /usr/lib/jellyfin-ffmpeg/ffmpeg -hide_banner -version
+        stdout:
+          contains:
+            - Jellyfin
+      - command: /usr/lib/jellyfin-ffmpeg/ffprobe -hide_banner -version
+        stdout:
+          contains:
+            - Jellyfin
+  # Silo has no --version and needs PostgreSQL to start. -h prints the
+  # flags after the package inits, libvips' (bimg) included, and exits 0.
+  - name: Silo runs
+    steps:
+      - command: /usr/bin/silo -h
+        stderr:
+          contains:
+            - -migrate-only
+  # The -X flag took: a renamed variable would fail silently.
+  - name: revision built in, no shell
+    files:
+      /usr/bin/silo:
+        contains:
+          - ${BASE_CHECKSUM}
+      /bin/sh:
+        not_exist: true

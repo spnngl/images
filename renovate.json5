@@ -90,8 +90,8 @@
         },
         {
             "customType": "regex",
-            "description": "Go of the nftables-exporter and crowdsec specs: their golang-<major.minor>-go build dependency, from trixie-backports, whose golang-go (version 2:<major.minor>~...) depends on the newest one. Through Repology, by source package (golang-defaults builds golang-go): the deb datasource only reads Packages.gz, and backports only publishes Packages.xz.",
-            "managerFilePatterns": ["/^containers/(nftables-exporter|crowdsec)/spec\\.yml$/"],
+            "description": "Go of the nftables-exporter, crowdsec and silo-server specs: their golang-<major.minor>-go build dependency, from trixie-backports, whose golang-go (version 2:<major.minor>~...) depends on the newest one. Through Repology, by source package (golang-defaults builds golang-go): the deb datasource only reads Packages.gz, and backports only publishes Packages.xz.",
+            "managerFilePatterns": ["/^containers/(nftables-exporter|crowdsec|silo-server)/spec\\.yml$/"],
             "matchStrings": ["\\bgolang-(?<currentValue>\\d+\\.\\d+)-go: "],
             "depNameTemplate": "golang-go",
             "packageNameTemplate": "debian_13_backports/golang-defaults",
@@ -267,6 +267,15 @@
             "schedule": ["* 0-4 * * 6"],
             "updateNotScheduled": false,
             "automerge": true
+        },
+        {
+            "description": "Silo media server, pinned to a commit of its main branch (containers/silo-server): no release, tens of commits a day, and each PR update rebuilds the image. Proposed on Saturday between midnight and 5am, like the snapshot above, its PR not updated outside that window; merged by hand. The note keeps what changed.",
+            "matchDepNames": ["Silo-Server/silo-server"],
+            "schedule": ["* 0-4 * * 6"],
+            "updateNotScheduled": false,
+            "prBodyNotes": [
+                "What changed: https://github.com/{{{depName}}}/compare/{{{currentDigest}}}...{{{newDigest}}}"
+            ]
         },
         {
             "description": "MinIO and its forks (minio/minio, pgsty/silo, pgsty/mc): RELEASE.<date>T<time>Z tags. Versioning: by date then time (the seconds left out: regex versioning has five parts).",
