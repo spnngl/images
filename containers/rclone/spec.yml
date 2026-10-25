@@ -1,0 +1,207 @@
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.3
+#
+# rclone (sync, copy, serve and mount of cloud storage) built with Dalec
+# (https://project-dalec.github.io/dalec/): one Debian trixie package, the
+# static binary, installed into the minimal image of the trixie/container
+# target with Debian's fuse3 for `rclone mount` (REFERENCES.md).
+#
+# Runtime contract:
+# - UID/GID 65532 (no passwd entry). Hardened: read-only root filesystem,
+#   no capability, and no-new-privileges (Kubernetes'
+#   allowPrivilegeEscalation: false), required: fuse3's dependencies ship
+#   Debian's setuid binaries (REFERENCES.md). A tmpfs on /tmp for the
+#   commands that spool there (--temp-dir).
+# - Config: /config/rclone/rclone.conf (RCLONE_CONFIG), upstream image's
+#   path. Mount the whole /config/rclone folder, writable: rclone rewrites
+#   the file through a rename when an OAuth token refreshes. Or no file
+#   (RCLONE_CONFIG= silences its "not found" notice):
+#   RCLONE_CONFIG_<REMOTE>_<OPTION> variables, or connection strings
+#   (:s3,provider=...:bucket). RCLONE_CONFIG_PASS for an encrypted config.
+# - Cache: /cache/rclone (XDG_CACHE_HOME=/cache), a writable volume on
+#   /cache for the commands that use it (--vfs-cache-mode, bisync's state,
+#   serve sftp's host keys, rcd's web GUI).
+# - Working directory: /data, upstream image's, for local paths: a volume.
+# - No port open by default: serve and rcd listen on upstream's defaults,
+#   localhost mostly; pass --addr :<port> or --rc-addr :5572.
+# - `rclone mount`: UID 0, CAP_SYS_ADMIN, /dev/fuse, and AppArmor
+#   unconfined (Docker's default profile denies mount); bind propagation
+#   (:shared) for the host to see it. Kubernetes: privileged: true, which
+#   Bidirectional propagation and /dev/fuse require. Mount on an existing
+#   folder inside a volume (/data/mount of a /data volume): rclone refuses
+#   a mount point that is itself mounted, unless --allow-non-empty.
+#   --allow-other for the host or containers running as another UID: only
+#   root can read the mount otherwise. fusermount3, which rclone runs,
+#   fails as any other UID here (REFERENCES.md).
+#
+# Renovate bumps the version and checksum in docker-bake.hcl, and the Go
+# toolchain below (AGENTS.md, Updates).
+
+# Set by docker-bake.hcl; empty here, Dalec needs them declared
+# (containers/AGENTS.md).
+args:
+  BASE_VERSION: ""
+  # The commit of the BASE_VERSION tag.
+  BASE_CHECKSUM: ""
+
+name: rclone
+description: rsync for cloud storage
+website: https://rclone.org
+license: MIT
+packager: spnngl/images
+vendor: spnngl/images
+version: ${BASE_VERSION}
+revision: 1
+
+sources:
+  rclone:
+    git:
+      url: https://github.com/rclone/rclone.git
+      commit: v${BASE_VERSION}
+      # The tag must resolve to this commit: tags can be moved.
+      checksum: ${BASE_CHECKSUM}
+    # Downloads the Go modules before the build, which has no network;
+    # go.sum pins each one by hash.
+    generate:
+      - gomod: {}
+
+dependencies:
+  build:
+    # trixie's golang-go is 1.24: go.mod needs 1.26 or later. From
+    # trixie-backports, see extra_repos. Dalec puts its
+    # /usr/lib/go-<version>/bin on the PATH.
+    golang-1.27-go: {}
+    # The server test's S3 client.
+    curl: {}
+  runtime:
+    # /usr/bin/fusermount3, which rclone mount and mount2 run to mount.
+    fuse3: {}
+    # HTTPS to every cloud provider.
+    ca-certificates: {}
+    # /etc/mime.types: the Content-Type of uploads and of serve's
+    # responses. Go only knows a few types without it; upstream's image
+    # has it too (Alpine's mailcap).
+    media-types: {}
+  extra_repos:
+    # trixie-backports for Go, only for the build: the image gets nothing
+    # from it. Same mirror and signing key as the worker's own
+    # /etc/apt/sources.list.d/debian.sources. Dalec only takes the one-line
+    # format (it names the file *.list).
+    - config:
+        backports:
+          inline:
+            file:
+              contents: |
+                deb [signed-by=/usr/share/keyrings/debian-archive-keyring.pgp] http://deb.debian.org/debian trixie-backports main
+      envs:
+        - build
+
+build:
+  env:
+    # Pure Go, as upstream's Linux release: a static binary.
+    CGO_ENABLED: "0"
+    # Fail with go.mod's requirement rather than try to download a newer Go
+    # (no network): a new go directive needs a newer golang-<version>-go.
+    GOTOOLCHAIN: local
+    # No rclone-dbgsym package: the image would install it.
+    DEB_BUILD_OPTIONS: noautodbgsym
+  # Steps run with sh (dash) from the folder holding one folder per source.
+  steps:
+    # Upstream's release build (bin/cross-compile.go): -trimpath, -s and
+    # the version through fs.Version. Its cmount tag needs cgo on Linux,
+    # so it adds nothing there: left out. noselfupdate: the image is the
+    # update, `rclone selfupdate` is removed. Dalec expands args in env,
+    # not in the command.
+    - env:
+        VERSION: v${BASE_VERSION}
+      command: |
+        cd rclone
+        go build -trimpath -tags noselfupdate \
+          -ldflags "-s -X github.com/rclone/rclone/fs.Version=${VERSION}" \
+          -o ../out/rclone .
+    # Upstream's tests of what deletes or overwrites data (sync, its file
+    # operations, the local backend), on local folders: no network. Renovate
+    # automerges rclone and Go on them and the server test.
+    - command: |
+        cd rclone
+        go test ./fs/sync/ ./fs/operations/ ./backend/local/
+    # Server test: Renovate automerges rclone and Go on it. serve s3 on a
+    # folder, a 1 MiB object written through rclone's S3 client and read
+    # back with curl, then a stop (rclone exits 143 on SIGTERM). Random
+    # throwaway keys. The endpoint is quoted: a connection string's values
+    # end at a colon otherwise.
+    - command: |
+        hex() { od -An -vtx1 -N16 /dev/urandom | tr -d ' \n'; }
+        key="$(hex)"
+        secret="$(hex)"
+        mkdir -p /tmp/s3/smoke-test
+        out/rclone serve s3 --addr 127.0.0.1:8080 --auth-key "${key},${secret}" /tmp/s3 &
+        server=$!
+        # A failing command would leave the server holding the step's output.
+        trap 'kill "${server}" 2>/dev/null || :' EXIT
+        s3() { curl -fsS --aws-sigv4 aws:amz:us-east-1:s3 --user "${key}:${secret}" "$@"; }
+        s3 --retry 30 --retry-delay 1 --retry-connrefused -o /dev/null http://127.0.0.1:8080/
+        head -c 1M /dev/urandom > /tmp/object
+        out/rclone copyto /tmp/object \
+          ":s3,provider=Rclone,endpoint='http://127.0.0.1:8080',access_key_id=${key},secret_access_key=${secret}:smoke-test/object"
+        s3 http://127.0.0.1:8080/smoke-test/object | cmp - /tmp/object
+        kill "${server}"
+        wait "${server}" || [ $? -eq 143 ]
+        rm -r /tmp/s3 /tmp/object
+
+artifacts:
+  binaries:
+    out/rclone: {}
+  licenses:
+    # The MIT notice that must ship with the binary, in
+    # /usr/share/doc/rclone/. Declaring it also makes trixie/container
+    # keep all of /usr/share/doc, so the Debian packages' copyright files
+    # stay too (it deletes the whole tree otherwise).
+    rclone/COPYING: {}
+
+image:
+  # Upstream's entrypoint: arguments are rclone's (`docker run <image> ls
+  # remote:`).
+  entrypoint: /usr/bin/rclone
+  env:
+    # Upstream image's path. A variable, not XDG_CONFIG_HOME: without a
+    # mounted /config, XDG falls back silently to /.rclone.conf.
+    - RCLONE_CONFIG=/config/rclone/rclone.conf
+    # Not RCLONE_CACHE_DIR: bisync and the cache backend read their
+    # defaults before the environment. Otherwise /.cache (HOME=/), read-only.
+    - XDG_CACHE_HOME=/cache
+  # Upstream image's: its docs' relative paths and /data/mount apply.
+  working_dir: /data
+  # Not root, numeric so Kubernetes' runAsNonRoot can check it. The image has
+  # no such user: mounted folders must be writable by this UID/GID. Root
+  # only for rclone mount (runtime contract above).
+  user: "65532:65532"
+  labels:
+    org.opencontainers.image.title: rclone
+    org.opencontainers.image.version: ${BASE_VERSION}
+    org.opencontainers.image.licenses: MIT
+    org.opencontainers.image.source: https://github.com/spnngl/images
+
+tests:
+  # From the PATH lookup of go-fuse and bazil/fuse. Mounting needs
+  # /dev/fuse and CAP_SYS_ADMIN, which the build's containers don't have.
+  - name: fusermount3 runs
+    steps:
+      - command: /usr/bin/fusermount3 --version
+        stdout:
+          contains:
+            - fusermount3 version
+  - name: rclone starts
+    steps:
+      - command: /usr/bin/rclone version
+        stdout:
+          contains:
+            - rclone v${BASE_VERSION}
+            - "go/linking: static"
+            - "go/tags: noselfupdate"
+  # What rclone reads at runtime, and no shell.
+  - name: runtime files
+    files:
+      /etc/ssl/certs/ca-certificates.crt: {}
+      /etc/mime.types: {}
+      /bin/sh:
+        not_exist: true
