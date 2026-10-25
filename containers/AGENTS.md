@@ -62,7 +62,8 @@ By what the app needs at runtime; name that need in the image's
   Dalec, skill `add-dalec-image`.
 - A C binary linking a few Debian libraries: a Containerfile on
   distroless' `cc-debian13`, the packages it lacks copied with their
-  dpkg status (`containers/haproxy`).
+  dpkg status (`containers/haproxy`); none when distroless has them
+  all (`containers/valkey`).
 - Data other images copy (lists, databases): `containers/datalists`,
   on `scratch`, tagged `latest`.
 - A distribution's root filesystem, for CI jobs that build its

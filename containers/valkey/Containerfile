@@ -1,0 +1,242 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Valkey (https://valkey.io) built from source on distroless
+# (gcr.io/distroless/cc-debian13): valkey-server and valkey-cli, TLS
+# built in, linked against Debian trixie's OpenSSL, which distroless
+# ships (containers/valkey/REFERENCES.md). Unlike the official image:
+# no entrypoint script (no shell), so no chown of /data, no umask 0077,
+# no VALKEY_EXTRA_FLAGS; no systemd support, no modules.
+#
+# Runtime contract: UID/GID 65532, no passwd entry. Arguments are
+# valkey-server's: a config file path first, if any (none shipped), then
+# `--<option> <value>`. Data (RDB, AOF) in /data, a volume
+# and the working directory, so Valkey's default `dir`. Port 6379.
+# protected-mode defaults to off, as in the official image: access
+# control is `requirepass` or ACL users, and the network's. Runs with
+# --read-only, no capability, no-new-privileges. /usr/bin/valkey-cli for
+# exec probes (`valkey-cli ping`), valkey-check-aof and valkey-check-rdb
+# for the data files.
+
+# Versions come from containers/valkey/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# Debian trixie, the release distroless' cc-debian13 is built from: the
+# OpenSSL linked here is the final image's.
+FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+# The build ID `valkey-server --version` prints (src/mkreleasehdr.sh,
+# patched below): the last commit's time in CI, the same on every
+# rebuild.
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# gcc, libc6-dev, make: upstream's build; dpkg-dev: Debian's hardening
+# flags (dpkg-buildflags) and the architecture; libssl-dev: TLS. openssl:
+# the server test's certificate.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends dpkg-dev gcc libc6-dev libssl-dev make openssl
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved. No
+# .git: src/version.h sets the version, the git SHA is 00000000.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/valkey-io/valkey.git#${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: neither upstream's build
+# nor the server gets root, and the source stays root's. WORKDIR creates
+# its folder owned by USER: /out takes the image's files. /build: the
+# build writes into the source tree, a copy, the user's.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /build
+RUN cp -R /src/. .
+
+# protected-mode off by default, as the official image patches it
+# (valkey-io/valkey-container): a container's port is reachable only
+# where it is published. Patched in the source, not set as an argument:
+# the default holds whatever arguments the container gets.
+# Build ID `<host>-<SOURCE_DATE_EPOCH>`, not the bare time
+# src/mkreleasehdr.sh makes it: syft's valkey-binary classifier finds
+# the version by `<version>buildkitsandbox-<digits>`, BuildKit's host
+# name; without it, the SBOM loses Valkey.
+# Each grep fails the build when upstream's line changes.
+# Debian's hardening flags, as its packages build with (stack protector,
+# fortify, RELRO), through the environment: upstream's Makefile appends
+# to CFLAGS (-funwind-tables on arm64) and passes it to the bundled
+# libraries. Without -O2: upstream's -O3 and LTO stay. Debug info
+# stripped after the build, the bundled libraries' Makefiles each adding
+# their own -g; the symbol table stays, and -rdynamic's exports, for the
+# stack trace Valkey logs on a crash.
+# jemalloc's page size, set at build time and fatal on a kernel with
+# larger pages: Debian's values (64 KiB but on amd64), as the official
+# image; the huge page size too, not the build host's.
+# Single quotes (SC2016): the build ID's line is written unexpanded,
+# for mkreleasehdr.sh to expand.
+# hadolint ignore=SC2016
+RUN <<EORUN
+sed -ri 's!^( *createBoolConfig[(]"protected-mode",.*, *)1( *,.*[)],)$!\10\2!' src/config.c
+grep -E '^ *createBoolConfig[(]"protected-mode",.*, *0 *,.*[)],$' src/config.c
+sed -ri 's!^( *BUILD_ID=)\$\(date -u -d "@\$SOURCE_DATE_EPOCH".*$!\1$(uname -n)-$SOURCE_DATE_EPOCH!' src/mkreleasehdr.sh
+grep -Fx '  BUILD_ID=$(uname -n)-$SOURCE_DATE_EPOCH' src/mkreleasehdr.sh
+export DEB_CFLAGS_MAINT_STRIP=-O2
+CFLAGS="$(dpkg-buildflags --get CPPFLAGS) $(dpkg-buildflags --get CFLAGS)"
+LDFLAGS="$(dpkg-buildflags --get LDFLAGS)"
+export CFLAGS LDFLAGS
+case "$(dpkg --print-architecture)" in
+    amd64) lg_page=12 ;;
+    *) lg_page=16 ;;
+esac
+make -C src -j"$(nproc)" BUILD_TLS=yes USE_SYSTEMD=no \
+    JEMALLOC_CONFIGURE_OPTS="--with-lg-page=${lg_page} --with-lg-hugepage=21" \
+    valkey-server valkey-cli
+mkdir -p /out/usr/bin /out/usr/share/doc/valkey/deps/linenoise \
+    /out/usr/share/doc/valkey/deps/fast_float /out/data
+cp src/valkey-server src/valkey-cli /out/usr/bin/
+strip --strip-debug /out/usr/bin/valkey-server /out/usr/bin/valkey-cli
+# valkey-server picks its mode by its name, as upstream's make install
+# links them: no shell in the image, so the only way to check or repair
+# a data file (valkey-check-aof --fix).
+ln -s valkey-server /out/usr/bin/valkey-check-aof
+ln -s valkey-server /out/usr/bin/valkey-check-rdb
+EORUN
+
+# Upstream's license and the bundled libraries' (deps/). linenoise's and
+# fast_float's are only in their sources' headers: copied out, the grep
+# failing the build when a header changes.
+WORKDIR /src
+RUN <<EORUN
+cp --parents COPYING deps/fpconv/LICENSE.txt deps/hdr_histogram/COPYING.txt \
+    deps/hdr_histogram/LICENSE.txt deps/jemalloc/COPYING deps/libvalkey/COPYING \
+    deps/lua/COPYRIGHT /out/usr/share/doc/valkey/
+sed -n '/Copyright/,/SUCH DAMAGE\./p' deps/linenoise/linenoise.c \
+    > /out/usr/share/doc/valkey/deps/linenoise/LICENSE
+grep -q 'SUCH DAMAGE\.' /out/usr/share/doc/valkey/deps/linenoise/LICENSE
+sed -n '/^$/q;p' deps/fast_float/ffc.h > /out/usr/share/doc/valkey/deps/fast_float/LICENSE
+grep -q 'MIT License Notice' /out/usr/share/doc/valkey/deps/fast_float/LICENSE
+EORUN
+
+# Server smoke test, here because the final image has no shell to run it.
+# The binaries: their versions, jemalloc, no debug info, a symbol table,
+# the stack protector and fortify's checked functions. The server, with a
+# random throwaway password, over TCP and TLS (a throwaway self-signed
+# certificate) and AOF: protected-mode off, a key written, read back over
+# TLS, through Lua and from a replica synced over TLS. SIGTERM, the
+# image's stop signal, saves it to /tmp/data: valkey-check-rdb and
+# valkey-check-aof pass the files, the restarted server reads it back.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN <<EORUN
+/out/usr/bin/valkey-server --version | tee /tmp/version
+grep -F "v=${BASE_VERSION} " /tmp/version
+grep -F ' malloc=jemalloc-' /tmp/version
+grep -qaF "${BASE_VERSION}buildkitsandbox-${SOURCE_DATE_EPOCH}" /out/usr/bin/valkey-server
+[ "$(/out/usr/bin/valkey-cli --version)" = "valkey-cli ${BASE_VERSION}" ]
+for bin in valkey-server valkey-cli; do
+    readelf -SW "/out/usr/bin/${bin}" > /tmp/sections
+    readelf --dyn-syms -W "/out/usr/bin/${bin}" > /tmp/symbols
+    if grep -qF .debug_info /tmp/sections; then exit 1; fi
+    grep -qF .symtab /tmp/sections
+    grep -qF __stack_chk_fail /tmp/symbols
+    grep -qE ' __[a-z_]+_chk@' /tmp/symbols
+done
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    -subj /CN=localhost -addext subjectAltName=IP:127.0.0.1 -days 1 \
+    -keyout /tmp/smoke-test.key -out /tmp/smoke-test.crt
+password="$(openssl rand -hex 16)"
+mkdir /tmp/data /tmp/replica
+# start <port> <dir> [option...]: a server on <port>, TLS on <port>+1;
+# $! is its PID.
+start() {
+    /out/usr/bin/valkey-server --bind 127.0.0.1 --port "$1" --dir "$2" \
+        --requirepass "${password}" --tls-port "$(($1 + 1))" --tls-auth-clients no \
+        --tls-cert-file /tmp/smoke-test.crt --tls-key-file /tmp/smoke-test.key \
+        --tls-ca-cert-file /tmp/smoke-test.crt "${@:3}" &
+    for _ in {1..50}; do
+        [ "$(cli -p "$1" PING 2> /dev/null)" = PONG ] && break
+        sleep 0.2
+    done
+}
+cli() {
+    /out/usr/bin/valkey-cli --no-auth-warning -a "${password}" "$@"
+}
+# No diskless sync delay: the replica syncs at once, not after 5 s.
+start 6379 /tmp/data --appendonly yes --repl-diskless-sync-delay 0
+server=$!
+[ "$(cli CONFIG GET protected-mode | sed -n 2p)" = no ]
+[ "$(cli SET smoke-test "${BASE_VERSION}")" = OK ]
+[ "$(cli --tls --cacert /tmp/smoke-test.crt -p 6380 GET smoke-test)" = "${BASE_VERSION}" ]
+[ "$(cli EVAL "return server.call('GET', KEYS[1])" 1 smoke-test)" = "${BASE_VERSION}" ]
+start 6381 /tmp/replica --replicaof 127.0.0.1 6380 --tls-replication yes \
+    --masterauth "${password}"
+replica=$!
+for _ in {1..50}; do
+    [ "$(cli -p 6381 GET smoke-test)" = "${BASE_VERSION}" ] && break
+    sleep 0.2
+done
+[ "$(cli -p 6381 GET smoke-test)" = "${BASE_VERSION}" ]
+kill "${replica}" "${server}"
+wait "${replica}" "${server}"
+/out/usr/bin/valkey-check-rdb /tmp/data/dump.rdb
+# The incremental file, not the manifest: 9.1's valkey-check-aof takes
+# the base RDB, signed VALKEY, for a broken AOF (fixed in unstable,
+# valkey-io/valkey#4739).
+/out/usr/bin/valkey-check-aof /tmp/data/appendonlydir/appendonly.aof.1.incr.aof
+start 6379 /tmp/data --appendonly yes
+server=$!
+[ "$(cli GET smoke-test)" = "${BASE_VERSION}" ]
+kill "${server}"
+wait "${server}"
+rm -r /tmp/data /tmp/replica /tmp/version /tmp/sections /tmp/symbols /tmp/smoke-test.crt /tmp/smoke-test.key
+EORUN
+
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="Valkey" \
+    org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="BSD-3-Clause" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The binaries and licenses: root's, not the build user's, so that Valkey
+# can't replace them. /data: the image's user's, so a new named volume
+# mounted there is too.
+COPY --link --from=build --chown=0:0 /out/usr/ /usr/
+COPY --link --from=build --chown=65532:65532 /out/data/ /data/
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+WORKDIR /data
+
+# Documentation only: Valkey's default port.
+EXPOSE 6379/tcp
+VOLUME ["/data"]
+
+ENTRYPOINT ["/usr/bin/valkey-server"]
+
+# Smoke test: both binaries find their libraries (OpenSSL) here. Two
+# RUNs (DL3059): exec form, no shell to chain them.
+RUN ["/usr/bin/valkey-cli", "--version"]
+# hadolint ignore=DL3059
+RUN ["/usr/bin/valkey-server", "--version"]
