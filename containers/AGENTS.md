@@ -64,6 +64,8 @@ By what the app needs at runtime; name that need in the image's
   distroless' `cc-debian13`, the packages it lacks copied with their
   dpkg status (`containers/haproxy`); none when distroless has them
   all (`containers/valkey`).
+- A Node.js app: a Containerfile on distroless' `nodejs<major>-debian13`,
+  built by the full Node image (`containers/seerr`).
 - Data other images copy (lists, databases): `containers/datalists`,
   on `scratch`, tagged `latest`.
 - A distribution's root filesystem, for CI jobs that build its

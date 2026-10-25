@@ -1,0 +1,180 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Seerr (https://github.com/seerr-team/seerr), a media request manager
+# for Jellyfin, Emby and Plex: its Express server and Next.js app, built
+# as upstream's Dockerfile builds them, run by Node.js on distroless'
+# nodejs22-debian13. Upstream runs it on Alpine, as root, through npm and
+# a shell; here: Debian (glibc), not root, no shell, `node` as the
+# entrypoint.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry). HTTP on 5055/tcp
+# (PORT; HOST sets the address). The app is in /app, upstream's path,
+# owned by root. Two volumes, both owned by 65532:
+# - /app/config: settings.json, the SQLite database (db/), logs and the
+#   caches of the app's own image proxy. Holds the DOCKER marker upstream
+#   writes: the UI warns while nothing is mounted there.
+# - /app/.next/cache: Next.js' optimized images. A tmpfs fits.
+# Probe: GET /api/v1/status. Settings are upstream's environment
+# variables: LOG_LEVEL, TZ, DB_* (PostgreSQL), CONFIG_DIRECTORY.
+# Runs with a read-only root filesystem, no capability and
+# no-new-privileges: it writes only to the two volumes.
+
+# Versions come from containers/seerr/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# --checksum: the tag must resolve to this commit, tags can be moved. No
+# .git: the commit goes to the build through BASE_CHECKSUM.
+FROM scratch AS source
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/seerr-team/seerr.git#v${BASE_VERSION} /
+
+# Node: upstream's major (package.json engines, its Dockerfile). The full
+# image, not slim: node-gyp needs python3, make and g++. Debian trixie,
+# as the final image's libc.
+FROM docker.io/library/node:22.23-trixie@sha256:77d0c7953e80648137a237496c8edbcb3a14bedc5c5298b93a6d0dfa6c3e1271 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+# HOME for the build user below (no passwd entry). Corepack keeps pnpm in
+# COREPACK_HOME, and pnpm its store in a cache mount. CI: upstream's
+# prepare script (husky) then skips itself, as in its Dockerfile.
+# Before SHELL: hadolint (2.15.1) checks the RUNs after an ENV or ARG as
+# /bin/sh, whatever SHELL says.
+ENV HOME=/tmp \
+    COREPACK_HOME=/tmp/corepack \
+    COREPACK_ENABLE_DOWNLOAD_PROMPT=0 \
+    npm_config_store_dir=/tmp/pnpm-store \
+    CI=true \
+    NEXT_TELEMETRY_DISABLED=1
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here. corepack enable: the pnpm shim in
+# /usr/local/bin, root's; the pnpm version is upstream's packageManager.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${BASE_CHECKSUM:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+corepack enable
+EORUN
+
+# Built as the image's user, in its own copy: neither the packages nor
+# the build get root.
+USER 65532:65532
+WORKDIR /build
+COPY --link --from=source --chown=65532:65532 / /build/
+
+# Upstream's release build (its Dockerfile): pnpm install
+# --frozen-lockfile, then pnpm build, with the commit as COMMIT_TAG (the
+# app shows it, and committag.json below). The lockfile fixes the
+# versions and integrity hashes. --ignore-scripts: no install script
+# runs. Cypress' (CYPRESS_INSTALL_BINARY=0) downloads a test browser;
+# sqlite3's fetches an unverified prebuilt binary from GitHub, so it is
+# built from the source of its npm package (what its script falls back
+# to), against the image's Node headers (--nodedir: no download). By
+# npm's node-gyp: the 8.4.1 the lockfile overrides for sqlite3 needs
+# Python's distutils, which trixie's Python 3.13 no longer ships. bcrypt
+# ships its prebuilds in its npm package, sharp its binaries in platform
+# packages, and swc's only checks them.
+RUN --mount=type=cache,id=pnpm-store-65532,uid=65532,gid=65532,target=/tmp/pnpm-store <<EORUN
+CYPRESS_INSTALL_BINARY=0 pnpm install --frozen-lockfile --ignore-scripts
+node /usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js rebuild --nodedir=/usr/local \
+  --directory="$(dirname "$(node -p "require.resolve('sqlite3/package.json')")")"
+COMMIT_TAG="${BASE_CHECKSUM}" pnpm build
+EORUN
+
+# The runtime packages alone, less the musl builds of the native
+# packages (pnpm installs both libc's; this image is glibc) and the
+# folders upstream's Dockerfile removes (the browser bundles hold what
+# the app uses of them): what the app serves with, as the image ships
+# it. The test is the proof, so it runs on this tree. Next's build cache
+# is the volume's to start empty.
+# The test: the server on loopback, a temp config folder (the app does
+# not create db/). The status reports this release; Next's image
+# optimizer, through sharp, answers an image at a width and quality it
+# accepts (the defaults: 640 and 75); the home page answers; bcrypt and
+# sqlite3 load and work. The image proxy accepts the hosts of
+# next.config.ts: Next compiles and reads it at start, so it ships;
+# tsconfig.json it does not need, and is not shipped.
+# hadolint ignore=DL3001
+RUN <<EORUN
+pnpm prune --prod --ignore-scripts
+find node_modules/.pnpm -maxdepth 1 -name '*musl*' -exec rm -rf {} +
+find node_modules/.pnpm -type d \( \
+  -path '*ace-builds/src' -o \
+  -path '*ace-builds/src-min' -o \
+  -path '*ace-builds/src-noconflict' -o \
+  -path '*country-flag-icons/1x1' -o \
+  -path '*country-flag-icons/react' -o \
+  -path '*country-flag-icons/string' -o \
+  -path '*@heroicons/react/16' \
+\) -prune -exec rm -rf {} +
+rm -rf .next/cache
+rm tsconfig.json
+mkdir /tmp/config /tmp/config/db
+NODE_ENV=production HOST=127.0.0.1 CONFIG_DIRECTORY=/tmp/config node dist/index.js &
+server=$!
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:5055/api/v1/status | grep -F "\"version\":\"${BASE_VERSION}\""
+curl -fsS -o /tmp/logo -w '%{content_type}\n' -H 'Accept: image/webp' 'http://127.0.0.1:5055/_next/image?url=%2Flogo_full.png&w=640&q=75' | grep -Fx image/webp
+! curl -sS 'http://127.0.0.1:5055/_next/image?url=https%3A%2F%2Fimage.tmdb.org%2Ft%2Fp%2Foriginal%2Fx.jpg&w=640&q=75' | grep -F 'is not allowed'
+curl -fsS -o /dev/null http://127.0.0.1:5055/
+node -e "
+const bcrypt = require('bcrypt');
+const sqlite3 = require('sqlite3');
+if (!bcrypt.compareSync('x', bcrypt.hashSync('x', 4))) process.exit(1);
+new sqlite3.Database(':memory:').get('SELECT 1', (err) => process.exit(err ? 1 : 0));
+"
+kill "${server}"
+wait "${server}" || true
+rm -rf /tmp/config /tmp/logo .next/cache
+mkdir .next/cache
+rm -rf config
+mkdir config config/db config/logs
+touch config/DOCKER
+echo "{\"commitTag\": \"${BASE_CHECKSUM}\"}" > committag.json
+EORUN
+
+# What the image ships. A stage of its own: root owns the app, the
+# volumes' folders are 65532's, and the image copies it all from here
+# (the SBOM scans this stage, not the build stage with node's image).
+# Only what the server reads at run time: upstream's Dockerfile copies
+# the whole repository.
+# .next/cache first, and excluded from the copy of .next: the later layer
+# wins the ownership of /app/.next, and root's.
+FROM scratch AS app-files
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
+COPY --link --from=build --chown=65532:65532 /build/.next/cache/ /app/.next/cache/
+COPY --link --from=build --chown=0:0 --exclude=cache /build/.next/ /app/.next/
+COPY --link --from=build --chown=0:0 /build/dist/ /app/dist/
+COPY --link --from=build --chown=0:0 /build/node_modules/ /app/node_modules/
+COPY --link --from=build --chown=0:0 /build/public/ /app/public/
+COPY --link --from=build --chown=0:0 /build/package.json /build/seerr-api.yml /build/committag.json /build/next.config.ts /app/
+COPY --link --from=build --chown=65532:65532 /build/config/ /app/config/
+
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:10747a1323be68f206aed893599d43e6697ad67257e7c42703553f99fbce3d33
+
+ARG BASE_VERSION
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# NODE_ENV: upstream's start script sets it, through a shell.
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1
+
+COPY --link --from=app-files /app/ /app/
+USER 65532:65532
+WORKDIR /app
+EXPOSE 5055
+VOLUME ["/app/config", "/app/.next/cache"]
+ENTRYPOINT ["/nodejs/bin/node"]
+CMD ["dist/index.js"]
+
+# The addons load against this image's libraries, and its Node meets
+# upstream's range.
+RUN ["/nodejs/bin/node", "-e", "require('bcrypt'); require('sqlite3'); require('sharp'); if (!require('semver').satisfies(process.version, require('./package.json').engines.node)) process.exit(1)"]
