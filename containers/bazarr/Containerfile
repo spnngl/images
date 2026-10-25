@@ -1,0 +1,267 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Bazarr (https://www.bazarr.media), a subtitle manager for Sonarr and
+# Radarr, on distroless' python3-debian13: Debian trixie's Python 3.13,
+# no shell. Upstream's release archive, built from its tag: the
+# files of .github/files_to_copy, and the web app, built here. The modules
+# with compiled code (lxml, numpy, Pillow, webrtcvad, psycopg2) come from
+# PyPI wheels, as the hash-pinned bazarr.lock says (bazarr-lock.sh); the
+# rest is vendored in upstream's libs/. FFmpeg and unrar are Debian's,
+# copied with the libraries distroless lacks and their dpkg status, so
+# scanners see them (containers/haproxy does the same for its libraries).
+# containers/bazarr/REFERENCES.md has the reason for each choice.
+#
+# Runtime contract: UID/GID 65532. Volumes: /config (every file Bazarr
+# writes: --config) and /tmp (temp files, the stop and restart files).
+# Web UI and API on 6767/tcp; probe: GET /api/system/ping. TZ sets the
+# time zone (UTC otherwise, with a warning in the log). PostgreSQL
+# instead of SQLite: the POSTGRES_* variables (upstream's docs). Updates
+# are off (NO_UPDATE): the image is the release, the UI says so. The
+# process is bazarr/main.py, not upstream's launcher bazarr.py: SIGINT
+# (STOPSIGNAL) closes the database and exits, with status 156 (upstream's
+# -100). The UI's Restart and Shutdown exit the container too, status 0:
+# run it with a restart policy (`unless-stopped`, Kubernetes' `Always`).
+# Post-processing commands run without a shell: a script needs an
+# interpreter, /usr/bin/python3. Runs with a read-only root filesystem, no
+# capability and no-new-privileges.
+# https://wiki.bazarr.media/Additional-Configuration/Environment-variables/
+
+# Versions come from containers/bazarr/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# The uv image: a FROM line reads only the arguments declared before the
+# first FROM.
+ARG UV_VERSION
+ARG UV_DIGEST
+
+# --checksum: the tag must resolve to this commit, tags can be moved. No
+# .git: VERSION, written below, sets the version.
+FROM scratch AS source
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/morpheus65535/bazarr.git#v${BASE_VERSION} /
+
+# The final image's base, by digest, which Renovate moves. Read by the
+# build stage too: the packages it holds are the ones not to copy again.
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:64e54c4b1200da244d80181d98e86fc01d73c8101f107d5baf472152d8e119a2 AS runtime
+
+# The web app, built as upstream's release workflow builds it: npm
+# install, npm run build. Node: upstream's major (frontend/.nvmrc).
+FROM docker.io/library/node:24.22-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS frontend
+
+# HOME for the build user below: npm keeps its cache in ~/.npm. Before
+# SHELL: hadolint (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh,
+# whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Built as the image's user, in its own copy: neither the packages nor
+# the build get root.
+USER 65532:65532
+WORKDIR /build
+COPY --link --from=source --chown=65532:65532 / /build/
+WORKDIR /build/frontend
+
+# npm ci installs package-lock.json's versions and integrity hashes
+# (upstream's workflow runs npm install, which may move them).
+# --ignore-scripts: no install script runs; husky's (prepare) needs .git,
+# and the others only check binaries their platform packages ship. The
+# first line: node's major is .nvmrc's, so a Renovate update of the node
+# image that moves past it fails here.
+RUN --mount=type=cache,id=npm-cache-65532,uid=65532,gid=65532,target=/tmp/.npm \
+    <<EORUN
+[ "$(node -p 'process.versions.node.split(".")[0]')" = "$(sed -E 's/^v?([0-9]+)\..*/\1/' .nvmrc)" ]
+npm ci --ignore-scripts
+npm run build
+EORUN
+
+# Installs the Python modules: its binary, and nothing else.
+FROM ghcr.io/astral-sh/uv:${UV_VERSION}@${UV_DIGEST} AS uv
+
+# Debian trixie, the release distroless' python3-debian13 is built from:
+# the libraries copied here are the ones the final image's Python and its
+# base have.
+FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS build
+
+ARG BASE_VERSION
+ARG DEBIAN_CODENAME
+ARG DEBIAN_SNAPSHOT_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# ffmpeg and unrar (non-free): what Bazarr runs, found on PATH. The
+# interpreter and its standard library: distroless' python3.13-minimal and
+# libpython3.13-stdlib, which the modules' wheels and compileall target.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+sed -i 's/^Components: main$/Components: main non-free/' /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends ffmpeg libpython3.13-stdlib python3.13-minimal unrar
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# What the final image needs of Debian's: ffmpeg and unrar, and the
+# packages owning the libraries ldd finds for them (ffprobe: ffmpeg's),
+# minus the packages the base has (/var/lib/dpkg/status.d/ of runtime).
+# Copied as dpkg installed them, with their status and md5sums in
+# /var/lib/dpkg/status.d/, where distroless records its own packages and
+# scanners read them. A library's links no package owns (libblas.so.3 goes
+# through /etc/alternatives) are copied too. What FFmpeg only dlopens (the
+# VA-API and VDPAU drivers, Mesa) isn't: hardware decoding, which Bazarr
+# never asks for. dpkg-query -S fails on a library no package owns, so the
+# build does.
+# /lib is a link to /usr/lib here and in runtime: the files are copied
+# under /usr, so a layer never replaces that link. Folders aren't copied:
+# --parents creates them. Files the list names but the disk lacks: docs but
+# the copyright, which trixie-slim's dpkg excludes
+# (/etc/dpkg/dpkg.cfg.d/docker).
+# unrar ships /usr/bin/unrar-nonfree, and its postinst runs
+# update-alternatives for /usr/bin/unrar, the name Bazarr looks for.
+RUN --mount=type=bind,from=runtime,target=/runtime \
+    <<EORUN
+mkdir -p /rootfs/var/lib/dpkg/status.d /rootfs/usr/bin
+libs="$(for binary in /usr/bin/ffmpeg /usr/bin/ffprobe /usr/bin/unrar-nonfree; do ldd "${binary}"; done | awk '/=>/ { print $3 }' | sort -u)"
+{
+    echo ffmpeg
+    echo unrar
+    xargs -r realpath <<<"${libs}" | xargs dpkg-query -S | cut -d: -f1
+} | sort -u > /tmp/wanted
+find /runtime/var/lib/dpkg/status.d -type f ! -name '*.md5sums' -printf '%f\n' | sort > /tmp/base
+comm -23 /tmp/wanted /tmp/base > /tmp/packages
+while read -r pkg; do
+    dpkg-query -L "${pkg}" | sed -E 's#^/(lib|bin|sbin)/#/usr/\1/#' | while read -r file; do
+        if [ -f "${file}" ] || [ -L "${file}" ]; then
+            cp -a --parents "${file}" /rootfs/
+        fi
+    done
+    dpkg-query -s "${pkg}" > "/rootfs/var/lib/dpkg/status.d/${pkg}"
+    md5sums="$(dpkg-query --control-path "${pkg}" md5sums)"
+    if [ -f "${md5sums}" ]; then
+        cp "${md5sums}" "/rootfs/var/lib/dpkg/status.d/${pkg}.md5sums"
+    fi
+done < /tmp/packages
+for lib in ${libs}; do
+    path="$(echo "${lib}" | sed -E 's#^/(lib|bin|sbin)/#/usr/\1/#')"
+    while [ -L "${path}" ]; do
+        cp -a --parents "${path}" /rootfs/
+        target="$(readlink "${path}")"
+        case "${target}" in
+            /*) path="${target}" ;;
+            *) path="$(dirname "${path}")/${target}" ;;
+        esac
+    done
+done
+ln -s unrar-nonfree /rootfs/usr/bin/unrar
+wc -l /tmp/packages
+rm /tmp/wanted /tmp/base /tmp/packages
+EORUN
+
+# The source, root's: the install tree below is a copy. The web app next
+# to it, where upstream's release has it (frontend/build).
+COPY --link --from=source / /src/
+COPY --link --from=frontend /build/frontend/build /src/frontend/build
+
+# The install tree, as the image's user, not root: the source stays
+# root's. WORKDIR creates its folder owned by USER: /out takes the image's
+# files. HOME for uv's cache (the base has no home for this user in the
+# build stage).
+USER 65532:65532
+ENV HOME=/tmp
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release archive (.github/scripts/create_asset.sh): the files
+# of .github/files_to_copy, and VERSION, which bazarr/main.py reads.
+# package_info (bazarr/init.py): the UI shows the message instead of
+# Bazarr's own updater (with NO_UPDATE, set below, it never runs).
+# Python modules: the lock's, from wheels only (--only-binary), each
+# checked against the hashes (--require-hashes). Installed in a virtual
+# environment, copied into libs/, which Bazarr puts on sys.path
+# (bazarr/app/libs.py): --target would add a bin/ folder there. Then the
+# upstream's requirements files must be satisfied by that environment
+# (--dry-run: nothing installed, --offline: a module it lacks fails
+# instead of being fetched); `sed`: bazarr-lock.sh's. A failure means
+# upstream changed its requirements: containers/bazarr/AGENTS.md
+# (Updates). Bytecode with unchecked hashes: CI clamps file times, so
+# time-checked ones look stale, and this user can't rewrite /usr/lib. -j 0:
+# one worker per CPU. -W ignore: vendored libs' invalid escape sequences
+# warn at compile time, which is not the build's concern.
+RUN --mount=type=bind,source=bazarr.lock,target=/bazarr.lock \
+    --mount=type=bind,from=uv,source=/uv,target=/usr/local/bin/uv \
+    --mount=type=cache,id=uv-cache-65532,uid=65532,gid=65532,target=/tmp/.cache/uv \
+    <<EORUN
+install=/out/usr/lib/bazarr
+mkdir -p "${install}"
+xargs -I{} cp -r --parents {} "${install}" < .github/files_to_copy
+echo "v${BASE_VERSION}" > "${install}/VERSION"
+printf '%s\n' 'UpdateMethod=External' 'UpdateMethodMessage=Bazarr is updated with its container image.' > "${install}/package_info"
+export UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
+uv venv --python /usr/bin/python3.13 /tmp/modules
+uv pip install --python /tmp/modules --require-hashes --only-binary :all: -r /bazarr.lock
+cp -r /tmp/modules/lib/python3.13/site-packages/. "${install}/libs/"
+cat requirements.txt postgres-requirements.txt | sed 's/ --only-binary=Pillow$//' > /tmp/requirements.txt
+uv pip install --python /tmp/modules --dry-run --offline -r /tmp/requirements.txt
+/usr/bin/python3.13 -W ignore -m compileall -q -j 0 --invalidation-mode unchecked-hash \
+    "${install}/bazarr" "${install}/custom_libs" "${install}/libs" "${install}/migrations"
+rm -rf /tmp/modules /tmp/requirements.txt
+EORUN
+
+# State folder: a named volume mounted there starts with its owner.
+RUN mkdir /out/config
+
+FROM runtime
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="Bazarr" \
+    org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="GPL-3.0-only" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The Debian packages, as dpkg installed them (root's). The install tree:
+# root's too, so that Bazarr can't replace its own code. The state folder:
+# the image's user's.
+COPY --link --from=build /rootfs/ /
+COPY --link --from=build --chown=0:0 /out/usr/ /usr/
+COPY --link --from=build --chown=65532:65532 /out/config/ /config/
+
+# NO_UPDATE: Bazarr never replaces its install folder nor runs pip
+# (bazarr/app/get_args.py, bazarr/init.py). STOPFILE, RESTARTFILE: what
+# bazarr.py, the launcher this image doesn't run, sets; main.py reads them
+# when it stops or restarts (bazarr/utilities/central.py).
+# PYTHONUNBUFFERED: the launcher's -u.
+ENV NO_UPDATE=true \
+    PYTHONUNBUFFERED=1 \
+    STOPFILE=/tmp/bazarr.stop \
+    RESTARTFILE=/tmp/bazarr.restart
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+WORKDIR /config
+
+EXPOSE 6767/tcp
+VOLUME ["/config", "/tmp"]
+# bazarr/app/server.py: its SIGINT handler closes the database and exits.
+STOPSIGNAL SIGINT
+
+ENTRYPOINT ["/usr/bin/python3", "/usr/lib/bazarr/bazarr/main.py"]
+CMD ["--config", "/config"]
+
+# Smoke test, here because the image has no shell: FFmpeg's and unrar's
+# libraries are found, and Bazarr starts as the image runs it
+# (smoke-test/smoke_test.py has the checks).
+RUN --mount=type=bind,source=smoke-test,target=/smoke-test \
+    ["/usr/bin/python3", "/smoke-test/smoke_test.py"]

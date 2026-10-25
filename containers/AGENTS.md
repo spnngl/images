@@ -66,6 +66,10 @@ By what the app needs at runtime; name that need in the image's
   all (`containers/valkey`).
 - A Node.js app: a Containerfile on distroless' `nodejs<major>-debian13`,
   built by the full Node image (`containers/seerr`).
+- A Python app whose compiled modules come as PyPI wheels: a
+  Containerfile on distroless' `python3-debian13`, the modules from a
+  hash-pinned lock installed with uv, the Debian packages it execs copied
+  with their dpkg status (`containers/bazarr`).
 - Data other images copy (lists, databases): `containers/datalists`,
   on `scratch`, tagged `latest`.
 - A distribution's root filesystem, for CI jobs that build its
