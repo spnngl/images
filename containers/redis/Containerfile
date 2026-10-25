@@ -1,0 +1,223 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Redis (https://redis.io) built from source on distroless
+# (gcr.io/distroless/cc-debian13): the binaries, linked against Debian
+# trixie's libraries, all of them distroless' packages, which scanners
+# see (containers/redis/REFERENCES.md). One image per release line
+# (docker-bake.hcl). Core only: TLS built in, no bundled module (search,
+# JSON, time series, bloom); vector sets, in-tree, are part of 8.x's core.
+# Replication compression from 8.10.
+#
+# Runtime contract: UID/GID 65532, no passwd entry. Port 6379.
+# /usr/local/bin/redis-server reads /etc/redis/redis.conf (a volume, none
+# shipped; writable, for CONFIG REWRITE and Sentinel) and keeps its data in
+# /data (a volume, the working folder). Protected mode is upstream's: the
+# config sets a password (requirepass, ACL) or `protected-mode no`, or
+# only loopback clients are served. redis-sentinel, redis-check-aof and
+# redis-check-rdb are links to redis-server (`--entrypoint`); redis-cli
+# is for exec probes. SIGTERM saves (when persistence is on) and stops.
+# Runs with --read-only, no capability, no-new-privileges.
+
+# Versions come from containers/redis/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# Debian trixie, the release distroless' cc-debian13 is built from: the
+# libraries linked here are the ones the final image has.
+FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# gcc, g++ (8.x's fast_float), libc6-dev, make, pkg-config: upstream's
+# build; dpkg-dev: Debian's hardening flags (dpkg-buildflags). The -dev
+# packages: the libraries Redis links (libzstd: 8.10's replication
+# compression). openssl: the smoke test's certificate.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends dpkg-dev g++ gcc libc6-dev libssl-dev libzstd-dev make openssl pkg-config
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved. No
+# .git: src/version.h sets the version, the git sha prints as 00000000,
+# as in upstream's release tarballs.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/redis/redis.git#${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: neither upstream's build
+# nor the server gets root, and the source stays root's. WORKDIR creates
+# its folder owned by USER: /out takes the image's files. /build: the
+# build writes into the source tree, a copy, the user's.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /build
+RUN cp -R /src/. .
+
+# src/'s Makefile, not the top-level one: 8.10's also builds and installs
+# the bundled modules it finds. The official image's options: TLS built
+# in, compression from 8.10, jemalloc (upstream's default on Linux)
+# configured as Debian's for the pages: 64 KiB but on amd64, so arm64
+# kernels with 64 KiB pages run it (docker-library/redis). Added to
+# deps/Makefile's configure line, as the official image does: 6.2's has
+# no JEMALLOC_CONFIGURE_OPTS. No systemd: nothing in a container listens
+# for its notifications.
+# Debian's hardening flags, as its packages build with (stack protector,
+# fortify, RELRO), without their -O2: upstream's -O3 stays. Upstream
+# compiles with -g: the debug info is stripped, the symbol table stays
+# for the backtraces Redis logs on a crash.
+# install: the server, redis-cli, redis-benchmark (removed: not for a
+# server image) and the links to redis-server.
+# State folders: a named volume mounted there starts with their owner.
+RUN <<EORUN
+export DEB_CFLAGS_MAINT_STRIP=-O2
+CFLAGS="$(dpkg-buildflags --get CPPFLAGS) $(dpkg-buildflags --get CFLAGS)"
+LDFLAGS="$(dpkg-buildflags --get LDFLAGS)"
+case "$(dpkg --print-architecture)" in
+    amd64) lg_page=12 ;;
+    *) lg_page=16 ;;
+esac
+jemalloc="--with-lg-page=${lg_page} --with-lg-hugepage=21"
+sed -i "s#cd jemalloc && ./configure #&${jemalloc} #" deps/Makefile
+grep -qF "cd jemalloc && ./configure ${jemalloc} " deps/Makefile
+export CFLAGS LDFLAGS
+case "${BASE_VERSION}" in
+    6.* | 7.* | 8.[0-8].*) line=() ;;
+    *) line=(BUILD_COMPRESSION=yes) ;;
+esac
+make -C src -j"$(nproc)" BUILD_TLS=yes USE_SYSTEMD=no "${line[@]}"
+make -C src install PREFIX=/out/usr/local
+rm /out/usr/local/bin/redis-benchmark
+strip --strip-debug /out/usr/local/bin/redis-server /out/usr/local/bin/redis-cli
+case "${BASE_VERSION}" in
+    6.* | 7.*) notices=(COPYING) ;;
+    *) notices=(LICENSE.txt REDISCONTRIBUTIONS.txt) ;;
+esac
+mkdir -p /out/usr/share/doc/redis /out/etc/redis /out/data
+cp "${notices[@]}" /out/usr/share/doc/redis/
+EORUN
+
+# Server smoke test, here because the final image has no shell to run it.
+# The version; the binary's sections and symbols: no debug info, a symbol
+# table, the stack protector and fortify's checked functions, OpenSSL.
+# Then a server on 127.0.0.1 with a throwaway password and certificate: a
+# key written over TCP and read back over TLS, the version and jemalloc's
+# page size it reports, the compression config when the build asked for
+# it (.make-settings records the make flags), and a dump saved for the
+# final image's test. A Sentinel monitors it: the server's run ID, read
+# with the password, shows it connected. SIGTERM, the image's stop
+# signal, ends both.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN <<EORUN
+bin=/out/usr/local/bin
+"${bin}/redis-server" --version | tee /tmp/version
+grep -F "Redis server v=${BASE_VERSION} " /tmp/version
+grep -F malloc=jemalloc /tmp/version
+readelf -SW "${bin}/redis-server" > /tmp/sections
+readelf --dyn-syms -W "${bin}/redis-server" > /tmp/symbols
+readelf -dW "${bin}/redis-server" > /tmp/dynamic
+if grep -qF .debug_info /tmp/sections; then exit 1; fi
+grep -qF .symtab /tmp/sections
+grep -qF __stack_chk_fail /tmp/symbols
+grep -qE ' __[a-z_]+_chk@' /tmp/symbols
+grep -qF 'libssl.so' /tmp/dynamic
+case "$(dpkg --print-architecture)" in
+    amd64) page=4096 ;;
+    *) page=65536 ;;
+esac
+openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+    -subj /CN=localhost -addext subjectAltName=IP:127.0.0.1 -days 1 \
+    -keyout /tmp/smoke-test.key -out /tmp/smoke-test.crt
+REDISCLI_AUTH="$(openssl rand -hex 16)"
+export REDISCLI_AUTH
+mkdir /tmp/smoke-test
+"${bin}/redis-server" --bind 127.0.0.1 --port 6379 --tls-port 6380 \
+    --tls-cert-file /tmp/smoke-test.crt --tls-key-file /tmp/smoke-test.key \
+    --tls-ca-cert-file /tmp/smoke-test.crt --tls-auth-clients no \
+    --requirepass "${REDISCLI_AUTH}" --dir /tmp/smoke-test --save '' &
+server=$!
+for _ in {1..30}; do
+    if "${bin}/redis-cli" -h 127.0.0.1 ping; then break; fi
+    sleep 1
+done
+[ "$("${bin}/redis-cli" -h 127.0.0.1 set smoke-test "${BASE_VERSION}")" = OK ]
+[ "$("${bin}/redis-cli" -h 127.0.0.1 -p 6380 --tls --cacert /tmp/smoke-test.crt get smoke-test)" = "${BASE_VERSION}" ]
+"${bin}/redis-cli" -h 127.0.0.1 info server > /tmp/info
+grep -qxF "redis_version:${BASE_VERSION}"$'\r' /tmp/info
+"${bin}/redis-cli" -h 127.0.0.1 memory malloc-stats > /tmp/malloc-stats
+grep -qE "^ *Page size: ${page}\$" /tmp/malloc-stats
+if grep -qxF BUILD_COMPRESSION=yes src/.make-settings; then
+    [ "$("${bin}/redis-cli" -h 127.0.0.1 config get repl-compression | head -n 1)" = repl-compression ]
+fi
+[ "$("${bin}/redis-cli" -h 127.0.0.1 save)" = OK ]
+printf '%s\n' 'port 26379' 'bind 127.0.0.1' "requirepass ${REDISCLI_AUTH}" \
+    'sentinel monitor smoke-test 127.0.0.1 6379 1' \
+    "sentinel auth-pass smoke-test ${REDISCLI_AUTH}" > /tmp/sentinel.conf
+"${bin}/redis-sentinel" /tmp/sentinel.conf &
+sentinel=$!
+run_id="$(sed -n 's/^run_id:\([0-9a-f]*\)\r$/\1/p' /tmp/info)"
+for _ in {1..30}; do
+    seen="$("${bin}/redis-cli" -p 26379 sentinel master smoke-test | sed -n '/^runid$/{n;p;}')" || true
+    if [ "${seen}" = "${run_id}" ]; then break; fi
+    sleep 1
+done
+[ "${seen}" = "${run_id}" ]
+kill -TERM "${sentinel}" "${server}"
+wait "${sentinel}"
+wait "${server}"
+mv /tmp/smoke-test/dump.rdb /tmp/smoke-test.rdb
+rm -r /tmp/version /tmp/sections /tmp/symbols /tmp/dynamic /tmp/info /tmp/malloc-stats /tmp/sentinel.conf /tmp/smoke-test /tmp/smoke-test.crt /tmp/smoke-test.key
+EORUN
+
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
+ARG BASE_VERSION
+ARG LICENSES
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="Redis" \
+    org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="${LICENSES}" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The binaries and the license: root's, not the build user's, so that
+# Redis can't replace them. The config and data folders: the image's
+# user's.
+COPY --link --from=build --chown=0:0 /out/usr/ /usr/
+COPY --link --from=build --chown=65532:65532 /out/etc/redis/ /etc/redis/
+COPY --link --from=build --chown=65532:65532 /out/data/ /data/
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+# Upstream's default `dir` is the working folder.
+WORKDIR /data
+
+# Documentation only: the config sets the ports.
+EXPOSE 6379/tcp
+VOLUME ["/data", "/etc/redis"]
+
+ENTRYPOINT ["/usr/local/bin/redis-server"]
+CMD ["/etc/redis/redis.conf"]
+
+# Smoke test: the binaries find their libraries here (one distroless
+# lacks fails the build), and the link to redis-server dispatches on its
+# name: redis-check-rdb reads the build stage's dump, as the image's user.
+RUN ["/usr/local/bin/redis-cli", "--version"]
+RUN --mount=type=bind,from=build,source=/tmp/smoke-test.rdb,target=/tmp/smoke-test.rdb \
+    ["/usr/local/bin/redis-check-rdb", "/tmp/smoke-test.rdb"]
