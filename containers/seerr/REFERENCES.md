@@ -83,7 +83,10 @@
 - **Built and tested as UID 65532:** install, build and test run without
   root, in their own copy of the source; the cache id is
   `pnpm-store-65532`.
-- **No `HEALTHCHECK`:** Kubernetes ignores it; probe `/api/v1/status`.
+- **No `HEALTHCHECK`:** Kubernetes ignores it; probe
+  `/api/v1/status/appdata` (`server/routes/index.ts`), not
+  `/api/v1/status`: it queries GitHub without a timeout
+  (`server/api/github.ts`) and hangs when egress is blocked.
 - **Corepack:** pnpm comes from the registry at the version of
   `packageManager` (no hash upstream): corepack checks the registry's
   signature of the package.
