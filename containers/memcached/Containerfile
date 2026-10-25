@@ -1,0 +1,329 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Memcached (https://memcached.org) built from source on distroless
+# (gcr.io/distroless/cc-debian13): the binary, TLS and extstore built in,
+# linked against Debian trixie's OpenSSL, which distroless ships, and
+# libevent, whose package is copied with its dpkg status so scanners see
+# it (containers/memcached/REFERENCES.md). Unlike the official image: no
+# entrypoint script (no shell), no SASL, no proxy.
+#
+# Runtime contract: UID/GID 65532, no passwd entry. Arguments are
+# memcached's (`--help`), upstream's defaults otherwise: 64 MB of items
+# (-m), TCP port 11211 on every address, UDP off. -m bounds the items
+# alone: connections, threads and extstore's buffers come on top, so the
+# container's memory limit sits above it. No file written unless told:
+# the extstore file (`-o ext_path=<file>:<size>`) goes on a volume; the
+# restartable cache (`-e <file>`, EXPERIMENTAL upstream) on a tmpfs
+# (`--tmpfs`, an `emptyDir` with `medium: Memory`), as upstream's
+# `--help` says: it outlives a container restart, not a reschedule. The
+# two exclude each other: with extstore, the saved cache is dropped.
+# Authentication: an authfile (`-Y <file>`, EXPERIMENTAL upstream,
+# `<user>:<password>` lines, ASCII protocol only); every command before
+# it, `version` too, gets `CLIENT_ERROR unauthenticated`, so a probe is
+# a TCP connection to 11211. TLS:
+# `-Z -o ssl_chain_cert=<file>,ssl_key=<file>`, `notls:` before a `-l`
+# address for a plain listener beside it. SIGHUP reloads the authfile
+# and the certificates (`docker kill -s HUP`; no shell for a `kill` in
+# the container). SIGTERM, the stop signal, exits at once; SIGUSR1
+# stops gracefully, saving the restartable cache: set it as the stop
+# signal (`docker run --stop-signal SIGUSR1`, compose's `stop_signal`,
+# Kubernetes' `lifecycle.stopSignal`, alpha). Runs with --read-only, no
+# capability, no-new-privileges.
+
+# Versions come from containers/memcached/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# Debian trixie, the release distroless' cc-debian13 is built from: the
+# libraries linked here are the final image's.
+FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# autoconf, automake, git, pkgconf: upstream's autogen.sh, whose
+# version.pl reads the version with `git describe`, and configure
+# (pkgconf: OpenSSL's flags). gcc, libc6-dev, make: the build; dpkg-dev:
+# Debian's hardening flags (dpkg-buildflags); libevent-dev, libssl-dev:
+# the libraries memcached links. openssl: the server test's certificate
+# and TLS client.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends autoconf automake dpkg-dev gcc git libc6-dev libevent-dev libssl-dev make openssl pkgconf
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# libevent, the one library memcached links that distroless lacks
+# (libssl3t64 and libc6 are distroless'). Copied as dpkg installed it,
+# with its status and md5sums in /var/lib/dpkg/status.d/, where
+# distroless records its own packages and scanners read them. Folders
+# aren't copied: --parents creates them. Files the list names but the
+# disk lacks: docs but the copyright, which trixie-slim's dpkg excludes
+# (/etc/dpkg/dpkg.cfg.d/docker).
+RUN <<EORUN
+pkg=libevent-2.1-7t64
+mkdir -p /rootfs/var/lib/dpkg/status.d
+dpkg-query -L "${pkg}" | while read -r file; do
+    if [ -f "${file}" ] || [ -L "${file}" ]; then
+        cp -a --parents "${file}" /rootfs/
+    fi
+done
+dpkg-query -s "${pkg}" > "/rootfs/var/lib/dpkg/status.d/${pkg}"
+cp "$(dpkg-query --control-path "${pkg}" md5sums)" "/rootfs/var/lib/dpkg/status.d/${pkg}.md5sums"
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# --keep-git-dir: version.pl reads the version with `git describe`;
+# without .git, memcached reports UNKNOWN.
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/memcached/memcached.git#${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: neither upstream's build
+# nor the server gets root, and the source stays root's. WORKDIR creates
+# its folder owned by USER: /out takes the image's files. /build: the
+# build writes into the source tree, a copy, the user's, so git trusts
+# it without a safe.directory.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /build
+RUN cp -R /src/. .
+
+# Upstream's build from a checkout: autogen.sh, configure, make. TLS on,
+# as the official image; extstore is on by default. The memcached target
+# alone: `make` also builds the test programs.
+# Debian's hardening flags, as its packages build with (stack protector,
+# fortify, RELRO; not BIND_NOW, off by default), without -g: no debug
+# info; the symbol table stays, for a crash's backtrace.
+RUN <<EORUN
+./autogen.sh
+export DEB_CFLAGS_MAINT_STRIP=-g
+./configure --enable-tls \
+    CPPFLAGS="$(dpkg-buildflags --get CPPFLAGS)" \
+    CFLAGS="$(dpkg-buildflags --get CFLAGS)" \
+    LDFLAGS="$(dpkg-buildflags --get LDFLAGS)"
+make -j"$(nproc)" memcached
+mkdir -p /out/usr/bin /out/usr/share/doc/memcached
+cp memcached /out/usr/bin/
+# Upstream's license and those of the code it builds in: bipbuffer,
+# itoa_ljust, mcmc, and base64.c's and daemon.c's BSD notices, which
+# ship no file: cut from their header, from `Copyright` to `SUCH
+# DAMAGE.`, the grep checking the cut reached its end.
+cp --parents LICENSE LICENSE.bipbuffer LICENSE.itoa_ljust vendor/mcmc/LICENSE \
+    /out/usr/share/doc/memcached/
+for src in base64 daemon; do
+    sed -n '/Copyright/,/SUCH DAMAGE\./{s/^ \*\( \|$\)//;p}' "${src}.c" \
+        > "/out/usr/share/doc/memcached/LICENSE.${src}"
+    grep -q 'SUCH DAMAGE\.$' "/out/usr/share/doc/memcached/LICENSE.${src}"
+done
+EORUN
+
+# Server smoke test, here because the final image has no shell to run it.
+# The binary: its version (syft's memcached-binary classifier reads the
+# same string), no debug info, a symbol table, the stack protector and
+# fortify's checked functions. The binary protocol refused with an
+# authfile. A first server, with an authfile holding a random throwaway
+# password, a plain and a TLS listener (a throwaway self-signed
+# certificate), and extstore in /tmp/data: a client refused before it
+# authenticates, a key written over TCP and read back over TLS, large
+# values all moved to the extstore file and the first read back, then a
+# new password and certificate taken on SIGHUP, the old password
+# refused. A second server, with a restartable cache (without extstore,
+# which drops the saved cache): a key saved on SIGUSR1 and read back
+# after a restart. SIGTERM, the image's stop signal, and SIGUSR1 end
+# them with status 0.
+# kill (DL3001) stops the servers this step started, not a container's.
+# hadolint ignore=DL3001
+RUN <<EORUN
+[ "$(/out/usr/bin/memcached --version)" = "memcached ${BASE_VERSION}" ]
+readelf -SW /out/usr/bin/memcached > /tmp/sections
+readelf --dyn-syms -W /out/usr/bin/memcached > /tmp/symbols
+if grep -qF .debug_info /tmp/sections; then exit 1; fi
+grep -qF .symtab /tmp/sections
+grep -qF __stack_chk_fail /tmp/symbols
+grep -qE ' __[a-z_]+_chk@' /tmp/symbols
+# certificate: a new self-signed one, in /tmp/smoke-test.{crt,key}; a
+# copy of the certificate in /tmp/smoke-test-<n>.crt, the client's CA.
+certificate() {
+    openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:P-256 -nodes \
+        -subj /CN=localhost -addext subjectAltName=IP:127.0.0.1 -days 1 \
+        -keyout /tmp/smoke-test.key -out /tmp/smoke-test.crt
+    cp /tmp/smoke-test.crt "/tmp/smoke-test-$1.crt"
+}
+# new_auth: a `<user> <password>` pair, the password random. The
+# authfile's line is `<user>:<password>`; a client sends the pair as the
+# value of any `set`.
+new_auth() {
+    printf 'smoke-test %s' "$(openssl rand -hex 16)"
+}
+# connect <port>: fd 3 to that plain listener, once it listens; fails
+# at once if the server exited.
+connect() {
+    for _ in {1..50}; do
+        kill -0 "${server}"
+        (: <> "/dev/tcp/127.0.0.1/$1") 2> /dev/null && break
+        sleep 0.2
+    done
+    exec 3<> "/dev/tcp/127.0.0.1/$1"
+}
+# send <line>...: each line to fd 3, CRLF-terminated.
+# reply: its next line, CRLF stripped. stat_of <name>: a `stats` value,
+# untraced (`local -` restores -x): `stats` returns some 100 lines.
+# tls <ca> <auth>: the replies to <auth> and `get smoke-test` over TLS,
+# the server's certificate verified against <ca>.
+send() {
+    printf '%s\r\n' "$@" >&3
+}
+reply() {
+    local line
+    IFS= read -r -t 10 line <&3
+    printf '%s' "${line%$'\r'}"
+}
+stat_of() {
+    local - line value=
+    set +x
+    send stats
+    while line="$(reply)" && [ "${line}" != END ]; do
+        if [[ "${line}" = "STAT $1 "* ]]; then value="${line##* }"; fi
+    done
+    printf '%s' "${value}"
+}
+tls() {
+    printf '%s\r\n' "set auth 0 0 ${#2}" "$2" 'get smoke-test' quit \
+        | openssl s_client -quiet -verify_return_error -verify_ip 127.0.0.1 \
+            -CAfile "$1" -connect 127.0.0.1:11212 2> /dev/null \
+        | tr -d '\r'
+}
+certificate 1
+auth="$(new_auth)"
+echo "${auth/ /:}" > /tmp/authfile
+# The binary protocol with an authfile: memcached exits with EX_USAGE
+# (64) before it listens; timeout ends it if it serves instead.
+status=0
+timeout 5 /out/usr/bin/memcached -Y /tmp/authfile -B binary || status=$?
+[ "${status}" = 64 ]
+mkdir /tmp/data
+/out/usr/bin/memcached -Y /tmp/authfile -Z \
+    -o ssl_chain_cert=/tmp/smoke-test.crt,ssl_key=/tmp/smoke-test.key \
+    -o ext_path=/tmp/data/extstore:64m,ext_item_age=1 \
+    -l notls:127.0.0.1:11211,127.0.0.1:11212 &
+server=$!
+connect 11211
+send 'get smoke-test'
+[ "$(reply)" = 'CLIENT_ERROR unauthenticated' ]
+send "set auth 0 0 ${#auth}" "${auth}"
+[ "$(reply)" = STORED ]
+send "set smoke-test 0 0 ${#BASE_VERSION}" "${BASE_VERSION}"
+[ "$(reply)" = STORED ]
+found="$(printf 'STORED\nVALUE smoke-test 0 %s\n%s\nEND' "${#BASE_VERSION}" "${BASE_VERSION}")"
+[ "$(tls /tmp/smoke-test-1.crt "${auth}")" = "${found}" ]
+# 1000 values of 20 KB, as upstream's t/extstore.t: idle a second, they
+# leave memory for the extstore file, oldest first. Waited for half, the
+# count upstream's test asserts: the counter moves before the item in
+# memory gives way to its header, so the last value written can still
+# be served from memory, never big-1 by then. No trace: 20 MB of
+# values.
+set +x
+value="$(openssl rand -hex 10000)"
+for i in {1..1000}; do
+    send "set big-${i} 0 0 ${#value} noreply" "${value}"
+done
+set -x
+for _ in {1..100}; do
+    [ "$(stat_of extstore_objects_written)" -ge 500 ] && break
+    sleep 0.2
+done
+[ "$(stat_of extstore_objects_written)" -ge 500 ]
+send 'get big-1'
+[ "$(reply)" = "VALUE big-1 0 ${#value}" ]
+set +x
+[ "$(reply)" = "${value}" ]
+set -x
+[ "$(reply)" = END ]
+[ "$(stat_of get_extstore)" -gt 0 ]
+# SIGHUP: the server reloads both files at its next clock tick, the
+# certificate last; a TLS client verifying the new one waits for it.
+old="${auth}"
+auth="$(new_auth)"
+echo "${auth/ /:}" > /tmp/authfile
+certificate 2
+kill -HUP "${server}"
+for _ in {1..50}; do
+    [ "$(tls /tmp/smoke-test-2.crt "${auth}")" = "${found}" ] && break
+    sleep 0.2
+done
+[ "$(tls /tmp/smoke-test-2.crt "${auth}")" = "${found}" ]
+connect 11211
+send "set auth 0 0 ${#old}" "${old}"
+[ "$(reply)" = 'CLIENT_ERROR authentication failure' ]
+exec 3>&-
+kill "${server}"
+wait "${server}"
+# The restartable cache: the memory file holds -m, saved on SIGUSR1.
+# -m at its default: a restartable cache preallocates a 1 MB page per
+# slab class, 39 at the defaults, and a smaller -m fails to start.
+restartable() {
+    /out/usr/bin/memcached -e /tmp/data/memory -l 127.0.0.1:11213 &
+    server=$!
+    connect 11213
+}
+restartable
+send "set smoke-test 0 0 ${#BASE_VERSION}" "${BASE_VERSION}"
+[ "$(reply)" = STORED ]
+exec 3>&-
+kill -USR1 "${server}"
+wait "${server}"
+# A restart in the second it stopped starts empty (`stop_time`, in
+# memcached.c's _mc_meta_load_cb): the clock must have moved.
+sleep 1
+restartable
+send 'get smoke-test'
+[ "$(reply)" = "VALUE smoke-test 0 ${#BASE_VERSION}" ]
+[ "$(reply)" = "${BASE_VERSION}" ]
+[ "$(reply)" = END ]
+exec 3>&-
+kill "${server}"
+wait "${server}"
+rm -r /tmp/data /tmp/sections /tmp/symbols /tmp/authfile /tmp/smoke-test*.crt /tmp/smoke-test.key
+EORUN
+
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="Memcached" \
+    org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="BSD-3-Clause" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# libevent, as dpkg installed it (root's). The binary and the licenses:
+# root's, not the build user's, so that memcached can't replace them.
+COPY --link --from=build /rootfs/ /
+COPY --link --from=build --chown=0:0 /out/usr/ /usr/
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+
+# Documentation only: memcached's default port.
+EXPOSE 11211/tcp
+
+ENTRYPOINT ["/usr/bin/memcached"]
+
+# Smoke test: the binary finds its libraries (libevent, OpenSSL) here.
+RUN ["/usr/bin/memcached", "--version"]
