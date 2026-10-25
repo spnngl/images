@@ -1,0 +1,193 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Prowlarr (https://prowlarr.com), the indexer manager of the *arr apps,
+# on distroless (gcr.io/distroless/cc-debian13): upstream's self-contained
+# release archive (.NET, glibc), without what a container never runs, and
+# the Debian package it needs that distroless lacks, copied with its dpkg
+# status so scanners see it (containers/prowlarr/REFERENCES.md). Upstream's
+# built-in updater is off: an update is a new image tag.
+#
+# Runtime contract: UID/GID 65532, no passwd entry. State in /config (a
+# volume): the databases, config.xml and the logs. Port 9696, health
+# endpoint GET /ping (anonymous). Settings by environment,
+# Prowlarr__<Section>__<Key> (Prowlarr__Auth__ApiKey, the PostgreSQL
+# credentials), else config.xml. Anonymous analytics and .NET diagnostics
+# off (ENV below); the runtime can turn them back on. Runs with
+# --read-only (a tmpfs on /tmp: ASP.NET's key ring, in /config/asp, is
+# written through a temporary file), no capability and no-new-privileges.
+
+# Versions come from containers/prowlarr/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# Debian trixie, the release distroless' cc-debian13 is built from: the
+# library copied here is the one the final image runs.
+FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS build
+
+ARG TARGETARCH
+ARG BASE_VERSION
+ARG BASE_CHECKSUM_AMD64
+ARG BASE_VERSION_ARM64
+ARG BASE_CHECKSUM_ARM64
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+# The final stage's settings, so that the server test runs under them.
+ENV Prowlarr__Log__AnalyticsEnabled=false
+ENV DOTNET_EnableDiagnostics=0
+# Upstream names its archives x64 and arm64.
+ARG PROWLARR_ARCH=${TARGETARCH/amd64/x64}
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# libicu76: .NET loads it for globalization (without it, invariant mode
+# changes how text compares and cases). curl and ca-certificates: the
+# server test only. Not pinned (DL3008): versions follow the snapshot,
+# which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, or with two versions for the two platforms, the build fails
+# here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "${BASE_VERSION_ARM64:?build with docker buildx bake, see containers/AGENTS.md}" = "${BASE_VERSION}" ]
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends ca-certificates curl libicu76
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# The runtime package distroless lacks (libicu76; its dependencies,
+# libc6, libgcc-s1 and libstdc++6, are distroless'). The other libraries
+# the archive loads are distroless' too: libssl3t64 and zlib1g, and
+# ca-certificates and tzdata.
+# Copied as dpkg installed them, with its status and md5sums in
+# /var/lib/dpkg/status.d/, where distroless records its own packages and
+# scanners read them. Folders aren't copied: --parents creates them.
+# The loop: the next package joins its list (the one entry is not a
+# glob).
+# hadolint ignore=SC2043
+RUN <<EORUN
+mkdir -p /rootfs/var/lib/dpkg/status.d
+for pkg in libicu76; do
+    dpkg-query -L "${pkg}" | while read -r file; do
+        if [ -f "${file}" ] || [ -L "${file}" ]; then
+            cp -a --parents "${file}" /rootfs/
+        fi
+    done
+    dpkg-query -s "${pkg}" > "/rootfs/var/lib/dpkg/status.d/${pkg}"
+    cp "$(dpkg-query --control-path "${pkg}" md5sums)" "/rootfs/var/lib/dpkg/status.d/${pkg}.md5sums"
+done
+EORUN
+
+# This platform's archive, checked against its sha256 below: ADD
+# --checksum takes one value, and one Bake target builds both platforms.
+# Owned by the build's user, 65532: a remote ADD writes 0600.
+ADD --link --chown=65532:65532 \
+    https://github.com/Prowlarr/Prowlarr/releases/download/v${BASE_VERSION}/Prowlarr.master.${BASE_VERSION}.linux-core-${PROWLARR_ARCH}.tar.gz /dl/prowlarr.tar.gz
+
+# Unpack and test as the image's user, not root. WORKDIR creates its
+# folder owned by USER: /out takes the image's files.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /tmp/unpack
+
+# Unpack as a bin/ folder: Prowlarr reads <folder>/../package_info only
+# when its own folder is named bin (DeploymentInfoProvider.cs). A
+# mechanism of Docker or above locks the updater, which writes into the
+# install folder, off. Pruned: the updater (Prowlarr.Update/, 81 MB),
+# the Windows service scripts, createdump and the LTTng provider (tools
+# of .NET diagnostics, off), the debug symbols and API docs.
+# The folder UI/'s own XML stays: only the top-level files are docs.
+# /config: the state folder; a named volume mounted there starts with its
+# owner.
+RUN <<EORUN
+case "${TARGETARCH}" in
+    amd64) checksum="${BASE_CHECKSUM_AMD64}" ;;
+    arm64) checksum="${BASE_CHECKSUM_ARM64}" ;;
+esac
+echo "${checksum:?no archive for ${TARGETARCH}}  /dl/prowlarr.tar.gz" | sha256sum -c -
+mkdir -p /out/usr/lib/prowlarr /out/usr/share/doc/prowlarr /out/config
+tar -xzf /dl/prowlarr.tar.gz
+mv Prowlarr /out/usr/lib/prowlarr/bin
+bin=/out/usr/lib/prowlarr/bin
+rm -r "${bin}"/{Prowlarr.Update,ServiceInstall,ServiceUninstall,createdump,libcoreclrtraceptprovider.so}
+find "${bin}" -maxdepth 1 \( -name '*.pdb' -o -name '*.xml' \) -delete
+mv "${bin}/LICENSE" /out/usr/share/doc/prowlarr/
+cat > /out/usr/lib/prowlarr/package_info <<EOF
+PackageVersion=${BASE_VERSION}
+PackageAuthor=[spnngl/images](https://github.com/spnngl/images)
+UpdateMethod=Docker
+UpdateMethodMessage=Pull a new tag of the image: ghcr.io/spnngl/images/prowlarr
+EOF
+rm -r /tmp/unpack /dl/prowlarr.tar.gz
+EORUN
+
+# Server test, here because the final image has no shell to run it:
+# the server starts on a throwaway data folder with a random API key,
+# /ping answers, the API reports the pinned version, and a tag written
+# through the API is read back (the database migrations and SQLite).
+# SIGTERM, the image's stop signal, ends it. It leaves out indexer
+# searches, which need the network and an indexer's definition.
+# Automerged updates rely on it.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN <<EORUN
+export Prowlarr__Server__BindAddress=127.0.0.1
+Prowlarr__Auth__ApiKey="$(head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"
+export Prowlarr__Auth__ApiKey
+api=http://127.0.0.1:9696
+/out/usr/lib/prowlarr/bin/Prowlarr -nobrowser -data=/tmp/smoke-data &
+server=$!
+curl -fsS --retry 60 --retry-delay 1 --retry-connrefused "${api}/ping"
+curl -fsS -H "X-Api-Key: ${Prowlarr__Auth__ApiKey}" "${api}/api/v1/system/status" | tee /tmp/status
+grep -F "\"version\": \"${BASE_VERSION}\"," /tmp/status
+curl -fsS -H "X-Api-Key: ${Prowlarr__Auth__ApiKey}" -H 'Content-Type: application/json' \
+    -d '{"label":"smoke"}' "${api}/api/v1/tag"
+curl -fsS -H "X-Api-Key: ${Prowlarr__Auth__ApiKey}" "${api}/api/v1/tag" | grep -F '"label": "smoke"'
+kill "${server}"
+wait "${server}"
+rm -r /tmp/smoke-data /tmp/status
+EORUN
+
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="Prowlarr" \
+    org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="GPL-3.0-only" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The Debian package, as dpkg installed it (root's). The program, its
+# package_info and the license: root's, not the build user's, so that
+# Prowlarr can't replace them. /config: the image's user's.
+COPY --link --from=build /rootfs/ /
+COPY --link --from=build --chown=0:0 /out/usr/ /usr/
+COPY --link --from=build --chown=65532:65532 /out/config/ /config/
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+WORKDIR /config
+
+# Settings that survive a replaced CMD. Analytics: upstream's default is
+# on (LogOptions.AnalyticsEnabled). Diagnostics: its tools are pruned.
+ENV Prowlarr__Log__AnalyticsEnabled=false
+ENV DOTNET_EnableDiagnostics=0
+
+EXPOSE 9696/tcp
+VOLUME ["/config"]
+
+ENTRYPOINT ["/usr/lib/prowlarr/bin/Prowlarr"]
+CMD ["-nobrowser", "-data=/config"]
+
+# Smoke test: the program finds its libraries here, ICU included (the
+# runtime aborts at startup without it). Help mode starts no server and
+# opens no database: it logs the version and prints the usage; the build
+# stage's server test covers SQLite. A throwaway data folder.
+RUN --mount=type=tmpfs,target=/tmp \
+    ["/usr/lib/prowlarr/bin/Prowlarr", "-nobrowser", "-data=/tmp/smoke-data", "-?"]
