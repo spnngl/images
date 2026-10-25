@@ -176,7 +176,7 @@ timezone, labels, semantic commits, action digests and automerge under
   stale silently.
 - **Major base releases only:** the weekly rebuild follows point
   releases of `BASE_VERSION`, the base's major tag.
-- **3 days before a GitHub release or tag, or a Servarr release**
+- **3 days before a GitHub release or tag, or an *arr app's release**
   (`minimumReleaseAge`): time
   for a broken or malicious release to be pulled, and for CRI-O to
   publish a Kubernetes minor release. Not for images: Renovate gets their
@@ -194,8 +194,8 @@ timezone, labels, semantic commits, action digests and automerge under
   `extract` job fails on a comment Renovate doesn't pick up. The
   `debian-snapshot` custom datasource lists `snapshot.debian.org`'s
   timestamps; Debian's packages follow the weekly bump. The `servarr`
-  one reads the update feed Prowlarr's updater reads: each release's
-  archive sha256 (`digest`), so tracking downloads nothing
+  one reads the update feed the *arr apps' updaters read: each
+  release's archive sha256 (`digest`), so tracking downloads nothing
   (`containers/prowlarr/REFERENCES.md`).
 - **Renovate's image, one version:** `renovate.yml`'s `extract` job
   and the validator of `AGENTS.md`'s checks. The workflow holds it in
