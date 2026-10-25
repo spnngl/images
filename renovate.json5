@@ -27,12 +27,12 @@
                 "{ \"releases\": result.debian[[-300..-1]].{ \"version\": $ } }"
             ]
         },
-        // The Servarr update feed, which Prowlarr's updater reads (the apps of
-        // the *arr family share it): a JSON list of releases, newest first,
+        // The update feed of the *arr apps (Prowlarr, Radarr, Lidarr, Sonarr:
+        // the apps' updaters read it): a JSON list of releases, newest first,
         // each with its archive's sha256 (`hash`) and its GitHub download URL.
-        // The URL, one per platform, is each dependency's `registryUrl`
-        // (containers/prowlarr/docker-bake.hcl). No digest lookup: Renovate
-        // takes `digest` as is.
+        // The URL, one per app and platform, is each dependency's `registryUrl`
+        // (containers/*/docker-bake.hcl). No digest lookup: Renovate takes
+        // `digest` as is.
         "servarr": {
             "format": "json",
             "transformTemplates": [
@@ -146,7 +146,7 @@
     ],
     "packageRules": [
         {
-            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag, or a Servarr release (actions, k3s, upstream sources, Prowlarr): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
+            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag, or a release of the *arr apps (actions, k3s, upstream sources, Prowlarr, Radarr, Lidarr, Sonarr): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
             "matchDatasources": [
                 "github-releases",
                 "github-release-attachments",
