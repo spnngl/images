@@ -102,8 +102,8 @@
         },
         {
             "customType": "regex",
-            "description": "Go of the nftables-exporter, crowdsec and silo-server specs: their golang-<major.minor>-go build dependency, from trixie-backports, whose golang-go (version 2:<major.minor>~...) depends on the newest one. Through Repology, by source package (golang-defaults builds golang-go): the deb datasource only reads Packages.gz, and backports only publishes Packages.xz.",
-            "managerFilePatterns": ["/^containers/(nftables-exporter|crowdsec|silo-server)/spec\\.yml$/"],
+            "description": "Go of the Dalec specs: their golang-<major.minor>-go build dependency, from trixie-backports, whose golang-go (version 2:<major.minor>~...) depends on the newest one. Through Repology, by source package (golang-defaults builds golang-go): the deb datasource only reads Packages.gz, and backports only publishes Packages.xz.",
+            "managerFilePatterns": ["/^containers/[^/]+/spec\\.yml$/"],
             "matchStrings": ["\\bgolang-(?<currentValue>\\d+\\.\\d+)-go: "],
             "depNameTemplate": "golang-go",
             "packageNameTemplate": "debian_13_backports/golang-defaults",
