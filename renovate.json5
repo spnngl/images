@@ -146,13 +146,14 @@
     ],
     "packageRules": [
         {
-            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag, or a release of the *arr apps (actions, k3s, upstream sources, Prowlarr, Radarr, Lidarr, Sonarr): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
+            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag, a release of the *arr apps, or an npm package (actions, k3s, upstream sources, Prowlarr, Radarr, Lidarr, Sonarr, configarr's pnpm, automerged and run in a networked build step): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
             "matchDatasources": [
                 "github-releases",
                 "github-release-attachments",
                 "github-tags",
                 "forgejo-tags",
-                "custom.servarr"
+                "custom.servarr",
+                "npm"
             ],
             "minimumReleaseAge": "3 days"
         },
@@ -165,7 +166,7 @@
             "automerge": true
         },
         {
-            "description": "Build tools that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates (pinned FROM lines: see the weekly rule below).",
+            "description": "Build tools, and runtimes the image's tests run (configarr's node), that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates (pinned FROM lines: see the weekly rule below).",
             "matchDepNames": [
                 "docker.io/library/golang",
                 "docker.io/library/node",
