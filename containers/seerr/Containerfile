@@ -14,8 +14,10 @@
 #   caches of the app's own image proxy. Holds the DOCKER marker upstream
 #   writes: the UI warns while nothing is mounted there.
 # - /app/.next/cache: Next.js' optimized images. A tmpfs fits.
-# Probe: GET /api/v1/status. Settings are upstream's environment
-# variables: LOG_LEVEL, TZ, DB_* (PostgreSQL), CONFIG_DIRECTORY.
+# Probe: GET /api/v1/status/appdata, not /api/v1/status: that one
+# queries GitHub without a timeout and hangs when egress is blocked.
+# Settings are upstream's environment variables: LOG_LEVEL, TZ, DB_*
+# (PostgreSQL), CONFIG_DIRECTORY.
 # Runs with a read-only root filesystem, no capability and
 # no-new-privileges: it writes only to the two volumes.
 

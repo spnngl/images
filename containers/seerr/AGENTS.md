@@ -24,7 +24,9 @@ reason for each choice: [REFERENCES.md](REFERENCES.md).
   A file the server starts to read goes in `app-files`; the test (below)
   runs on the same tree and fails when one is missing.
 - Built and tested as UID 65532 (cache ids end in `-65532`).
-- Probe: `GET /api/v1/status`.
+- Probe: `GET /api/v1/status/appdata` (no login, no database, no
+  outbound call). Not `/api/v1/status`: it queries GitHub without a
+  timeout and hangs when egress is blocked.
 
 ## Smoke test
 
