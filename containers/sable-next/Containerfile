@@ -144,15 +144,18 @@ COPY --link --from=wasm --chown=65532:65532 /build/src/generated/wasm/ /build/sr
 # install script runs (REFERENCES.md); prepare (svelte-kit sync, git
 # hooks) is vite build's own sync. The build downloads the DeepFilterNet
 # assets and checks their sha256 (scripts/build/fetch-deepfilternet.mjs).
-# The version check: the bundle holds the release VITE_APP_VERSION
-# names ("v<version>", the About page's).
+# The checks: no sourceMappingURL left in the JavaScript and CSS (the
+# core's WebAssembly holds the string); the bundle holds the release
+# VITE_APP_VERSION names as a string, the About page's "v<version>"
+# (unset, it reads "vdev").
 # The store is a cache of its own, as the cargo caches.
 RUN --mount=type=cache,id=pnpm-store-65532,uid=65532,gid=65532,target=/tmp/pnpm-store <<EORUN
 pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/pnpm-store
 VITE_APP_VERSION="${BASE_VERSION}" SABLE_BUILD_FLAVOR=stable VITE_SENTRY_ENVIRONMENT=production \
     NODE_OPTIONS=--max-old-space-size=4096 pnpm exec vite build
 find dist -name '*.map' -delete
-grep -rqF "v${BASE_VERSION}" dist/_app
+if grep -rqF --include='*.js' --include='*.css' 'sourceMappingURL=' dist; then exit 1; fi
+grep -rqE "[\"'\`]v${BASE_VERSION}[\"'\`]" dist/_app
 EORUN
 
 # What upstream's host does beside serving files. Its _headers rules
@@ -281,11 +284,13 @@ EORUN
 # Server test, here because scratch has no shell to run it: the version,
 # then the server with the app and the settings of the image's final
 # stage (keep them equal), asked for what a browser asks for. /health
-# answers 200; / and a deep link answer the app; a page without its
-# .html answers the page; the app's own files are served as themselves:
-# config.json (no-cache, from _headers), the service worker, a bundle
-# (immutable, from _headers), its Brotli copy when the client accepts
-# it, the core as application/wasm, the manifest; a missing file falls
+# answers 200; / (no-cache, from _headers) and a deep link answer the
+# app; a page without its .html answers the page; the app's own files
+# are served as themselves: config.json (no-cache), the service worker,
+# a bundle (immutable, from _headers), its Brotli copy when the client
+# accepts it, the core and DeepFilterNet's as application/wasm, the
+# manifest. Content types, where the fallback would answer HTML. A
+# missing file falls
 # back to index.html, 200 (the Containerfile's header). The log shows a
 # request (not /health's: the server logs those at debug). SIGTERM stops
 # it cleanly.
@@ -303,12 +308,13 @@ server=$!
 url=http://127.0.0.1:8080
 app='__sveltekit_'
 curl -fsS --retry 30 --retry-delay 1 --retry-connrefused "${url}/health"
-curl -fsS "${url}/" | grep -F "${app}"
+curl -fsS -D /tmp/headers "${url}/" | grep -F "${app}"
+grep -iF 'cache-control: no-cache' /tmp/headers
 curl -fsS "${url}/home/!room:example.org" | grep -F "${app}"
 curl -fsS "${url}/login" | cmp - /app/login.html
 curl -fsS -D /tmp/headers "${url}/config.json" | grep -F homeserverList
 grep -iF 'cache-control: no-cache' /tmp/headers
-curl -fsS "${url}/service-worker.js" | grep -vF "${app}"
+[ "$(curl -fsS -o /dev/null -w '%{content_type}' "${url}/service-worker.js")" = 'text/javascript' ]
 bundle="$(grep -oE '/_app/immutable/entry/start\.[^"]+\.js' /app/index.html | head -n 1)"
 curl -fsS -D /tmp/headers -o /dev/null "${url}${bundle}"
 grep -iF 'content-type: text/javascript' /tmp/headers
@@ -318,6 +324,7 @@ grep -iF 'content-encoding: br' /tmp/headers
 cmp /tmp/bundle.br "/app${bundle}.br"
 wasm="$(find /app/_app -name 'sable_wasm_bg*.wasm' -print -quit)"
 [ "$(curl -sS -o /dev/null -w '%{content_type}' "${url}${wasm#/app}")" = 'application/wasm' ]
+[ "$(curl -sS -o /dev/null -w '%{content_type}' "${url}/deepfilternet3/v3/pkg/df_bg.wasm")" = 'application/wasm' ]
 [ "$(curl -sS -o /dev/null -w '%{content_type}' "${url}/manifest.webmanifest")" = 'application/manifest+json' ]
 curl -fsS "${url}/_app/missing.js" | grep -F "${app}"
 grep -F 'incoming request: method=GET uri=/login' /tmp/server.log

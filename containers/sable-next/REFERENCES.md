@@ -26,7 +26,15 @@
   (its reasons). It does what the Caddyfile does: `/x` finds `/x.html`,
   unknown paths answer `index.html` (200), the `_headers` rules, the
   manifest's `application/manifest+json` (its MIME table). Caddy's
-  `encode zstd gzip` becomes precompressed Brotli and gzip.
+  `encode zstd gzip` becomes precompressed Brotli and gzip. Not its
+  `h2c`: without TLS, SWS speaks HTTP/1.1 only; the proxy in front
+  speaks HTTP/2 to browsers.
+- **A missing file answers `index.html`, its headers matched on the
+  request path:** a chunk an old tab asks for after an upgrade comes
+  back as HTML with `immutable`, cached a year under that URL. Caddy
+  does the same (`header` runs before `try_files`); SWS has no
+  fallback per path. The URL is an old build's hash: only a rollback
+  serves it again.
 - **Built in the image, not copied:** upstream's Dockerfile copies a
   `dist` built outside it, so its image proves nothing about the source.
   Here the tag's commit is checked by `ADD --checksum`, then built.
@@ -71,7 +79,9 @@
   show nothing needs them.
 - **DeepFilterNet downloaded by the build:** `vite build` fetches two
   assets and checks their sha256 (`fetch-deepfilternet.mjs`): upstream
-  pins them, so no pin here.
+  pins them, so no pin here. They are in neither the SBOM nor the
+  licenses label (DeepFilterNet: `MIT OR Apache-2.0`), as the npm
+  packages bundled into the JavaScript are not in the label.
 - **Rust caches:** `cargo-registry-65532` and `cargo-git-65532`
   (matrix-sdk is a git dependency) are shared; the target,
   `sable-next-target-65532`, is the image's. SWS' target is cinny's,
