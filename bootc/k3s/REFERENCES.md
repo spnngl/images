@@ -33,3 +33,17 @@
   `pkg/etcd/etcd.go`), so the flag's environment variable applies. A
   longer compaction holds SQLite's write lock longer: writes wait instead
   of the server restarting.
+- **CRI-O `collection_period = 10`** (`crio.conf.d/20-k3s.conf`): with
+  the default, 0, each stats request collects anew, walking every file
+  of every container's rootfs (`DiskStats`, `internal/oci/runtime_oci.go`,
+  `internal/lib/stats/disk_stats_linux.go`): ~22s per call on the Atom
+  C2338. With a period, samples carry the collection's timestamp, so
+  `rate()` needs two collections in its window. Up to CRI-O 1.37.2 the
+  periodic update (`updateSandbox`,
+  `internal/lib/statsserver/stats_server_linux.go`) never refreshes the
+  container stats: `ListContainerStats` serves the first sample forever,
+  `usageNanoCores` is missing, and the kubelet computes it from its own
+  calls (`pkg/kubelet/stats/cri_stats_provider.go`), logging "zero or
+  negative interval" when two read the same sample. Fix:
+  <https://github.com/cri-o/cri-o/pull/10465>; once released, a longer
+  period would do.
