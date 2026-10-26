@@ -309,6 +309,12 @@
             ]
         },
         {
+            "description": "Mjolnir's native addons: pinned at upstream's yarn.lock versions, which the build checks (containers/mjolnir/AGENTS.md). A new release is listed on the Dependency Dashboard, the notice of what upstream will need; its PR, red until upstream's lockfile has it, only on approval.",
+            "matchFileNames": ["containers/mjolnir/docker-bake.hcl"],
+            "matchDepNames": ["@tensorflow/tfjs-node", "matrix-org/matrix-rust-sdk-crypto-nodejs"],
+            "dependencyDashboardApproval": true
+        },
+        {
             "description": "k3s: automerge (k3s builds, Kubernetes patch and minor releases: there is no 2.x). A minor release fails CI until CRI-O publishes its repository (bootc/k3s/install.sh); re-run the PR's checks then. Patch releases get their own PR meanwhile.",
             "matchDepNames": ["k3s"],
             "automerge": true,

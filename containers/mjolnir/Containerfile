@@ -1,0 +1,229 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Mjolnir (https://github.com/matrix-org/mjolnir), a moderation bot for
+# Matrix, built as upstream's Dockerfile builds it, run by Node.js on
+# distroless' nodejs22-debian13. Upstream runs it as root, through a
+# shell script; here: not root, no shell, `node /mjolnir/index.js` as the
+# entrypoint.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry). Arguments go to
+# Mjolnir: `--mjolnir-config <file>` reads that file; without it, the
+# `config` package reads $NODE_CONFIG_DIR/production.yaml
+# (NODE_CONFIG_DIR=/data/config, NODE_ENV=production), upstream's
+# docs/setup_docker.md. Volume /data, owned by 65532: the config, and the
+# bot's state at dataPath (default /data/storage: access token, sync
+# token, the crypto store). No port by default; the config turns on
+# health.healthz (8080, GET /healthz: 200 when running, 418 before),
+# health.openMetrics (9090, /metrics) and web (8080, localhost by
+# default). Runs with a read-only root filesystem, no capability and
+# no-new-privileges: it writes only to the volume. Stop: Mjolnir has no
+# SIGTERM handler and Node, PID 1, ignores the signal then; run it under
+# an init (`docker run --init`, compose `init: true`) to stop on it.
+# Otherwise it is killed at the stop timeout (Kubernetes:
+# terminationGracePeriodSeconds, a few seconds are enough).
+
+# Versions come from containers/mjolnir/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# --checksum: the tag must resolve to this commit, tags can be moved. No
+# .git: the commit goes to the build through BASE_CHECKSUM.
+FROM scratch AS source
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/matrix-org/mjolnir.git#v${BASE_VERSION} /
+
+# The native addons' binaries of each platform, which their install
+# scripts would download unchecked: libtensorflow (@tensorflow/tfjs-node
+# builds against it) and the addon of @matrix-org/matrix-sdk-crypto-nodejs.
+# One stage per platform, `natives` the build's: ADD --checksum takes one
+# value, and one Bake target builds both platforms. Owned by the build's
+# user, 65532: a remote ADD writes 0600.
+FROM scratch AS natives-amd64
+ARG LIBTENSORFLOW_VERSION_AMD64
+ARG LIBTENSORFLOW_CHECKSUM_AMD64
+ARG MATRIX_SDK_CRYPTO_VERSION
+ARG MATRIX_SDK_CRYPTO_CHECKSUM_AMD64
+ADD --link --chown=65532:65532 \
+    --checksum=sha256:${LIBTENSORFLOW_CHECKSUM_AMD64} \
+    https://storage.googleapis.com/tensorflow/libtensorflow/libtensorflow-cpu-linux-x86_64-${LIBTENSORFLOW_VERSION_AMD64}.tar.gz /libtensorflow.tar.gz
+ADD --link --chown=65532:65532 \
+    --checksum=sha256:${MATRIX_SDK_CRYPTO_CHECKSUM_AMD64} \
+    https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v${MATRIX_SDK_CRYPTO_VERSION}/matrix-sdk-crypto.linux-x64-gnu.node /
+
+FROM scratch AS natives-arm64
+ARG LIBTENSORFLOW_VERSION_ARM64
+ARG LIBTENSORFLOW_CHECKSUM_ARM64
+ARG MATRIX_SDK_CRYPTO_VERSION_ARM64
+ARG MATRIX_SDK_CRYPTO_CHECKSUM_ARM64
+ADD --link --chown=65532:65532 \
+    --checksum=sha256:${LIBTENSORFLOW_CHECKSUM_ARM64} \
+    https://storage.googleapis.com/tf-builds/libtensorflow_r${LIBTENSORFLOW_VERSION_ARM64/./_}_linux_arm64.tar.gz /libtensorflow.tar.gz
+ADD --link --chown=65532:65532 \
+    --checksum=sha256:${MATRIX_SDK_CRYPTO_CHECKSUM_ARM64} \
+    https://github.com/matrix-org/matrix-rust-sdk-crypto-nodejs/releases/download/v${MATRIX_SDK_CRYPTO_VERSION_ARM64}/matrix-sdk-crypto.linux-arm64-gnu.node /
+
+# A stage, not an image: no tag (DL3006).
+# hadolint ignore=DL3006
+FROM natives-${TARGETARCH} AS natives
+
+# Node: upstream's major (package.json engines, its Dockerfile). The full
+# image, not slim: node-gyp needs python3, make and g++. Debian trixie,
+# as the final image's libc. Its yarn 1 reads upstream's yarn.lock.
+FROM docker.io/library/node:22.23-trixie@sha256:77d0c7953e80648137a237496c8edbcb3a14bedc5c5298b93a6d0dfa6c3e1271 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG TFJS_NODE_VERSION
+ARG LIBTENSORFLOW_VERSION_AMD64
+ARG LIBTENSORFLOW_VERSION_ARM64
+ARG MATRIX_SDK_CRYPTO_VERSION
+ARG MATRIX_SDK_CRYPTO_VERSION_ARM64
+# HOME for the build user below (no passwd entry); yarn keeps its cache
+# in a cache mount. node-gyp: npm's, against the image's Node headers
+# (no download).
+# Before SHELL: hadolint (2.15.1) checks the RUNs after an ENV or ARG as
+# /bin/sh, whatever SHELL says.
+ENV HOME=/tmp \
+    YARN_CACHE_FOLDER=/tmp/yarn-cache \
+    npm_config_node_gyp=/usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js \
+    npm_config_nodedir=/usr/local
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Checks first: outside Bake, on another Debian release than the build
+# args name, or with two crypto addon versions for the two platforms, the
+# build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${BASE_CHECKSUM:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${TFJS_NODE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${LIBTENSORFLOW_VERSION_AMD64:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${LIBTENSORFLOW_VERSION_ARM64:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "${MATRIX_SDK_CRYPTO_VERSION_ARM64:?build with docker buildx bake, see containers/AGENTS.md}" = "${MATRIX_SDK_CRYPTO_VERSION:?build with docker buildx bake, see containers/AGENTS.md}" ]
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# Built as the image's user, in its own copy: neither the packages nor
+# the build get root.
+USER 65532:65532
+WORKDIR /build
+COPY --link --from=source --chown=65532:65532 / /build/
+
+# Upstream's release build (its Dockerfile): yarn install, then yarn
+# build (tsc, into lib/). --frozen-lockfile: the lockfile fixes the
+# versions and integrity hashes. --ignore-scripts: no install script
+# runs: two download native binaries unchecked (pinned instead, below),
+# core-js' prints a banner.
+RUN --mount=type=cache,id=yarn-cache-65532,uid=65532,gid=65532,target=/tmp/yarn-cache <<EORUN
+yarn install --frozen-lockfile --ignore-scripts
+yarn build
+EORUN
+
+# The runtime tree, apart: the production packages, the native addons,
+# the build's lib/. The test is the proof, so it runs on this tree.
+# No source maps (*.map, 200 MB): Node reads them only with
+# --enable-source-maps.
+# The pins must be the versions of the lockfile and of tfjs-node's
+# install script: each check names the pin to update.
+# tfjs-node's binding, built from source, as its build-addon-from-source
+# script (node-pre-gyp, by node-gyp), against libtensorflow's headers
+# and libraries in deps/, where its install script unpacks them and its
+# rpath finds them. The headers and node-gyp's build/ are not shipped.
+# The crypto addon goes beside its package's index.js, which loads it,
+# readable by all: root owns the shipped tree, a remote ADD writes 0600.
+WORKDIR /app
+COPY --link --from=natives /libtensorflow.tar.gz /matrix-sdk-crypto.*.node /natives/
+RUN --mount=type=cache,id=yarn-cache-65532,uid=65532,gid=65532,target=/tmp/yarn-cache <<EORUN
+cp /build/package.json /build/yarn.lock .
+yarn install --frozen-lockfile --ignore-scripts --production
+cp -R /build/lib/. .
+rm yarn.lock
+find . -name '*.map' -type f -delete
+package() { dirname "$(node -p "require.resolve('$1/package.json')")"; }
+pin() { [ "$2" = "$3" ] || { echo "docker-bake.hcl pins $1 $3, upstream has $2: see containers/mjolnir/AGENTS.md, Updates" >&2; exit 1; }; }
+tfjs="$(package @tensorflow/tfjs-node)"
+crypto="$(package @matrix-org/matrix-sdk-crypto-nodejs)"
+pin tfjs_node "$(node -p "require('${tfjs}/package.json').version")" "${TFJS_NODE_VERSION}"
+pin matrix_sdk_crypto "$(node -p "require('${crypto}/package.json').version")" "${MATRIX_SDK_CRYPTO_VERSION}"
+pin tfjs_node.libtensorflow_amd64 "$(node -p "require('${tfjs}/scripts/deps-constants.js').LIBTENSORFLOW_VERSION")" "${LIBTENSORFLOW_VERSION_AMD64}"
+pin tfjs_node.libtensorflow_arm64 "$(grep -oP 'tf-builds/libtensorflow_r\K[0-9_]+(?=_linux_arm64)' "${tfjs}/scripts/install.js" | tr _ .)" "${LIBTENSORFLOW_VERSION_ARM64}"
+mkdir "${tfjs}/deps"
+tar -xzf /natives/libtensorflow.tar.gz -C "${tfjs}/deps"
+node "$(package @mapbox/node-pre-gyp)/bin/node-pre-gyp" install --build-from-source --directory="${tfjs}"
+rm -rf "${tfjs}/deps/include" "${tfjs}/build"
+install -m 0644 /natives/matrix-sdk-crypto.*.node "${crypto}/"
+EORUN
+
+# The test, on the tree the image ships. The bot starts on a test config
+# (production.yaml, as the image reads it), loads both addons, creates
+# its state folder and stops at the homeserver, which refuses: the error
+# upstream prints then. tfjs-node runs nsfwjs' bundled model on its
+# TensorFlow backend; the crypto addon opens an OlmMachine on its SQLite
+# store, then closes it: left open, the addon panics at exit (its tokio
+# runtime is gone when the machine drops).
+RUN <<EORUN
+mkdir -p /tmp/test/config
+cat > /tmp/test/config/production.yaml <<EOF
+homeserverUrl: "http://127.0.0.1:9"
+rawHomeserverUrl: "http://127.0.0.1:9"
+accessToken: "test"
+dataPath: "/tmp/test/storage"
+managementRoom: "!test:localhost"
+EOF
+! NODE_ENV=production NODE_CONFIG_DIR=/tmp/test/config node index.js > /tmp/test/log 2>&1
+cat /tmp/test/log
+grep -F 'Failed to setup mjolnir from the config /tmp/test/storage' /tmp/test/log
+[ -d /tmp/test/storage ]
+node -e "
+const tf = require('@tensorflow/tfjs-node');
+const nsfw = require('nsfwjs');
+const { OlmMachine, UserId, DeviceId } = require('@matrix-org/matrix-sdk-crypto-nodejs');
+(async () => {
+  if (tf.getBackend() !== 'tensorflow') throw new Error('backend ' + tf.getBackend());
+  const model = await nsfw.load();
+  const predictions = await model.classify(tf.zeros([224, 224, 3], 'int32'));
+  if (predictions.length !== 5) throw new Error('predictions ' + predictions.length);
+  const machine = await OlmMachine.initialize(new UserId('@test:localhost'), new DeviceId('TEST'), '/tmp/test/crypto');
+  if (machine.userId.toString() !== '@test:localhost') throw new Error('user ' + machine.userId);
+  machine.close();
+})().catch((e) => { console.error(e); process.exit(1); });
+"
+rm -rf /tmp/test
+mkdir /tmp/data
+EORUN
+
+# What the image ships. A stage of its own: root owns the app, the
+# volume's folder is 65532's (an empty one: the build's /tmp has caches),
+# and the image copies it all from here (the SBOM scans this stage, not
+# the build stage with node's image).
+FROM scratch AS app-files
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
+COPY --link --from=build --chown=0:0 /app/ /mjolnir/
+COPY --link --from=build --chown=65532:65532 /tmp/data/ /data/
+
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:10747a1323be68f206aed893599d43e6697ad67257e7c42703553f99fbce3d33
+
+ARG BASE_VERSION
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# Upstream's Dockerfile's.
+ENV NODE_ENV=production \
+    NODE_CONFIG_DIR=/data/config
+
+# app-files is the image's own tree, assembled above (DL3067).
+# hadolint ignore=DL3067
+COPY --link --from=app-files / /
+USER 65532:65532
+WORKDIR /mjolnir
+VOLUME ["/data"]
+ENTRYPOINT ["/nodejs/bin/node", "/mjolnir/index.js"]
+
+# The addons load against this image's libraries, and its Node meets
+# upstream's range (>=<major>.0.0: another form fails, to be read).
+RUN ["/nodejs/bin/node", "-e", "require('@tensorflow/tfjs-node'); require('@matrix-org/matrix-sdk-crypto-nodejs'); const m = /^>=(\\d+)\\.0\\.0$/.exec(require('./package.json').engines.node); if (!m || Number(process.versions.node.split('.')[0]) < Number(m[1])) process.exit(1)"]
