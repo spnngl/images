@@ -1,0 +1,193 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+
+# Numa, DNS resolver with ad blocking, local zones, DNS-over-TLS and a
+# .numa reverse proxy (https://github.com/razvandimescu/numa), built from
+# source as one static musl binary on scratch: upstream's paths, but not
+# root, and a config serving private networks over encrypted upstreams.
+#
+# Runtime contract (Docker and Kubernetes):
+# - UID/GID 65532 (no passwd entry). Runs with a read-only root, no
+#   capability, no-new-privileges, seccomp RuntimeDefault.
+# - /var/lib/numa writable by it: local CA, api_token, blocklist cache,
+#   services and lists. Kubernetes ignores VOLUME: mount an emptyDir
+#   there, or a PVC with fsGroup 65532 to keep them across restarts.
+# - Config: /root/.config/numa/numa.toml, the image's (numa.toml, next
+#   to this file); mount yours there, a ConfigMap on /root/.config/numa.
+#   Read at start: restart after a change. Missing, numa exits 1.
+#   Another path: `docker run <image> run /path/to/numa.toml`.
+# - API token: NUMA_API_TOKEN (a Secret, the same for every replica),
+#   `[server] api_token`, else minted into /var/lib/numa/api_token.
+# - Ports: DNS 53/udp+tcp and DoT 853 on every IPv4 address, private
+#   clients only; API 5380 on loopback; proxy and DoH (80/443) off,
+#   until the config opens them. Under 1024 as UID 65532:
+#   net.ipv4.ip_unprivileged_port_start=0, the default of Docker's bridge
+#   network and of containerd 2; else in the pod's
+#   securityContext.sysctls (a safe sysctl). With hostNetwork, the
+#   node's own setting.
+# - Probes: tcpSocket on 53 (/health is on the loopback API).
+# - DoT server certificate: a CA minted per /var/lib/numa; replicas
+#   share one through `[dot] cert_path` and `key_path` (a Secret).
+# - Egress: 853 to the upstreams, 443 for blocklists and the DoH
+#   fallback, 53 to 9.9.9.9 and 1.1.1.1 (numa's lookups of the
+#   blocklists' hosts), 53 to /etc/resolv.conf's nameserver: numa
+#   forwards its search domains there (Kubernetes: cluster.local to the
+#   cluster DNS).
+# - SIGTERM: a graceful stop, exit 0.
+
+# Versions come from containers/numa-dns/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its musl-tools build the C libraries.
+FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# musl-tools: musl-gcc, for the C code of the bundled libraries (ring,
+# mimalloc). cargo-auditable: embeds the dependency list in the binary,
+# for the SBOM and the vulnerability scans. bind9-dnsutils: dig, for the
+# server test.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# rustup's musl target is installed here too, while root, and the state
+# directory, owned by the image's user: /var/lib/numa for the server test,
+# /rootfs for the image (its parents root's, which COPY --chown would
+# give the user too).
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends bind9-dnsutils cargo-auditable musl-tools
+rm -rf /var/lib/apt/lists/*
+rustup target add "$(uname -m)-unknown-linux-musl"
+install -d -o 65532 -g 65532 /var/lib/numa /rootfs/var/lib/numa
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# No .git: build.rs's `git describe` fails, and --version prints
+# Cargo.toml's version, the tag's.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/razvandimescu/numa.git#v${BASE_VERSION} /src
+
+# Build and test as the image's user, not root: neither the crates' build
+# scripts nor the server get root, and the source stays root's. No passwd
+# entry needed: CARGO_HOME and RUSTUP_HOME are set, /usr/local/cargo is
+# writable by all. WORKDIR creates its folder owned by USER: /out takes
+# the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Static musl binary, as upstream's release builds
+# (.github/workflows/release.yml): default features, Cargo.toml's release
+# profile. CC_<target>: cc-rs builds the C libraries with musl-gcc, not
+# glibc's gcc.
+# Caches: uid sets the owner of a new cache only, and one is shared by
+# every build that uses its id (the target by default): ids of their own,
+# as containers/garage does.
+RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=numa-dns-target-65532,uid=65532,gid=65532,target=/src/target \
+    <<EORUN
+target="$(uname -m)-unknown-linux-musl"
+export "CC_${target//-/_}=musl-gcc"
+cargo auditable build --locked --release --target "${target}" --bin numa
+cp "target/${target}/release/numa" /out/
+EORUN
+
+# Server smoke test, here because scratch has no shell to run it: numa on
+# loopback ports (smoke-test.toml, next to this file), then a local zone
+# answered over UDP and over DoT (the CA minted into data_dir), an
+# override added through the API and answered, a service saved in
+# /var/lib/numa, and a graceful stop.
+# HOME as in the image: the service proves numa keeps state in
+# /var/lib/numa under it (src/lib.rs, config_dir_unix), where data_dir
+# doesn't reach.
+# Nothing leaves the host: blocklists off, no query reaches an upstream.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN --mount=type=bind,source=smoke-test.toml,target=/tmp/smoke-test.toml \
+    <<EORUN
+/out/numa --version 2>&1 | grep -Fx "numa ${BASE_VERSION}"
+export HOME=/root
+/out/numa run /tmp/smoke-test.toml &
+server=$!
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:5380/health
+dig=(dig @127.0.0.1 +short +timeout=2 +tries=1)
+[ "$("${dig[@]}" -p 5353 smoke.test A)" = 192.0.2.1 ]
+[ "$("${dig[@]}" -p 8853 +tls smoke.test A)" = 192.0.2.1 ]
+curl -fsS -H 'Content-Type: application/json' \
+    -d '{"domain": "override.test", "target": "192.0.2.2"}' \
+    http://127.0.0.1:5380/overrides
+[ "$("${dig[@]}" -p 5353 override.test A)" = 192.0.2.2 ]
+curl -fsS -H 'Content-Type: application/json' \
+    -d '{"name": "smoke", "target_port": 3000}' \
+    http://127.0.0.1:5380/services
+grep -F '"smoke"' /var/lib/numa/services.json
+kill "${server}"
+wait "${server}"
+rm -r /tmp/numa
+EORUN
+
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# Upstream image's paths (/usr/local/bin/numa, /var/lib/numa, the config
+# under /root), so upstream's docs apply as is. No CA bundle: numa
+# verifies upstreams and blocklist downloads against Mozilla's roots,
+# compiled in (src/forward.rs, numa_tls_builder).
+# root's, not the build user's: the server can't replace its own binary.
+COPY --link --from=build --chown=0:0 /out/numa /usr/local/bin/numa
+COPY --link numa.toml /root/.config/numa/numa.toml
+COPY --link --from=build /src/LICENSE /usr/share/doc/numa/
+# Owned by the image's user: a named volume mounted there starts with that
+# owner, so it is writable without a chown.
+COPY --link --from=build /rootfs/ /
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+
+# HOME under /root: numa keeps all its state in /var/lib/numa, as for
+# upstream's root image (src/lib.rs, config_dir_unix), and its commands
+# (`numa token`) find /root/.config/numa/numa.toml. Docker's HOME=/
+# would put services and lists in /.config/numa, which isn't writable:
+# lost at each restart.
+ENV HOME=/root
+
+# Every port numa can listen on, at its default number: DNS, DoT, .numa
+# proxy and DoH (80, 443), API and dashboard (5380), mobile API (8765).
+# EXPOSE opens nothing: it documents, and `docker run -P` publishes these
+# to random host ports. With the image's config, only DNS and DoT listen
+# beyond loopback; a mounted config opens the others.
+EXPOSE 53/udp 53/tcp 853/tcp 80/tcp 443/tcp 5380/tcp 8765/tcp
+VOLUME ["/var/lib/numa"]
+
+# The config by path: numa exits if it is missing. Bare `run` would
+# search other paths, /var/lib/numa first, and without a file serve
+# numa's defaults: DNS on every address for every client, an open
+# resolver (src/config.rs, load_config).
+ENTRYPOINT ["/usr/local/bin/numa"]
+CMD ["run", "/root/.config/numa/numa.toml"]
+
+# Smoke test: the binary is static and runs on this platform (the build
+# stage tested the server).
+RUN ["/usr/local/bin/numa", "--version"]
