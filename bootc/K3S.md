@@ -161,13 +161,16 @@ local-storage and its RBAC rolebindings. Deploy the others yourself:
 
 Open on the `public` zone, see `bootc/k3s/install.sh` for why:
 
-| Port      | For                                            |
-|-----------|------------------------------------------------|
-| 6443/tcp  | API server, on the control-plane               |
-| 10250/tcp | kubelet, between all nodes                     |
-| 4240/tcp  | cilium-health probes, between all nodes        |
-| 51871/udp | Cilium WireGuard, between all nodes            |
-| 6081/udp  | Cilium Geneve overlay, between all nodes       |
+| Port          | For                                        |
+|---------------|--------------------------------------------|
+| 6443/tcp      | API server, on the control-plane           |
+| 10250/tcp     | kubelet, between all nodes                 |
+| 4240/tcp      | cilium-health probes, between all nodes    |
+| 51871/udp     | Cilium WireGuard, between all nodes        |
+| 6081/udp      | Cilium Geneve overlay, between all nodes   |
+| 853/tcp       | numa-dns DNS over TLS, through HAProxy     |
+| 7881/tcp+udp  | LiveKit media, for tuwunel's calls         |
+| 51413/tcp+udp | Transmission's BitTorrent peers            |
 
 `10.42.0.0/16` (pods) and `10.43.0.0/16` (services) are sources of the
 `trusted` zone.

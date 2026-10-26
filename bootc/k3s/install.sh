@@ -70,6 +70,12 @@ rm /etc/containers/registries.conf.d/crio.conf
 #   traffic doesn't go through WireGuard.
 #   https://docs.cilium.io/en/stable/security/network/encryption-wireguard/#node-to-node-encryption-beta
 #
+# Public ports of apps (fluxcd repo, codeberg.org/lola_2lannoy/apps), on
+# every node since any may run them:
+# - 853/tcp: DNS over TLS of numa-dns, on HAProxy's host network.
+# - 7881/tcp+udp: LiveKit media for tuwunel's calls (ICE over TCP, UDP mux).
+# - 51413/tcp+udp: Transmission's BitTorrent peers, a hostPort.
+#
 # 2379-2380 (embedded etcd) stay closed: the datastore is k3s' default,
 # SQLite through kine, on a single server.
 #
@@ -79,6 +85,8 @@ rm /etc/containers/registries.conf.d/crio.conf
 # on AlmaLinux its geoblock policy drops it as private (geoblock-bogons).
 firewall-offline-cmd --add-port=6443/tcp --add-port=10250/tcp --add-port=4240/tcp \
     --add-port=51871/udp --add-port=6081/udp
+firewall-offline-cmd --add-port=853/tcp --add-port=7881/tcp --add-port=7881/udp \
+    --add-port=51413/tcp --add-port=51413/udp
 firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 --add-source=10.43.0.0/16
 firewall-offline-cmd --check-config
 
