@@ -180,7 +180,8 @@ EORUN
 # own files are served as themselves: config.json, sw.js, a JavaScript
 # bundle, its Brotli copy when the client accepts it, the crypto module
 # as application/wasm; Element Call's page carries no X-Frame-Options; a
-# missing file falls back to index.html, 200 (the Containerfile's header).
+# missing file falls back to index.html, 200 (the Containerfile's header):
+# files are checked by content or content type, not by what they lack.
 # The log shows a request (not /health's: the server logs those at debug).
 # SIGTERM stops it cleanly.
 # kill (DL3001) stops the server this step started, not a container's.
@@ -197,7 +198,7 @@ curl -fsS --retry 30 --retry-delay 1 --retry-connrefused "${url}/health"
 curl -fsS "${url}/" | grep -F '<div id="root">'
 curl -fsS "${url}/login" | grep -F '<div id="root">'
 curl -fsS "${url}/config.json" | grep -F homeserverList
-curl -fsS "${url}/sw.js" | grep -vF '<div id="root">'
+[ "$(curl -fsS -o /dev/null -w '%{content_type}' "${url}/sw.js")" = 'text/javascript' ]
 bundle="$(sed -nE 's#.*src="(/assets/[^"]+\.js)".*#\1#p' /app/index.html)"
 [ "$(curl -sS -o /dev/null -w '%{content_type}' "${url}${bundle}")" = 'text/javascript' ]
 curl -fsS -D /tmp/headers -H 'Accept-Encoding: br' -o /tmp/bundle.br "${url}${bundle}"
