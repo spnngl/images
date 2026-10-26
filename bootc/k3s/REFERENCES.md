@@ -36,8 +36,8 @@
   `kubelet-arg: config=`, which k3s copies into that directory as
   `10-cli-config.conf` (`extractConfigArgs()`,
   `pkg/daemons/agent/agent.go`); dropping the flag leaves that copy
-  behind. 512Mi, not k3s' whole footprint: that would leave pods
-  ~1.6GiB. It does not prevent the daily memory stalls (02:43 UTC,
+  behind. 1Gi, not k3s' whole footprint: that would leave pods
+  ~1.6GiB, under the 2.2GiB they request. It does not prevent the daily memory stalls (02:43 UTC,
   with I/O pressure from swap-ins), whose cause is unknown.
 - **`KINE_COMPACT_TIMEOUT=60s`** (`k3s.service.d/20-kine-compact-timeout.conf`):
   a slow disk must not stop the server. kine's compaction runs in a
