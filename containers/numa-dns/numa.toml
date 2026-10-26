@@ -1,0 +1,49 @@
+# The image's config, /root/.config/numa/numa.toml: mount yours over it.
+# Only values that differ from numa's defaults are set, and those an
+# operator opens; every key and its default: upstream's numa.toml, at
+# the image's tag. Read at startup: restart numa after an edit.
+
+[server]
+# DNS on every address: the resolver the container serves.
+bind_addr = "0.0.0.0:53"
+# Private networks only, or numa answers the Internet, an open resolver.
+# Covers DNS, DoT, DoH and the proxy; loopback is always allowed. A
+# client is matched by its source address: an IPv6 client on a global
+# address needs its prefix added here. In Kubernetes, pods and nodes
+# (a Service's externalTrafficPolicy: Cluster shows the node's) are in
+# these ranges on most clusters.
+allow_from = [
+    "10.0.0.0/8",     # RFC 1918
+    "172.16.0.0/12",  # RFC 1918, Docker's networks
+    "192.168.0.0/16", # RFC 1918
+    "100.64.0.0/10",  # RFC 6598 CGNAT, Tailscale
+    "fc00::/7",       # RFC 4193 ULA
+    "fe80::/10",      # link-local
+]
+# Dashboard and API on loopback (the default), reachable from inside the
+# container alone. "0.0.0.0" opens them to every peer presenting the
+# API token.
+api_bind_addr = "127.0.0.1"
+
+[upstream]
+# Encrypted upstream instead of the network's plain-text resolver.
+# DNS-over-TLS by IP literal: no bootstrap lookup, `#name` is the
+# certificate name to verify. numa prefers the fastest healthy server.
+mode = "forward"
+address = [
+    "tls://1.1.1.1#cloudflare-dns.com",
+    "tls://1.0.0.1#cloudflare-dns.com",
+    "tls://8.8.8.8#dns.google",
+    "tls://8.8.4.4#dns.google",
+]
+# DoH over 443, only when every DoT server fails (networks blocking 853).
+# By IP too, as numa's built-in fallback: no plain-text lookup of its
+# name. The startup WARN "skipping non-IP fallback" is about numa's own
+# HTTPS lookups (blocklists), which then use 9.9.9.9 and 1.1.1.1.
+fallback = "https://1.1.1.1/dns-query"
+
+[proxy]
+# Off: the `.numa` reverse proxy and DNS-over-HTTPS (/dns-query) share
+# ports 80 and 443, on loopback by default, out of the clients' reach.
+# To serve them: `enabled = true` and `bind_addr = "0.0.0.0"`.
+enabled = false
