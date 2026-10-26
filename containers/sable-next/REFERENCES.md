@@ -32,9 +32,9 @@
 - **A missing file answers `index.html`, its headers matched on the
   request path:** a chunk an old tab asks for after an upgrade comes
   back as HTML with `immutable`, cached a year under that URL. Caddy
-  does the same (`header` runs before `try_files`); SWS has no
-  fallback per path. The URL is an old build's hash: only a rollback
-  serves it again.
+  does the same (`header` runs before `try_files`; reported in issue
+  #11 below); SWS has no fallback per path. The URL is an old build's
+  hash: only a rollback serves it again.
 - **Built in the image, not copied:** upstream's Dockerfile copies a
   `dist` built outside it, so its image proves nothing about the source.
   Here the tag's commit is checked by `ADD --checksum`, then built.
@@ -46,7 +46,9 @@
   crosses `/`, as `_headers`' splat does; placeholders, `!` and
   absolute URLs fail the build. `/` is matched as `/index.html`
   (`custom_headers.rs`). `_headers` stays in `/app`, as in upstream's
-  image.
+  image. Other pages (`/login`, a deep link) get no `Cache-Control`, as
+  in upstream's image, where it is reported:
+  https://github.com/SableClient/sable-next/issues/11
 - **Tools from `.mise/mise.lock`:** upstream's build script needs
   `wasm-bindgen` (Cargo.lock's version, it checks) and binaryen's
   `wasm-opt`; mise's lockfile names each release archive per platform
