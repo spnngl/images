@@ -30,11 +30,12 @@ sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 ## Smoke test
 
 The build stage runs it (`scratch` has no shell): `--version`, then the
-server with the built app and `sws.toml`, asked for `/health`, `/`, a
-deep link, a page without `.html`, `config.json` (`no-cache`), the
-service worker, a bundle (`immutable`) and its Brotli copy, the core
-(`application/wasm`), the manifest, a missing file (falls back), the
-request log, and a clean SIGTERM stop.
+server with the built app and `sws.toml`, asked for `/health`, `/`
+(`no-cache`), a deep link, a page without `.html`, `config.json`
+(`no-cache`), the service worker, a bundle (`immutable`) and its Brotli
+copy, the core and DeepFilterNet's (`application/wasm`), the manifest,
+a missing file (falls back), the request log, and a clean SIGTERM stop.
+Files are checked by content type: the fallback answers any path.
 
 ## Updates
 
@@ -44,7 +45,9 @@ patch releases of both, and Node and Rust minor bumps, are automerged
 release never. Before merging a Sable release read upstream's
 `.forgejo/actions/setup/action.yml`, `.forgejo/workflows/tauri-build.yml`
 (build-web: its variables), `scripts/build/build-wasm.mjs`,
-`vite.config.ts`, `static/_headers`, `packaging/docker/Caddyfile` and
-`.mise/config.toml` at the new tag: a new build variable, a new Node
-major or Rust release (`rust-toolchain.toml`), a new install script, a
+`vite.config.ts`, `static/_headers`, `packaging/docker/Caddyfile`,
+`.mise/config.toml`, `.mise/mise.lock`, `pnpm-workspace.yaml` and
+`package.json` at the new tag: a new build variable, a new Node major
+or Rust release (`rust-toolchain.toml`), a tool archive's new layout, a
+new install script (`allowBuilds`) or pnpm major (`packageManager`), a
 new route or header the Caddyfile adds. For SWS, cinny's *Updates*.
