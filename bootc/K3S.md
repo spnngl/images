@@ -35,7 +35,11 @@ crictl rmp --all --force
 k3s (with its kubelet) and CRI-O run in `kube.slice`, out of
 `system.slice` (`bootc/k3s/sysroot/usr/lib/systemd/system/`), without
 resource limits. The kubelet puts pods in `kubepods.slice`, next to it,
-and CRI-O each container's conmon in its pod's cgroup.
+and CRI-O each container's conmon in its pod's cgroup. Its
+`systemReserved`
+(`bootc/k3s/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf`)
+keeps 200m CPU and 128Mi out of the pods' allocatable, for both slices:
+it caps `kubepods.slice`, not the daemons.
 
 Short image names (`coredns/coredns`) resolve to docker.io only, as with
 containerd

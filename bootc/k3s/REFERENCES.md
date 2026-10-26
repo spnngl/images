@@ -19,6 +19,15 @@
   reach hosts with `bootc upgrade`; only a minor release, a new tag,
   needs `bootc switch`, the moment to read Kubernetes' upgrade notes.
 - **`kube.slice`:** out of `system.slice` (bootc/K3S.md, "Swap").
+- **`systemReserved`, no `enforceNodeAllocatable` beyond `pods`**
+  (`kubelet.conf.d/20-my-kubelet.conf`): pods could request, and use,
+  all of a node's RAM; on the 3.8GiB control plane memory pressure
+  stalled the API server and failed the liveness probes calling it
+  (kube-state-metrics, metrics-server). The reservation lowers
+  allocatable and `kubepods.slice`'s limit
+  (`pkg/kubelet/cm/node_container_manager_linux.go`). Enforcing it on
+  `system.slice` or `kube.slice` would cap the daemons themselves: an
+  OOM kill of k3s is worse than a slow one.
 - **`KINE_COMPACT_TIMEOUT=60s`** (`k3s.service.d/20-kine-compact-timeout.conf`):
   a slow disk must not stop the server. kine's compaction runs in a
   transaction whose context times out after `--compact-timeout` (5s,
