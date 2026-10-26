@@ -8,7 +8,7 @@ target "mailpit" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=axllent/mailpit extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "1.31.6", checksum = "a028b01f4a24b4b36bdad95b8e09e070ebf2bad4" },
+      { version = "1.32.0", checksum = "ce798cfd781ef07b321427fc5082b3eebdcae460" },
     ]
   }
   args = merge(containerfile_args(debian), {
