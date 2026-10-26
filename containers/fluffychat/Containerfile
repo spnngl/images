@@ -1,0 +1,369 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# FluffyChat (https://github.com/krille-chan/fluffychat), a Matrix
+# client: its Flutter web app, built as upstream's Dockerfile builds it,
+# served by static-web-server (https://static-web-server.net), one static
+# musl binary, on scratch. Upstream serves it with nginx, as root, on
+# port 80; here: not root, port 8080, and no shell.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry). Stateless, no
+# volume. HTTP on 8080/tcp (SERVER_PORT); the app is in /app. Its
+# settings (default homeserver, application name: upstream's
+# config.sample.json) are /app/config.json, which the browser fetches:
+# mount yours there (Kubernetes: a ConfigMap with subPath); the image
+# ships none, so the app starts on its defaults. Probe: GET /health.
+# Missing files answer 404: the app routes in the URL's fragment
+# (/#/...). Other settings are static-web-server's SERVER_* environment
+# variables. TLS and CORS are off, as upstream's: terminate TLS in a
+# proxy. Security headers are on (SERVER_SECURITY_HEADERS): HSTS, for
+# two years with includeSubDomains and preload, so serve it from a host
+# whose subdomains all have TLS; no framing by other sites. Runs with a
+# read-only root filesystem, no capability and no-new-privileges: it
+# writes nothing.
+# https://static-web-server.net/configuration/environment-variables/
+
+# Versions come from containers/fluffychat/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# --checksum: each tag must resolve to its commit, tags can be moved. No
+# .git: the app's version is pubspec.yaml's.
+FROM scratch AS source
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/krille-chan/fluffychat.git#v${BASE_VERSION} /
+
+# The Flutter SDK. --keep-git-dir: the flutter tool reads its version
+# from the tag (git tag --points-at HEAD), and its engine's from a file
+# git tracks (bin/internal/update_engine_version.sh).
+FROM scratch AS flutter-source
+ARG FLUTTER_VERSION
+ARG FLUTTER_CHECKSUM
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${FLUTTER_CHECKSUM} \
+    https://github.com/flutter/flutter.git#${FLUTTER_VERSION} /
+
+# vodozemac (Matrix end-to-end encryption) through its Dart bindings'
+# repository: the Rust crate the build compiles to WebAssembly.
+FROM scratch AS vodozemac-source
+ARG VODOZEMAC_VERSION
+ARG VODOZEMAC_CHECKSUM
+ADD --link \
+    --checksum=${VODOZEMAC_CHECKSUM} \
+    https://github.com/famedly/dart-vodozemac.git#${VODOZEMAC_VERSION} /
+
+# LiveKit's Flutter SDK: the source of its encryption worker (calls).
+FROM scratch AS livekit-source
+ARG LIVEKIT_VERSION
+ARG LIVEKIT_CHECKSUM
+ADD --link \
+    --checksum=${LIVEKIT_CHECKSUM} \
+    https://github.com/livekit/client-sdk-flutter.git#v${LIVEKIT_VERSION} /
+
+# The server's source, pinned the same way.
+FROM scratch AS sws-source
+ARG SWS_VERSION
+ARG SWS_CHECKSUM
+ADD --link \
+    --checksum=${SWS_CHECKSUM} \
+    https://github.com/static-web-server/static-web-server.git#v${SWS_VERSION} /
+
+# Debian trixie with Rust: the toolchain of the app and of the server.
+FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS toolchain
+
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# binaryen: wasm-opt, which wasm-pack runs on vodozemac's module (it
+# downloads one when none is installed). brotli: the app's .br copies.
+# unzip: the Flutter tool's Dart SDK, and native_imaging's release file.
+# musl-tools: musl-gcc, for the C code of the server's crates (ring,
+# zstd). cargo-auditable: embeds the server's dependency list in the
+# binary, for the SBOM and the vulnerability scans. rustup's parts are
+# installed here too, while root: the wasm32 target and the standard
+# library's source for vodozemac (-Z build-std), the musl target for the
+# server.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends binaryen brotli cargo-auditable musl-tools unzip
+rm -rf /var/lib/apt/lists/*
+rustup target add wasm32-unknown-unknown "$(uname -m)-unknown-linux-musl"
+rustup component add rust-src
+EORUN
+
+# The web app.
+FROM toolchain AS web
+
+ARG BASE_VERSION
+ARG FLUTTER_VERSION
+ARG VODOZEMAC_VERSION
+ARG NATIVE_IMAGING_VERSION
+ARG NATIVE_IMAGING_CHECKSUM
+ARG LIVEKIT_VERSION
+ARG WASM_PACK_VERSION
+# HOME for the build user below (no passwd entry): git, cargo, pub and
+# the Flutter tool keep their files there. BOT: the Flutter tool's CI
+# mode, without its update check (a git fetch) and analytics
+# (base/bot_detector.dart). Before SHELL: hadolint (2.15.1) checks the
+# RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+ENV BOT=true
+ENV PATH="/opt/flutter/bin:${PATH}"
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Built as the image's user, in its own copies: neither the packages nor
+# the build get root. No passwd entry needed: CARGO_HOME and RUSTUP_HOME
+# are set, /usr/local/cargo is writable by all.
+USER 65532:65532
+WORKDIR /build
+COPY --link --from=flutter-source --chown=65532:65532 / /opt/flutter/
+COPY --link --from=vodozemac-source --chown=65532:65532 / /src/vodozemac/
+COPY --link --from=livekit-source --chown=65532:65532 / /src/livekit/
+COPY --link --from=source --chown=65532:65532 / /build/
+# native_imaging's release file, checked by its sha256. --chown: ADD
+# writes a download as root's, mode 600.
+ADD --link \
+    --chown=65532:65532 \
+    --checksum=sha256:${NATIVE_IMAGING_CHECKSUM} \
+    https://github.com/famedly/dart_native_imaging/releases/download/v${NATIVE_IMAGING_VERSION}/native_imaging.zip /src/
+
+# Lockstep first: each source is the release FluffyChat names, or the
+# build fails before compiling (a pin moved alone, FluffyChat on a new
+# release): Flutter in .fvmrc, the packages in pubspec.lock, vodozemac
+# in the app's asset path and folder too (lib/config/app_config.dart
+# and pubspec.yaml, which upstream's script rewrites to match).
+RUN <<EORUN
+locked() {
+    awk -v name="  $1:" '$0 == name { found = 1 } found && $1 == "version:" { gsub(/"/, "", $2); print $2; exit }' pubspec.lock
+}
+grep -F "\"flutter\": \"${FLUTTER_VERSION}\"" .fvmrc
+[ "$(locked flutter_vodozemac)" = "${VODOZEMAC_VERSION}" ]
+[ "$(locked native_imaging)" = "${NATIVE_IMAGING_VERSION}" ]
+[ "$(locked livekit_client)" = "${LIVEKIT_VERSION}" ]
+grep -F "vodozemacVersion = '${VODOZEMAC_VERSION}';" lib/config/app_config.dart
+grep -Fx "    - assets/vodozemac/${VODOZEMAC_VERSION}/" pubspec.yaml
+[ -d "assets/vodozemac/${VODOZEMAC_VERSION}" ]
+EORUN
+
+# wasm-pack and wasm-bindgen, which vodozemac's build runs, where it
+# would install the newest of each: wasm-pack at its pin, wasm-bindgen at
+# vodozemac's Cargo.lock version (wasm-pack downloads that version when
+# the installed one differs). --locked: each tool's own Cargo.lock.
+# Caches: uid sets the owner of a new cache only, and one is shared by
+# every build that uses its id (the target by default): ids of their own,
+# as containers/garage does.
+RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    <<EORUN
+bindgen="$(awk '$0 == "name = \"wasm-bindgen\"" { getline; gsub(/"/, "", $3); print $3; exit }' /src/vodozemac/rust/Cargo.lock)"
+cargo install --locked "wasm-pack@${WASM_PACK_VERSION}" "wasm-bindgen-cli@${bindgen}"
+EORUN
+
+# vodozemac to WebAssembly, as upstream's scripts/prepare-web.sh: the
+# build-web command of flutter_rust_bridge (the Dart package
+# dart-vodozemac pins), run directly, where the script installs
+# flutter_rust_bridge_codegen to wrap it. It runs wasm-pack with nightly
+# flags (-Z build-std: threads' shared memory); this toolchain takes
+# them with RUSTC_BOOTSTRAP=1. dart-vodozemac's Dart packages have no
+# lock file: pub picks the newest matching ones. The module goes where
+# the app loads it from, assets/vodozemac/<version>/.
+WORKDIR /src/vodozemac/dart
+RUN --mount=type=cache,id=pub-cache-65532,uid=65532,gid=65532,target=/tmp/.pub-cache \
+    --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=vodozemac-target-65532,uid=65532,gid=65532,target=/src/vodozemac/rust/target \
+    <<EORUN
+dart pub get
+RUSTC_BOOTSTRAP=1 dart run flutter_rust_bridge build-web --dart-root "${PWD}" --rust-root /src/vodozemac/rust \
+    --release --wasm-pack-rustup-toolchain "${RUST_VERSION}"
+mv web/pkg/vodozemac_bindings_dart* "/build/assets/vodozemac/${VODOZEMAC_VERSION}/"
+EORUN
+
+# LiveKit's encryption worker, as upstream's script builds it, into the
+# app's web/: with upstream's patch (HKDF keys:
+# livekit/client-sdk-flutter#974), each pattern checked first, so a
+# release without it fails here, and in the compiled worker after:
+# dart2js writes a {'name': ...} map as ["name",...]. pub get
+# --enforce-lockfile: LiveKit's pubspec.lock versions and hashes;
+# --no-example: its example app has no lock file, and the worker
+# doesn't need it.
+WORKDIR /src/livekit
+RUN --mount=type=cache,id=pub-cache-65532,uid=65532,gid=65532,target=/tmp/.pub-cache \
+    <<EORUN
+flutter pub get --enforce-lockfile --no-example
+grep -F "{'name': 'PBKDF2'.toJS}" web/e2ee.keyhandler.dart
+grep -F "getAlgoOptions('PBKDF2', salt)" web/e2ee.keyhandler.dart
+grep -F "{'name': 'PBKDF2'}" web/e2ee.utils.dart
+sed -i "s/{'name': 'PBKDF2'.toJS}/{'name': 'HKDF'.toJS}/g" web/e2ee.keyhandler.dart
+sed -i "s/getAlgoOptions('PBKDF2', salt)/getAlgoOptions('HKDF', salt)/g" web/e2ee.keyhandler.dart
+sed -i "s/{'name': 'PBKDF2'}/{'name': 'HKDF'}/g" web/e2ee.utils.dart
+dart compile js web/e2ee.worker.dart -o /build/web/e2ee.worker.dart.js -m
+grep -qF '["name","HKDF"]' /build/web/e2ee.worker.dart.js
+if grep -qF '["name","PBKDF2"]' /build/web/e2ee.worker.dart.js; then exit 1; fi
+EORUN
+
+# The app, as upstream's script and Dockerfile build it: the native
+# executor's worker, native_imaging's files, then flutter build web with
+# upstream's flags. pub get --enforce-lockfile: FluffyChat's
+# pubspec.lock versions and hashes. The version check: the build holds
+# the release it was built from. Then the build's leftovers, which no
+# page asks for, go: dart2js's .deps (lists of build paths), Flutter's
+# .last_build_id, the executor's Dart source. The vodozemac folder's
+# .gitkeep stays: the app's asset manifest lists it. The final stage
+# copies the app as root's: each file must be readable, each folder
+# searchable by the server's user (unzip keeps the zip's modes).
+# Then each text asset gets a .br and a .gz beside it, which the server
+# sends as they are (SERVER_COMPRESSION_STATIC, off by default), where it
+# would otherwise compress every response: Brotli at its best quality,
+# gzip deterministic (-n). Not the sourcemaps (devtools only). Kept only
+# when smaller.
+WORKDIR /build
+RUN --mount=type=cache,id=pub-cache-65532,uid=65532,gid=65532,target=/tmp/.pub-cache \
+    <<EORUN
+flutter pub get --enforce-lockfile
+dart compile js web/native_executor.dart -o web/native_executor.js -m
+unzip -j /src/native_imaging.zip 'js/*' -d web
+flutter build web --dart-define=FLUTTER_WEB_CANVASKIT_URL=canvaskit/ --release --source-maps
+grep -F "\"version\":\"${BASE_VERSION}\"" build/web/version.json
+rm build/web/*.deps build/web/.last_build_id build/web/native_executor.dart
+[ -z "$(find build/web \( -type f ! -perm -o=r \) -o \( -type d ! -perm -o=rx \) -print -quit)" ]
+find build/web -type f \( -name '*.css' -o -name '*.html' -o -name '*.js' -o -name '*.json' -o -name '*.mjs' -o -name '*.svg' -o -name '*.wasm' \) -print0 |
+    while IFS= read -r -d '' file; do
+        brotli -q 11 -c "${file}" > "${file}.br"
+        gzip -9 -n -c "${file}" > "${file}.gz"
+        for packed in "${file}.br" "${file}.gz"; do
+            [ "$(stat -c %s "${packed}")" -lt "$(stat -c %s "${file}")" ] || rm "${packed}"
+        done
+    done
+EORUN
+
+# The server.
+FROM toolchain AS build
+
+ARG SWS_VERSION
+# Inherited from toolchain, declared again for hadolint, which checks a
+# stage's RUNs against its own SHELL only.
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+# Built and tested as the image's user, in its own copy: neither the
+# crates' build scripts nor the server get root. WORKDIR creates its
+# folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /build
+COPY --link --from=sws-source --chown=65532:65532 / /build/
+
+# Upstream's release build (cargo build --release) with its default
+# features, static: the rustup musl targets link statically by default.
+# Its release workflow adds --features=all, the experimental tokio
+# metrics: SERVER_METRICS stays off here. .cargo/config.toml, from the
+# source, sets the --cfg tokio_unstable it needs. CC_<target>: cc-rs
+# builds the C code with musl-gcc, not glibc's gcc.
+RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=sws-target-65532,uid=65532,gid=65532,target=/build/target \
+    <<EORUN
+target="$(uname -m)-unknown-linux-musl"
+export "CC_${target//-/_}=musl-gcc"
+cargo auditable build --locked --release --bin static-web-server --target "${target}"
+cp "target/${target}/release/static-web-server" /out/
+if readelf -dW /out/static-web-server | grep -qF NEEDED; then exit 1; fi
+EORUN
+
+# Server test, here because scratch has no shell to run it: the version,
+# then the server with the app and the settings of the image's final
+# stage (keep them equal), asked for what a browser asks for. /health
+# answers 200; / answers index.html; the app's files are served as
+# themselves: the Flutter bundle, its Brotli copy when the client
+# accepts it, CanvasKit and vodozemac as application/wasm, the files
+# index.html and the app load (Flutter's loader, the manifest,
+# vodozemac's script, the two workers, native_imaging's files); the
+# security headers are sent; config.json and other missing files answer
+# 404 (the Containerfile's header). The log shows a request (not
+# /health's: the server logs those at debug). SIGTERM stops it cleanly.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN --mount=type=bind,from=web,source=/build/build/web,target=/app \
+    <<EORUN
+/out/static-web-server --version | grep -F "${SWS_VERSION}"
+export SERVER_ROOT=/app SERVER_HOST=127.0.0.1 SERVER_PORT=8080 \
+    SERVER_HEALTH=true SERVER_CACHE_CONTROL_HEADERS=false SERVER_SECURITY_HEADERS=true \
+    SERVER_COMPRESSION_STATIC=true SERVER_LOG_LEVEL=info
+/out/static-web-server > /tmp/server.log 2>&1 &
+server=$!
+url=http://127.0.0.1:8080
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused "${url}/health"
+curl -fsS "${url}/" | grep -F '<title>FluffyChat</title>'
+[ "$(curl -sS -o /dev/null -w '%{content_type}' "${url}/main.dart.js")" = 'text/javascript' ]
+curl -fsS -D /tmp/headers -H 'Accept-Encoding: br' -o /tmp/main.dart.js.br "${url}/main.dart.js"
+grep -iF 'content-encoding: br' /tmp/headers
+grep -iF 'strict-transport-security: ' /tmp/headers
+grep -iF "content-security-policy: frame-ancestors 'self'" /tmp/headers
+cmp /tmp/main.dart.js.br /app/main.dart.js.br
+for wasm in /app/canvaskit/canvaskit.wasm /app/assets/assets/vodozemac/*/vodozemac_bindings_dart_bg.wasm; do
+    [ "$(curl -sS -o /dev/null -w '%{content_type}' "${url}${wasm#/app}")" = 'application/wasm' ]
+done
+for file in /app/flutter.js /app/flutter_bootstrap.js /app/manifest.json \
+    /app/assets/assets/vodozemac/*/vodozemac_bindings_dart.js \
+    /app/native_executor.js /app/e2ee.worker.dart.js /app/Imaging.js /app/Imaging.wasm; do
+    curl -fsS -o /dev/null "${url}${file#/app}"
+done
+[ "$(curl -sS -o /dev/null -w '%{http_code}' "${url}/config.json")" = 404 ]
+[ "$(curl -sS -o /dev/null -w '%{http_code}' "${url}/missing.js")" = 404 ]
+grep -F 'incoming request: method=GET uri=/main.dart.js' /tmp/server.log
+kill "${server}"
+wait "${server}"
+rm /tmp/main.dart.js.br /tmp/headers /tmp/server.log
+EORUN
+
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository. Licenses: the
+# app's, and the server's (either of its two). The app's bundled
+# packages' licenses are in /app/assets/NOTICES.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="AGPL-3.0-or-later AND (MIT OR Apache-2.0)" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The server and the app: root's, not the build user's, so the server
+# can't rewrite them. No CA bundle: no outbound TLS.
+COPY --link --from=build --chown=0:0 /out/static-web-server /static-web-server
+COPY --link --from=web --chown=0:0 /build/build/web/ /app/
+COPY --link --from=source /LICENSE /usr/share/doc/fluffychat/
+COPY --link --from=sws-source /LICENSE-MIT /LICENSE-APACHE /usr/share/doc/static-web-server/
+
+# Numeric, so runAsNonRoot can check it. No privilege needed: the port is
+# above 1024.
+USER 65532:65532
+# No Cache-Control: unhashed files (main.dart.js, flutter.js) must not
+# outlive a release, as nginx's. SERVER_SECURITY_HEADERS: see the
+# Containerfile's header. SERVER_COMPRESSION_STATIC: the .br and .gz
+# files built above. SERVER_LOG_LEVEL: the server's default, error, logs
+# nothing.
+ENV SERVER_ROOT=/app \
+    SERVER_PORT=8080 \
+    SERVER_HEALTH=true \
+    SERVER_CACHE_CONTROL_HEADERS=false \
+    SERVER_SECURITY_HEADERS=true \
+    SERVER_COMPRESSION_STATIC=true \
+    SERVER_LOG_LEVEL=info
+
+EXPOSE 8080/tcp
+# SIGTERM: the server stops gracefully on it.
+ENTRYPOINT ["/static-web-server"]
+
+RUN ["/static-web-server", "--version"]

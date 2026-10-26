@@ -146,14 +146,15 @@
     ],
     "packageRules": [
         {
-            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag, a release of the *arr apps, or an npm package (actions, k3s, upstream sources, Prowlarr, Radarr, Lidarr, Sonarr, configarr's pnpm, automerged and run in a networked build step): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
+            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag, a release of the *arr apps, an npm package or a crate (actions, k3s, upstream sources, Prowlarr, Radarr, Lidarr, Sonarr, configarr's pnpm, fluffychat's wasm-pack, automerged and run in a networked build step): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
             "matchDatasources": [
                 "github-releases",
                 "github-release-attachments",
                 "github-tags",
                 "forgejo-tags",
                 "custom.servarr",
-                "npm"
+                "npm",
+                "crate"
             ],
             "minimumReleaseAge": "3 days"
         },
@@ -231,6 +232,18 @@
                 "fluxcd/image-automation-controller"
             ],
             "groupName": "flux-aio",
+            "separateMajorMinor": false
+        },
+        {
+            "description": "FluffyChat and the releases its build names (containers/fluffychat): Flutter (.fvmrc), vodozemac, native_imaging and LiveKit's Flutter SDK (pubspec.lock). One PR, so a FluffyChat release comes with the releases it names. The build fails while one's newest release is one FluffyChat doesn't name yet (lockstep): the PR waits for FluffyChat's next release, and when that release names an older one, the PR is set to it by hand (containers/fluffychat/AGENTS.md, Updates). A major release too (separateMajorMinor): alone, it fails lockstep the same way.",
+            "matchDepNames": [
+                "krille-chan/fluffychat",
+                "flutter/flutter",
+                "famedly/dart-vodozemac",
+                "famedly/dart_native_imaging",
+                "livekit/client-sdk-flutter"
+            ],
+            "groupName": "fluffychat",
             "separateMajorMinor": false
         },
         {
