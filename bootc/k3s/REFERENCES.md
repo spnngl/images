@@ -28,6 +28,17 @@
   (`pkg/kubelet/cm/node_container_manager_linux.go`). Enforcing it on
   `system.slice` or `kube.slice` would cap the daemons themselves: an
   OOM kill of k3s is worse than a slow one.
+- **`kubeReserved` on the control-plane only**
+  (`/etc/rancher/k3s/kubelet-server.conf`): `k3s server` holds the
+  datastore and the API server, 1.7-1.9GiB; an agent's k3s is far
+  smaller. The kubelet drop-in directory is shared by both roles and in
+  `/var`, so the file is passed from the server's `config.yaml` with
+  `kubelet-arg: config=`, which k3s copies into that directory as
+  `10-cli-config.conf` (`extractConfigArgs()`,
+  `pkg/daemons/agent/agent.go`); dropping the flag leaves that copy
+  behind. 512Mi, not k3s' whole footprint: that would leave pods
+  ~1.6GiB. It does not prevent the daily memory stalls (02:43 UTC,
+  with I/O pressure from swap-ins), whose cause is unknown.
 - **`KINE_COMPACT_TIMEOUT=60s`** (`k3s.service.d/20-kine-compact-timeout.conf`):
   a slow disk must not stop the server. kine's compaction runs in a
   transaction whose context times out after `--compact-timeout` (5s,

@@ -21,6 +21,10 @@ kube-controller-manager-arg:
   # XXX cilium does it on its own
   - "allocate-node-cidrs=false"
 
+# kubeReserved for the server's kubelet (reason in that file).
+kubelet-arg:
+  - "config=/etc/rancher/k3s/kubelet-server.conf"
+
 kube-scheduler-arg:
   - "profiling=false"
   - "feature-gates=HPAScaleToZero=true"
