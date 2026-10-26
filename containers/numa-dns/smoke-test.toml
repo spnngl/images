@@ -1,0 +1,27 @@
+# The build stage's server test (Containerfile): loopback ports above
+# 1024, state in /tmp, nothing fetched from the network.
+[server]
+bind_addr = "127.0.0.1:5353"
+api_bind_addr = "127.0.0.1"
+api_port = 5380
+data_dir = "/tmp/numa"
+
+# Local zones and overrides answer first: this upstream is never asked.
+[upstream]
+mode = "forward"
+address = "127.0.0.1:9"
+
+[blocking]
+enabled = false
+
+[proxy]
+enabled = false
+
+[dot]
+bind_addr = "127.0.0.1"
+port = 8853
+
+[[zones]]
+domain = "smoke.test"
+record_type = "A"
+value = "192.0.2.1"
