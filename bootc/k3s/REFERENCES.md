@@ -33,6 +33,13 @@
   `pkg/etcd/etcd.go`), so the flag's environment variable applies. A
   longer compaction holds SQLite's write lock longer: writes wait instead
   of the server restarting.
+- **CRI-O `included_pod_metrics`** (`crio.conf.d/20-k3s.conf`): with the
+  kubelet's `PodAndContainerStatsFromCRI`, `/metrics/cadvisor` comes from
+  CRI-O's `ListPodSandboxMetrics`, which only exports the listed groups;
+  the default is empty (`pkg/config/config.go`). PSI, file descriptors
+  and sockets are read on every collection whatever the list
+  (`internal/config/cgmgr/stats_linux.go`): `pressure` and `process`
+  only add series.
 - **CRI-O `collection_period = 10`** (`crio.conf.d/20-k3s.conf`): with
   the default, 0, each stats request collects anew, walking every file
   of every container's rootfs (`DiskStats`, `internal/oci/runtime_oci.go`,
