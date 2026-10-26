@@ -40,7 +40,7 @@ and CRI-O each container's conmon in its pod's cgroup. Its
 (`bootc/k3s/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf`)
 keeps 200m CPU and 128Mi out of the pods' allocatable, for both slices:
 it caps `kubepods.slice`, not the daemons. The control-plane's kubelet
-also reserves 200m CPU and 512Mi for k3s (`kubeReserved`,
+also reserves 200m CPU and 1Gi for k3s (`kubeReserved`,
 `bootc/k3s/sysroot/etc/rancher/k3s/kubelet-server.conf`).
 
 Short image names (`coredns/coredns`) resolve to docker.io only, as with
