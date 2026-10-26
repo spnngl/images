@@ -176,12 +176,12 @@ timezone, labels, semantic commits, action digests and automerge under
   stale silently.
 - **Major base releases only:** the weekly rebuild follows point
   releases of `BASE_VERSION`, the base's major tag.
-- **3 days before a GitHub release or tag, an *arr app's release, or an
-  npm package** (`minimumReleaseAge`): time for a broken or malicious
-  release to be pulled, and for CRI-O to publish a Kubernetes minor
-  release. npm's signatures don't catch a release published with a
-  stolen token, and configarr's pnpm is automerged and runs with the
-  network. Not for images: Renovate gets their dates from Docker Hub
+- **3 days before a GitHub release or tag, an *arr app's release, an
+  npm package or a crate** (`minimumReleaseAge`): time for a broken or
+  malicious release to be pulled, and for CRI-O to publish a Kubernetes
+  minor release. npm's signatures don't catch a release published with
+  a stolen token, and configarr's pnpm and fluffychat's wasm-pack (a
+  crate) are automerged and run with the network. Not for images: Renovate gets their dates from Docker Hub
   only, and holds an update without one.
 - **Digests on actions and application images' `FROM`**, tags on bootc
   bases: a digest there would freeze the base between rebuilds, and land

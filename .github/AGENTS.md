@@ -24,7 +24,7 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 - An application image needs no `renovate.json5` entry
   (`containers/AGENTS.md`, "Versions"); its PRs point to the *Updates*
   section of its `AGENTS.md`. Exceptions: a group for versions that
-  must move in one PR (`nzbget`, `flux-aio`); a weekly schedule for a
+  must move in one PR (`nzbget`, `flux-aio`, `fluffychat`); a weekly schedule for a
   branch pinned to a commit (`crowdsecurity/hub`, `Silo-Server/silo-server`).
   A bootc image has a
   `packageRules` entry, with `prBodyNotes`.
