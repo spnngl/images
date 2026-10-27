@@ -74,6 +74,17 @@
   `pkg/etcd/etcd.go`), so the flag's environment variable applies. A
   longer compaction holds SQLite's write lock longer: writes wait instead
   of the server restarting.
+- **UDP buffer ceilings 16 MiB** (`sysctl.d/60-udp-buffers.conf`): LiveKit
+  (tuwunel calls) sets 16 MiB read and write buffers on its UDP mux
+  (`defaultUDPBufferSize`, mediatransportutil `pkg/rtcconfig/config.go`,
+  `webrtc_config.go`), capped by the kernel at `rmem_max` / `wmem_max`,
+  212992 bytes by default (`sk_setsockopt()`, linux `net/core/sock.c`).
+  At start it reads its `SO_RCVBUF` back, doubled by the kernel, and
+  warns below `minUDPBufferSize` 5000000 (`rtc_unix.go`): "UDP receive
+  buffer is too small for a production set-up", current 425984. The
+  host's value reaches pods: both sysctls are global, read-only in
+  other network namespaces (`sysctl_core_net_init()`,
+  `net/core/sysctl_net_core.c`, v6.12).
 - **CRI-O `included_pod_metrics`** (`crio.conf.d/20-k3s.conf`): with the
   kubelet's `PodAndContainerStatsFromCRI`, `/metrics/cadvisor` comes from
   CRI-O's `ListPodSandboxMetrics`, which only exports the listed groups;
