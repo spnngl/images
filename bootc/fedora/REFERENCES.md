@@ -18,5 +18,12 @@
   and docker.
 - **sshd on 42022 only**, so the firewall opens 42022 (and 80, 443)
   and drops `ssh` (22); `cockpit` isn't installed.
+- **Key-only root login in the image, off after install by a drop-in**
+  (`etc/ssh/sshd_config.d/10-myssh.conf`): `bootc install
+  to-existing-root` leaves root as the only user, so the first login
+  needs it. sshd keeps the first value of a keyword (sshd_config(5)),
+  so `05-after-install.conf` overrides the image's file without
+  editing it: an edited `/etc` file no longer takes the image's changes
+  (`ostree admin config-diff` lists it as `M`).
 - **Fedora releases from endoflife.date in Renovate:** the image's tags
   name the branched release and rawhide by number before release.
