@@ -61,16 +61,11 @@ Reclaim favours zram over dropping file pages (`vm.swappiness = 180`,
 no swap readahead: `bootc/k3s/sysroot/usr/lib/sysctl.d/60-zram.conf`).
 
 - k3s, CRI-O and the other host daemons swap without limit.
-- Pods: the kubelet's `LimitedSwap`
+- Pods never swap: the kubelet's `NoSwap`
   (`bootc/k3s/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf`).
-  Only non-critical Burstable containers with a memory request below
-  their limit (or no limit) swap, each up to its memory request × swap /
-  RAM.
-- zram's compressed pages are host memory, charged to no cgroup: a pod's
-  swap counts against its swap limit, not its memory limit.
 - That file is in `/var`, which bootc only unpacks at install: on an
-  existing host, copy it by hand, then restart k3s (or k3s-agent). The
-  kubelet reads the swap size at startup: restart it after zram is up.
+  existing host, copy it by hand, then restart k3s (or k3s-agent).
+  Running containers keep their swap limit until they restart.
 
 The kernel tracks pressure stall information (`psi=1`,
 `bootc/k3s/sysroot/usr/lib/bootc/kargs.d/10-psi.toml`), which AlmaLinux
