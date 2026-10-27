@@ -8,7 +8,7 @@ target "garage" {
     debian = ["13"]
     base = [
       # renovate: datasource=forgejo-tags depName=Deuxfleurs/garage registryUrl=https://git.deuxfleurs.fr extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "2.4.1", checksum = "268334bd2530fa99f8b06c7383b2e9f776691edd" },
+      { version = "2.5.0", checksum = "586726edb0170bb46f604e84fba09e5659610649" },
     ]
   }
   args = merge(apt_args(debian), {
