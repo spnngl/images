@@ -22,31 +22,31 @@ target "flux-aio" {
     ]
     source_controller = [
       # renovate: datasource=github-tags depName=fluxcd/source-controller extractVersion=^v(?<version>.+)$
-      { version = "1.9.6", checksum = "456fa323ef6a4b977f220cf2c60298bf193497ba" },
+      { version = "1.10.0", checksum = "701d9a9d24763b668d6ef0634cc5f88f5bfbb861" },
     ]
     kustomize_controller = [
       # renovate: datasource=github-tags depName=fluxcd/kustomize-controller extractVersion=^v(?<version>.+)$
-      { version = "1.9.6", checksum = "060e0d8dbc257a11cf49b9e626b63284dc385870" },
+      { version = "1.10.0", checksum = "bb44b7103d4d697303053a600037bb94b141a921" },
     ]
     helm_controller = [
       # renovate: datasource=github-tags depName=fluxcd/helm-controller extractVersion=^v(?<version>.+)$
-      { version = "1.6.5", checksum = "37dce43a9bc5c89f99a44f8a6ea11f05a84f86b8" },
+      { version = "1.7.0", checksum = "0449dee8d297bccc9365817451b4339dd6dc3ce0" },
     ]
     notification_controller = [
       # renovate: datasource=github-tags depName=fluxcd/notification-controller extractVersion=^v(?<version>.+)$
-      { version = "1.9.4", checksum = "a1dff35982bf7faf937f38ca2d5219907a6016d3" },
+      { version = "1.10.0", checksum = "08d8de010a16def89c1195b9360ceb1bd0042f70" },
     ]
     source_watcher = [
       # renovate: datasource=github-tags depName=fluxcd/source-watcher extractVersion=^v(?<version>.+)$
-      { version = "2.2.4", checksum = "06cb1109bfa7834e8403e2b543d9838e1623f85a" },
+      { version = "2.3.0", checksum = "60d842e2c810e4b669e4c7bce9af09b04c6958ac" },
     ]
     image_reflector_controller = [
       # renovate: datasource=github-tags depName=fluxcd/image-reflector-controller extractVersion=^v(?<version>.+)$
-      { version = "1.2.5", checksum = "d245eae59b9ef4928f69c556c13cd1729753349c" },
+      { version = "1.3.0", checksum = "014ee11daea9b43e22f493b746f25d0f77643401" },
     ]
     image_automation_controller = [
       # renovate: datasource=github-tags depName=fluxcd/image-automation-controller extractVersion=^v(?<version>.+)$
-      { version = "1.2.5", checksum = "119f65d75d1d50ef05a70c24afa0844005330576" },
+      { version = "1.3.0", checksum = "075af583a5d3f9010bc52c33d137e615011cc8f3" },
     ]
   }
   args = merge(containerfile_args(debian), {
