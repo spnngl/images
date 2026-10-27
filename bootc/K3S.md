@@ -38,7 +38,7 @@ resource limits. The kubelet puts pods in `kubepods.slice`, next to it,
 and CRI-O each container's conmon in its pod's cgroup. Its
 `systemReserved`
 (`bootc/k3s/sysroot/usr/lib/rancher/k3s/kubelet.conf.d/20-my-kubelet.conf`)
-keeps 200m CPU and 128Mi out of the pods' allocatable, for both slices:
+keeps 100m CPU and 128Mi out of the pods' allocatable, for both slices:
 it caps `kubepods.slice`, not the daemons. The control-plane's kubelet
 also reserves 200m CPU and 1Gi for k3s (`kubeReserved`,
 `bootc/k3s/sysroot/etc/rancher/k3s/kubelet-server.conf`).
