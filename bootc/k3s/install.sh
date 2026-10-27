@@ -119,13 +119,19 @@ export INSTALL_K3S_SKIP_ENABLE=true INSTALL_K3S_SKIP_SELINUX_RPM=true \
 # than in a /etc/rancher/k3s/config.yaml.d drop-in, so that it is updated
 # with the image.
 cri=--container-runtime-endpoint=unix:///run/crio/crio.sock
-INSTALL_K3S_EXEC="server ${cri} --flannel-backend=none --disable-kube-proxy --disable-network-policy \
+# The kubelet's drop-ins, both roles, the same way: k3s copies the
+# directory into its own (/var/lib/rancher/k3s/agent/etc/kubelet.conf.d),
+# as 20-cli-config-dir/, at each start (extractConfigArgs(),
+# pkg/daemons/agent/agent.go). In /var they would reach a host only at
+# install. Files removed here stay in that copy until deleted by hand.
+kubelet=--kubelet-arg=config-dir=/usr/lib/rancher/k3s/kubelet.conf.d
+INSTALL_K3S_EXEC="server ${cri} ${kubelet} --flannel-backend=none --disable-kube-proxy --disable-network-policy \
     --disable=coredns --disable=metrics-server --disable=runtimes --disable=servicelb --disable=traefik" \
     sh /tmp/k3s-install.sh
 # The agent's server URL and token are machine-local, in
 # /etc/rancher/k3s/config.yaml.
 # See: https://docs.k3s.io/installation/configuration
-INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_EXEC="agent ${cri}" sh /tmp/k3s-install.sh
+INSTALL_K3S_SKIP_DOWNLOAD=true INSTALL_K3S_EXEC="agent ${cri} ${kubelet}" sh /tmp/k3s-install.sh
 
 # The uninstall scripts can't work: they delete k3s' data and config, then
 # fail to remove the binaries from the read-only /usr. Uninstalling is

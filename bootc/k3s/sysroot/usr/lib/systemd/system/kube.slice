@@ -2,7 +2,7 @@
 # system.slice: Slice=kube.slice in their units' drop-ins. Pods aren't
 # here: the kubelet puts them in kubepods.slice, next to this one.
 # No resource limits: the kubelet's systemReserved
-# (var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf)
+# (usr/lib/rancher/k3s/kubelet.conf.d/20-my-kubelet.conf)
 # keeps room for this slice and system.slice by capping kubepods.slice.
 # See systemd.slice(5) and
 # https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/
