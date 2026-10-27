@@ -39,6 +39,18 @@
   behind. 1Gi, not k3s' whole footprint: that would leave pods
   ~1.6GiB, under the 2.2GiB they request. It does not prevent the daily memory stalls (02:43 UTC,
   with I/O pressure from swap-ins), whose cause is unknown.
+- **Pods `NoSwap`** (`kubelet.conf.d/20-my-kubelet.conf`): with
+  `LimitedSwap` a Burstable container whose memory request is below its
+  limit may swap, and the kubelet rejects an in-place change of its
+  memory request (`disallowResizeForSwappableContainers`,
+  `pkg/kubelet/allocation/handlers.go`, kubernetes/kubernetes#130831):
+  `PodResizePending` `Infeasible`, "In-place resize of containers with
+  swap is not supported". VPA's `InPlaceOrRecreate` then falls back to
+  eviction, which its eviction limiter refuses for a single replica: the
+  pods kept their creation-time requests. A memory `resizePolicy` of
+  `RestartContainer` passes the check, but restarts the container on
+  every memory resize. Pods swapped little (182Mi on the control plane,
+  under 1Mi elsewhere); the host daemons, which swap more, keep zram.
 - **`KINE_COMPACT_TIMEOUT=60s`** (`k3s.service.d/20-kine-compact-timeout.conf`):
   a slow disk must not stop the server. kine's compaction runs in a
   transaction whose context times out after `--compact-timeout` (5s,
