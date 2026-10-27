@@ -13,24 +13,24 @@ target "flux-aio" {
   matrix = {
     debian = ["13"]
     golang = [
-      # renovate: datasource=docker depName=flux-aio-golang packageName=docker.io/library/golang extractVersion=^(?<version>1\.26\.\d+-trixie)$
-      { tag = "1.26.10-trixie", digest = "sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4" },
+      # renovate: datasource=docker depName=flux-aio-golang packageName=docker.io/library/golang extractVersion=^(?<version>1\.27\.\d+-trixie)$
+      { tag = "1.27.3-trixie", digest = "sha256:c124b9ad3452f46061b5054607d26ea51730dae5372c5e469920063ba2bc6dcc" },
     ]
     base = [
       # renovate: datasource=github-tags depName=fluxcd/flux2 extractVersion=^v(?<version>.+)$
-      { version = "2.9.6", checksum = "b9c17924adb533d3617ec7de97a7b0f4acc07b39" },
+      { version = "2.10.0", checksum = "3fa784edd773d56630bb9f62645e08f70c2cff0a" },
     ]
     source_controller = [
       # renovate: datasource=github-tags depName=fluxcd/source-controller extractVersion=^v(?<version>.+)$
-      { version = "1.10.0", checksum = "701d9a9d24763b668d6ef0634cc5f88f5bfbb861" },
+      { version = "1.10.1", checksum = "1e5c7c19b869b78b9a46cda940fa49bfc49c8ddb" },
     ]
     kustomize_controller = [
       # renovate: datasource=github-tags depName=fluxcd/kustomize-controller extractVersion=^v(?<version>.+)$
-      { version = "1.10.0", checksum = "bb44b7103d4d697303053a600037bb94b141a921" },
+      { version = "1.10.1", checksum = "746d9d2d360bbc7a5ee75ab79dadcf05e48ab927" },
     ]
     helm_controller = [
       # renovate: datasource=github-tags depName=fluxcd/helm-controller extractVersion=^v(?<version>.+)$
-      { version = "1.7.0", checksum = "0449dee8d297bccc9365817451b4339dd6dc3ce0" },
+      { version = "1.7.1", checksum = "da037f220ee3e97eb91a70506b5c5f169e46bb68" },
     ]
     notification_controller = [
       # renovate: datasource=github-tags depName=fluxcd/notification-controller extractVersion=^v(?<version>.+)$
@@ -38,7 +38,7 @@ target "flux-aio" {
     ]
     source_watcher = [
       # renovate: datasource=github-tags depName=fluxcd/source-watcher extractVersion=^v(?<version>.+)$
-      { version = "2.3.0", checksum = "60d842e2c810e4b669e4c7bce9af09b04c6958ac" },
+      { version = "2.3.1", checksum = "5ca0050aeadb8c77e4f9ad3421796024569f2bcc" },
     ]
     image_reflector_controller = [
       # renovate: datasource=github-tags depName=fluxcd/image-reflector-controller extractVersion=^v(?<version>.+)$

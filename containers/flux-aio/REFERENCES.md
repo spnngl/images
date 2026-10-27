@@ -14,18 +14,19 @@ in its own repository, `github.com/fluxcd/<controller>`.
   `CGO_ENABLED=0 go build -trimpath -a`, no ldflags, an Alpine image;
   kustomize-controller's adds `git`, `openssh-client`, `gnupg` and
   `tini`).
-- **Go 1.27 breaks image-automation-controller**: its
-  `internal/update` tests (`TestUpdateWithSetters`) pass with Go 1.26,
-  fail with Go 1.27 (the `$imagepolicy` markers are never set), and pass
-  with Go 1.27 and `GOEXPERIMENT=nojsonv2`: Go 1.27's `encoding/json` is
-  v2 by default.
+- **Go 1.27 broke image-automation-controller 1.2**: its
+  `internal/update` tests (`TestUpdateWithSetters`) passed with Go 1.26,
+  failed with Go 1.27 (the `$imagepolicy` markers were never set), and
+  passed with Go 1.27 and `GOEXPERIMENT=nojsonv2`: Go 1.27's
+  `encoding/json` is v2 by default. 1.3.0, built upstream with Go 1.27,
+  passes them with Go 1.27.
 - **Listen flags**: `main.go` (source-watcher: `cmd/main.go`), the
   `metrics-addr`, `health-addr`, `events-addr` flags, and
   notification-controller's `receiverAddr`; `storage-addr` (`:9090`),
   `storage-path` (`/data`) and `storage-adv-addr` in
   `github.com/fluxcd/pkg` `artifact/config/flags.go`, bound by
   source-controller and source-watcher. image-reflector-controller's
-  `storage-path` (`/data`) is its own (`main.go:108`), and
+  `storage-path` (`/data`) is its own (`main.go:115`), and
   `internal/storage/format.go:35` (`ReconcileFormat`) wipes that folder
   when the storage backend changes (`FluxStorage` feature gate,
   `internal/features/features.go`).
@@ -35,25 +36,25 @@ in its own repository, `github.com/fluxcd/<controller>`.
   choose `SOURCE_WATCHER_LOCALHOST` when the URL holds
   `//source-watcher`.
 - **pprof**: each controller's metrics server adds
-  `pprof.GetHandlers()` (source-controller `main.go:396`, the others
+  `pprof.GetHandlers()` (source-controller `main.go:461`, the others
   alike).
 - **Artifact URLs to loopback**: kustomize-controller
-  `internal/controller/kustomization_controller.go:358`
+  `internal/controller/kustomization_controller.go:365`
   (`SOURCE_CONTROLLER_LOCALHOST`, `SOURCE_WATCHER_LOCALHOST`),
-  helm-controller `internal/loader/artifact_url.go:63`, source-watcher
-  `internal/controller/artifactgenerator_controller.go:428`
+  helm-controller `internal/loader/artifact_url.go:61`, source-watcher
+  `internal/controller/artifactgenerator_controller.go:714`
   (`SOURCE_CONTROLLER_LOCALHOST`).
 - **Execs**: none in the controllers' own code. Kustomize runs `git` for
   a remote base (`sigs.k8s.io/kustomize/api`
   `internal/git/gitrunner.go:25`), allowed unless `--no-remote-bases`
-  (kustomize-controller `main.go:117`,
-  `internal/controller/kustomization_controller.go:830`). SOPS' OpenPGP
+  (kustomize-controller `main.go:126`,
+  `internal/controller/kustomization_controller.go:850`). SOPS' OpenPGP
   runs `gpg` (`github.com/getsops/sops` `pgp/keysource.go:630`), which
   kustomize-controller turns on
   (`internal/sops/keyservice/server.go:247`), and importing a `.asc`
-  key runs it too (`internal/decryptor/decryptor.go:282`).
+  key runs it too (`internal/decryptor/decryptor.go:288`).
 - **`--help` exits 0**: `github.com/spf13/pflag` `flag.go:1189`.
-- **`TUF_ROOT`**: `github.com/sigstore/cosign/v3` `pkg/cosign/tuf.go:54`
+- **`TUF_ROOT`**: `github.com/sigstore/cosign/v3` `pkg/cosign/tuf.go:70`
   (else `$HOME/.sigstore/root`), through source-controller
   `internal/oci/cosign/cosign.go:222`.
 - **flux-aio** `github.com/stefanprodan/flux-aio`
