@@ -37,7 +37,7 @@ k3s (with its kubelet) and CRI-O run in `kube.slice`, out of
 resource limits. The kubelet puts pods in `kubepods.slice`, next to it,
 and CRI-O each container's conmon in its pod's cgroup. Its
 `systemReserved`
-(`bootc/k3s/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf`)
+(`bootc/k3s/sysroot/usr/lib/rancher/k3s/kubelet.conf.d/20-my-kubelet.conf`)
 keeps 200m CPU and 128Mi out of the pods' allocatable, for both slices:
 it caps `kubepods.slice`, not the daemons. The control-plane's kubelet
 also reserves 200m CPU and 1Gi for k3s (`kubeReserved`,
@@ -62,9 +62,7 @@ no swap readahead: `bootc/k3s/sysroot/usr/lib/sysctl.d/60-zram.conf`).
 
 - k3s, CRI-O and the other host daemons swap without limit.
 - Pods never swap: the kubelet's `NoSwap`
-  (`bootc/k3s/sysroot/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-my-kubelet.conf`).
-- That file is in `/var`, which bootc only unpacks at install: on an
-  existing host, copy it by hand, then restart k3s (or k3s-agent).
+  (`bootc/k3s/sysroot/usr/lib/rancher/k3s/kubelet.conf.d/20-my-kubelet.conf`).
   Running containers keep their swap limit until they restart.
 
 The kernel tracks pressure stall information (`psi=1`,
@@ -146,7 +144,7 @@ local-storage and its RBAC rolebindings. Deploy the others yourself:
 - DNS: CoreDNS, its Service on `10.43.0.10` (k3s' `--cluster-dns`),
   domain `cluster.local`, and NodeLocal DNSCache on every node, listening
   on `169.254.25.10`: the kubelets point pods to it, not to CoreDNS
-  (`bootc/fedora/sysroot/common/var/lib/rancher/k3s/agent/etc/kubelet.conf.d/50-cluster-dns.conf`).
+  (`bootc/k3s/sysroot/usr/lib/rancher/k3s/kubelet.conf.d/50-cluster-dns.conf`).
   Until it runs, pods have no DNS.
 - metrics-server, an ingress controller, runtime classes: as needed.
 - LoadBalancer Services: k3s' ServiceLB is disabled, use e.g. Cilium's

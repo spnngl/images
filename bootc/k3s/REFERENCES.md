@@ -31,14 +31,23 @@
 - **`kubeReserved` on the control-plane only**
   (`/etc/rancher/k3s/kubelet-server.conf`): `k3s server` holds the
   datastore and the API server, 1.7-1.9GiB; an agent's k3s is far
-  smaller. The kubelet drop-in directory is shared by both roles and in
-  `/var`, so the file is passed from the server's `config.yaml` with
-  `kubelet-arg: config=`, which k3s copies into that directory as
-  `10-cli-config.conf` (`extractConfigArgs()`,
+  smaller. The image's kubelet drop-ins are shared by both roles, so
+  the file is passed from the server's `config.yaml` with
+  `kubelet-arg: config=`, which k3s copies into its drop-in directory
+  as `10-cli-config.conf` (`extractConfigArgs()`,
   `pkg/daemons/agent/agent.go`); dropping the flag leaves that copy
   behind. 1Gi, not k3s' whole footprint: that would leave pods
   ~1.6GiB, under the 2.2GiB they request. It does not prevent the daily memory stalls (02:43 UTC,
   with I/O pressure from swap-ins), whose cause is unknown.
+- **Kubelet drop-ins in `/usr/lib/rancher/k3s/kubelet.conf.d`,**
+  passed by both units with `--kubelet-arg=config-dir=`
+  (`bootc/k3s/install.sh`): in k3s' own drop-in directory, in `/var`,
+  they reached a host only at install, and every change was copied by
+  hand. k3s copies the directory there as `20-cli-config-dir/` at each
+  start (`extractConfigArgs()`); the kubelet reads it recursively, in
+  name order (`mergeKubeletConfigurations()`,
+  kubernetes `cmd/kubelet/app/server.go`). A file removed from the
+  image stays in that copy until deleted by hand.
 - **Pods `NoSwap`** (`kubelet.conf.d/20-my-kubelet.conf`): with
   `LimitedSwap` a Burstable container whose memory request is below its
   limit may swap, and the kubelet rejects an in-place change of its
