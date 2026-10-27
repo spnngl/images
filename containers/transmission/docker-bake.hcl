@@ -9,7 +9,7 @@ target "transmission" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=transmission/transmission depType=automerge
-      { version = "4.1.3", checksum = "838877323facc4cc2b677fe817e203779c437bb1" },
+      { version = "4.1.4", checksum = "a6d907d9ea2313143af714d7830feb6c1b60b84c" },
     ]
   }
   args = {
