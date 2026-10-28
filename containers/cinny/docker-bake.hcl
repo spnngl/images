@@ -10,7 +10,7 @@ target "cinny" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=cinnyapp/cinny extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "4.12.7", checksum = "8967c13878137841e49ee17184b689a6b4da334a" },
+      { version = "4.12.8", checksum = "1e6412ed5b639607a8c7485f7d0b447f073fa09c" },
     ]
     sws = [
       # renovate: datasource=github-tags depName=static-web-server/static-web-server extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
