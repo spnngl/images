@@ -12,7 +12,7 @@ target "redis" {
       # renovate: datasource=github-tags depName=redis-6.2 packageName=redis/redis versioning=semver extractVersion=^(?<version>6\.2\.\d+)$ depType=automerge
       { version = "6.2.24", checksum = "bfb69472301cb656043d3cbba332b406ef1d885a" },
       # renovate: datasource=github-tags depName=redis-7.2 packageName=redis/redis versioning=semver extractVersion=^(?<version>7\.2\.\d+)$ depType=automerge
-      { version = "7.2.16", checksum = "335554f18caf7bbf6b0ac2b3548133d750f00a1b" },
+      { version = "7.2.17", checksum = "83937c51afb53e1c69661c8e1533e0e19b896fe1" },
       # renovate: datasource=github-tags depName=redis-8.2 packageName=redis/redis versioning=semver extractVersion=^(?<version>8\.2\.\d+)$ depType=automerge
       { version = "8.2.10", checksum = "86b20b1b9e5f03d86db72c3d59bec432e471fbc9" },
       # renovate: datasource=github-tags depName=redis-8.4 packageName=redis/redis versioning=semver extractVersion=^(?<version>8\.4\.\d+)$ depType=automerge
