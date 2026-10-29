@@ -15,11 +15,11 @@ target "lidarr" {
     debian = ["13"]
     base = [
       # renovate: datasource=custom.servarr depName=Lidarr/Lidarr registryUrl=https://lidarr.servarr.com/v1/update/master/changes?os=linux&runtime=netcore&arch=x64 versioning=loose depType=automerge
-      { version = "3.1.0.4875", checksum = "20f175aec2b908de2ae06b72544dae504efddb5db2a97ea4e36866de53bc2fa5" },
+      { version = "3.1.6.5079", checksum = "fed16c58f5de797be955e830a3a93994f020c1d8d60f5a6cb061d7647d45b8bc" },
     ]
     base_arm64 = [
       # renovate: datasource=custom.servarr depName=Lidarr/Lidarr registryUrl=https://lidarr.servarr.com/v1/update/master/changes?os=linux&runtime=netcore&arch=arm64 versioning=loose depType=automerge
-      { version = "3.1.0.4875", checksum = "ff58021d4b77b0310c90413abd4f3036cfd50312fe7b192e9d688d482e4cbf36" },
+      { version = "3.1.6.5079", checksum = "52cbf5468cc3ee11149891e5a43333ebfd62591989a3226795067736bf93fb97" },
     ]
   }
   args = merge(apt_args(debian), {
