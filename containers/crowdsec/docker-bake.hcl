@@ -9,7 +9,7 @@ target "crowdsec" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=crowdsecurity/crowdsec extractVersion=^v(?<version>\d+\.\d+\.\d+)$
-      { version = "1.8.1", checksum = "909b5157986a2b2c2163300fdaef5ed01289f7d2" },
+      { version = "1.8.2", checksum = "3d369d64eb3e9ba770ed39aedc83ffd3170aef4c" },
     ]
     # The hub branch cscli picks for the latest CrowdSec release
     # (cmd/crowdsec-cli/core/require/branch.go): master, at a commit.
