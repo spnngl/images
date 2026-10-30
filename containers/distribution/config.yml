@@ -1,0 +1,23 @@
+# The image's default configuration, at /etc/distribution/config.yml.
+# Every key can be overridden by a REGISTRY_<PATH> variable
+# (REGISTRY_STORAGE_DELETE_ENABLED=true), or the file replaced by a mount.
+# Reasons: containers/distribution/REFERENCES.md.
+# https://distribution.github.io/distribution/about/configuration/
+version: 0.1
+storage:
+  filesystem:
+    rootdirectory: /var/lib/registry
+  cache:
+    blobdescriptor: inmemory
+http:
+  addr: :5000
+  # SIGTERM drains connections, then exits 0; under Docker's 10s stop
+  # timeout.
+  draintimeout: 5s
+  headers:
+    X-Content-Type-Options: [nosniff]
+health:
+  storagedriver:
+    enabled: true
+    interval: 10s
+    threshold: 3
