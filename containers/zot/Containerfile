@@ -1,0 +1,244 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# zot (OCI-native container image registry) built from source as tagged,
+# no patch, one static binary on scratch: upstream's full build (every
+# extension, the web UI built from source). Differs from upstream's
+# ghcr.io/project-zot/zot (distroless base, root): scratch, not root, and
+# log level info, not debug. See containers/zot/REFERENCES.md.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); /var/lib/registry
+# writable by it (the config's storage.rootDirectory); registry API, UI and
+# probes (GET /livez, /readyz, /startupz) on 5000/tcp. The config is
+# /etc/zot/config.json, containers/zot/config.json: mount your own over it,
+# where HEALTHCHECK reads it too. On change, zot reloads only access
+# control, auth settings, sync, CVE, scrub, GC and retention; the rest,
+# adding auth to a config without it among them, needs a restart. That
+# default enables search with CVE scanning (Trivy's databases downloaded
+# from ghcr.io every 2 h into /var/lib/registry) and the UI, with no auth:
+# anyone reaching 5000/tcp can push and delete. Mount a config with
+# http.auth and http.accessControl before exposing it.
+# Runs with a read-only root filesystem, no capability and
+# no-new-privileges, with a tmpfs on /tmp: Trivy writes its scan files
+# there.
+# https://zotregistry.dev/
+
+# Versions come from containers/zot/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# --checksum: the tag must resolve to this commit, tags can be moved. No
+# .git: the build is given the version (BASE_VERSION, BASE_CHECKSUM).
+FROM scratch AS source
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/project-zot/zot.git#v${BASE_VERSION} /
+
+# The web UI's source, the tag zot's Makefile names (checked below),
+# pinned the same way.
+FROM scratch AS zui-source
+ARG ZUI_VERSION
+ARG ZUI_CHECKSUM
+ADD --link \
+    --checksum=${ZUI_CHECKSUM} \
+    https://github.com/project-zot/zui.git#${ZUI_VERSION} /
+
+# The web UI: static files, embedded in the binary. Node: the major of
+# zui's CI (.github/workflows/build-test.yml); containers/cinny's image.
+FROM docker.io/library/node:24.22-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS ui
+
+ARG ZUI_VERSION
+
+# HOME for the build user below (no passwd entry): npm keeps its cache in
+# ~/.npm. Before SHELL: hadolint (2.15.1) checks the RUNs after an ENV or
+# ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Built as the image's user, in its own copy: neither the packages nor
+# the build get root.
+USER 65532:65532
+WORKDIR /build
+COPY --link --from=zui-source --chown=65532:65532 / /build/
+
+# Check first: outside Bake, ZUI_VERSION is empty and zui-source is its
+# default branch, unpinned. Then zui's release build (build-test.yml): npm
+# run build, into build/. npm ci: package-lock.json's versions and
+# integrity hashes. --ignore-scripts: see containers/zot/REFERENCES.md. The
+# cache is containers/cinny's.
+RUN --mount=type=cache,id=npm-cache-65532,uid=65532,gid=65532,target=/tmp/.npm <<EORUN
+: "${ZUI_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+npm ci --ignore-scripts
+npm run build
+EORUN
+
+# The built UI, and the packages npm installed, for the image's SBOM only:
+# they are bundled into its JavaScript, where no scanner reads them. Every
+# package, build and test tools included: the bundle holds some of them. A
+# stage of its own: in the ui stage, the SBOM would add node's image. The
+# build stage takes the UI from here, so BuildKit scans it.
+FROM scratch AS ui-files
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
+COPY --link --from=ui /build/node_modules/ /node_modules/
+COPY --link --from=ui /build/build/ /build/
+
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG ZUI_VERSION
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads it, and root's
+# (/root) is closed to it. Before SHELL: hadolint (2.15.1) checks the RUNs
+# after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# The image's folders, copied with their owners and modes, as
+# containers/distribution: the storage folder the user's, so a new Docker
+# volume on it takes this ownership, its parents root's, which a COPY
+# --chown would give to the user. /tmp for Trivy's scan files (os.TempDir),
+# root's, 1777, which a tmpfs mounted over it takes: scratch has none.
+RUN <<EORUN
+install -d /rootfs/var/lib
+install -d -o 65532 -g 65532 /rootfs/var/lib/registry
+install -d -m 1777 /rootfs/tmp
+EORUN
+
+# Build and test as UID 65532, not root: neither needs it. The Makefile
+# writes into the source (the UI, bin/): the user's own copy. WORKDIR
+# creates its folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+COPY --link --from=source --chown=65532:65532 / /src/
+COPY --link --from=ui-files /build/ /zui/build/
+
+# Upstream's release build (build/stacker.yaml, run by publish.yaml: make
+# binary), with its default extensions, the version as its release sets
+# it, and the UI from the ui stage (ZUI_BUILD_PATH), once checked to be
+# the one this tag names. BUILDMODE_FLAGS emptied: see
+# containers/zot/REFERENCES.md. Caches: containers/minio's ids, the same
+# user.
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+grep -Fx "ZUI_VERSION := ${ZUI_VERSION}" Makefile
+make binary COMMIT="v${BASE_VERSION}-${BASE_CHECKSUM}" RELEASE_TAG="v${BASE_VERSION}" \
+    BUILDMODE_FLAGS= ZUI_BUILD_PATH=/zui/build
+mv "bin/zot-$(go env GOOS)-$(go env GOARCH)" /out/zot
+EORUN
+
+# Smoke test, here because scratch has no shell to run it, and because
+# Renovate automerges releases and golang bumps on it: the version, a
+# static non-PIE binary, the image's config valid, then a server with the
+# image's extensions but CVE scanning (no download): its probe and
+# healthcheck, an image pushed and pulled back (blobs, manifest, tag), found
+# by search, the UI's page with its headers and a bundle, and a graceful
+# stop. kill (DL3001) stops the server this step started, not a
+# container's.
+# hadolint ignore=DL3001
+RUN --mount=type=bind,source=config.json,target=/tmp/image-config.json \
+    <<EORUN
+/out/zot --version | grep -F "\"commit\":\"v${BASE_VERSION}-${BASE_CHECKSUM}\""
+go version -m /out/zot | grep -E '^\s+build\s+CGO_ENABLED=0$'
+go version -m /out/zot | grep -E '^\s+build\s+-buildmode=exe$'
+/out/zot verify /tmp/image-config.json
+t=/tmp/smoke
+mkdir "${t}"
+cat > "${t}/config.json" <<EOF
+{
+  "storage": { "rootDirectory": "${t}/data" },
+  "http": { "address": "127.0.0.1", "port": "5000", "compat": ["docker2s2"] },
+  "log": { "level": "info" },
+  "extensions": {
+    "search": { "enable": true },
+    "ui": { "enable": true }
+  }
+}
+EOF
+/out/zot serve "${t}/config.json" &
+server=$!
+registry=http://127.0.0.1:5000
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused "${registry}/readyz"
+/out/zot healthcheck "${t}/config.json"
+digest() { echo "sha256:$(sha256sum "$1" | cut -d ' ' -f 1)"; }
+size() { stat -c %s "$1"; }
+# A blob upload: a session (POST), then its content (PUT).
+blob() {
+  local location
+  location="$(curl -fsS -X POST -o /dev/null -w '%header{location}' "${registry}/v2/smoke/blobs/uploads/")"
+  curl -fsS -X PUT -H 'Content-Type: application/octet-stream' --data-binary "@$1" \
+    "${registry}${location}?digest=$(digest "$1")"
+}
+head -c 1M /dev/urandom > "${t}/layer"
+printf '{"architecture":"%s","os":"linux","rootfs":{"type":"layers","diff_ids":["%s"]}}' \
+  "$(go env GOARCH)" "$(digest "${t}/layer")" > "${t}/config"
+blob "${t}/layer"
+blob "${t}/config"
+oci=application/vnd.oci.image.manifest.v1+json
+printf '{"schemaVersion":2,"mediaType":"%s","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"%s","size":%d},"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar","digest":"%s","size":%d}]}' \
+  "${oci}" "$(digest "${t}/config")" "$(size "${t}/config")" "$(digest "${t}/layer")" "$(size "${t}/layer")" > "${t}/manifest"
+curl -fsS -X PUT -H "Content-Type: ${oci}" --data-binary "@${t}/manifest" "${registry}/v2/smoke/manifests/1.0"
+curl -fsS -H "Accept: ${oci}" "${registry}/v2/smoke/manifests/1.0" | cmp - "${t}/manifest"
+curl -fsS "${registry}/v2/smoke/blobs/$(digest "${t}/layer")" | cmp - "${t}/layer"
+curl -fsS -G --data-urlencode 'query={ImageList(repo:"smoke"){Results{Tag Digest}}}' \
+  "${registry}/v2/_zot/ext/search" | grep -F "\"Digest\":\"$(digest "${t}/manifest")\""
+curl -fsS -D "${t}/headers" "${registry}/home" | grep -F '<title>zot OCI-native Container Image Registry</title>'
+tr -d '\r' < "${t}/headers" | grep -Fix 'x-frame-options: deny'
+bundle="$(find /zui/build/assets -name '*.js' -print -quit)"
+curl -fsS "${registry}${bundle#/zui/build}" | cmp - "${bundle}"
+kill "${server}"
+wait "${server}"
+rm -r "${t}"
+EORUN
+
+# zot execs nothing and has no C library: the binary, the CA bundle for
+# its outbound TLS (sync, Trivy's databases, OpenID, LDAP, cloud storage),
+# the default config, its state folders, and the licenses: zot's (with its
+# dependencies') and zui's, both Apache-2.0.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=source /LICENSE /NOTICE /THIRD-PARTY-LICENSES.md /usr/share/doc/zot/
+COPY --link --from=zui-source /LICENSE /usr/share/doc/zot/zui/
+COPY --link config.json /etc/zot/
+# Upstream build/Dockerfile's path. Owned by root, not by the build's
+# user: zot can't rewrite its binary.
+COPY --link --from=build --chown=0:0 /out/zot /usr/bin/
+COPY --link --from=build /rootfs/ /
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+
+EXPOSE 5000/tcp
+VOLUME ["/var/lib/registry"]
+
+# Upstream build/Dockerfile's: zot probes the address and port of its
+# config. Kubernetes ignores it; probe /livez and /readyz.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+    CMD ["/usr/bin/zot", "healthcheck", "--insecure-skip-verify", "/etc/zot/config.json"]
+
+ENTRYPOINT ["/usr/bin/zot"]
+CMD ["serve", "/etc/zot/config.json"]
+
+# Smoke test: the binary runs on this platform (the build stage tested the
+# server).
+RUN ["/usr/bin/zot", "--version"]
