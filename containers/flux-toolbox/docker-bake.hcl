@@ -21,7 +21,7 @@ target "flux-toolbox" {
     ]
     flux_operator = [
       # renovate: datasource=github-release-attachments depName=controlplaneio-fluxcd/flux-operator depType=automerge
-      { version = "v0.62.0", checksum = "24e68016f25580e21cc5ce4d3e5315a02ee7a858e4c3e93c67547cad4c97dbe7" },
+      { version = "v0.62.1", checksum = "3fe087eee8c0d778d23cc3bc80d10cda68b69d5209924b6dec28cf8770c2ad1d" },
     ]
     # Tags kustomize/v*: api/, kyaml/ and cmd/config/ are its libraries,
     # whose tags the versioning leaves out.
