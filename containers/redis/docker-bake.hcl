@@ -22,7 +22,7 @@ target "redis" {
       # renovate: datasource=github-tags depName=redis-8.8 packageName=redis/redis versioning=semver extractVersion=^(?<version>8\.8\.\d+)$ depType=automerge
       { version = "8.8.4", checksum = "bab5911b2e3114b98b6ae1533c1a15a57ba539a8" },
       # renovate: datasource=github-tags depName=redis-8.10 packageName=redis/redis versioning=semver extractVersion=^(?<version>8\.10\.\d+)$ depType=automerge
-      { version = "8.10.2", checksum = "498ecd0d6d007db11ddb3aea9428552598a78622" },
+      { version = "8.10.3", checksum = "1a2574ce1551d3de6e0b4a56756c0fdbc6659e4f" },
     ]
   }
   args = merge(apt_args(debian), {
