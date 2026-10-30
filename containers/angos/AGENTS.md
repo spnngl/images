@@ -24,8 +24,9 @@ sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Smoke test
 
-The build stage runs it (no `--version`: the version is checked in the
-binary's S3 user agent): `smoke-test.toml` merged with a random user,
+The build stage runs it (no `--version`: the version is read from the
+crate list cargo auditable embeds, never grepped from the binary, where
+amd64 inlines it): `smoke-test.toml` merged with a random user,
 anonymous registry requests refused, the probes and the UI served, a
 blob and a manifest pushed and pulled back, the pushes counted in the
 metrics, a graceful stop.
