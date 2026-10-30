@@ -9,7 +9,7 @@ target "configarr" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=raydak-labs/configarr extractVersion=^v(?<version>.+)$
-      { version = "1.37.0", checksum = "2b1c8cefbf8ac2b43670472e68ce42150313fa2d" },
+      { version = "1.38.0", checksum = "e50bbb2a697e6b81bf850f8815871d558089ea92" },
     ]
     # The build's Node.js and the image's: upstream's major (AGENTS.md,
     # Updates).
