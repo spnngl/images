@@ -1,0 +1,169 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Distribution (https://distribution.github.io/distribution/), the OCI
+# image registry, built from source as one static binary on scratch.
+# Differs from upstream's distribution/distribution (Alpine, root, a
+# development config): not root, and a config of its own (config.yml next
+# to this file).
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); /var/lib/registry
+# writable by it; the registry API on 5000/tcp, plain HTTP. Config at
+# /etc/distribution/config.yml, each key overridable by REGISTRY_<PATH>.
+# No authentication by default: set auth.htpasswd (its file mounted: the
+# registry writes a missing one) or auth.token, or keep the port private.
+# REGISTRY_HTTP_SECRET when replicas share a load balancer. Runs with a
+# read-only root filesystem, no capability and no-new-privileges: the
+# registry only writes to /var/lib/registry.
+# https://distribution.github.io/distribution/about/deploying/
+
+# Versions come from containers/distribution/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads it. Before
+# SHELL: hadolint (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh,
+# whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved. No
+# .git: the ldflags below set the version and revision.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/distribution/distribution.git#v${BASE_VERSION} /src
+
+# The storage folder, copied with its owners: the image's user's, so a new
+# Docker volume on it takes this ownership; its parents root's, which a
+# COPY --chown would give to the user.
+RUN install -d /rootfs/var/lib \
+    && install -d -o 65532 -g 65532 /rootfs/var/lib/registry
+
+# Build and test as the image's user, not root, as containers/minio does:
+# the server runs as in the image, and the source stays root's. WORKDIR
+# creates its folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (Dockerfile's version and build stages): no
+# cgo, no build tag, the version without its "v" and the tag's commit.
+# Modules come from vendor/: no download, no module cache. Their license,
+# notice and patent files, kept with their module paths, ship with the
+# binary that compiles them in.
+# Cache id of its own, shared with containers/minio (its comment).
+RUN --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+pkg=github.com/distribution/distribution/v3
+CGO_ENABLED=0 go build -trimpath \
+    -ldflags "-s -w -X ${pkg}/version.version=${BASE_VERSION} -X ${pkg}/version.revision=${BASE_CHECKSUM} -X ${pkg}/version.mainpkg=${pkg}" \
+    -o /out/registry ./cmd/registry
+find vendor -type f \( -name 'LICENSE*' -o -name 'LICENCE*' -o -name 'COPYING*' \
+    -o -name 'NOTICE*' -o -name 'PATENTS*' \) -exec cp --parents -t /out {} +
+EORUN
+
+# Server smoke test, here because scratch has no shell to run it, and
+# because golang bumps and minor releases are automerged on it
+# (REFERENCES.md). The image's config, with the storage and address moved
+# for the build: a 1 MiB blob and an OCI manifest pushed through the API
+# and pulled back, a delete refused, then a graceful stop (draintimeout).
+# Then garbage collection, the command that deletes data: with the server
+# stopped, as upstream requires, it sweeps an unreferenced blob alone,
+# found at its path in upstream's storage layout.
+# kill (DL3001) stops the server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN --mount=type=bind,source=config.yml,target=/etc/distribution/config.yml \
+    <<EORUN
+/out/registry --version | grep -Fx "/out/registry github.com/distribution/distribution/v3 ${BASE_VERSION}"
+export REGISTRY_HTTP_ADDR=127.0.0.1:5000 \
+    REGISTRY_STORAGE_FILESYSTEM_ROOTDIRECTORY=/tmp/data \
+    OTEL_TRACES_EXPORTER=none
+/out/registry serve /etc/distribution/config.yml &
+server=$!
+api=http://127.0.0.1:5000/v2/smoke-test
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused -o /dev/null http://127.0.0.1:5000/v2/
+digest() { echo "sha256:$(sha256sum "$1" | cut -d ' ' -f 1)"; }
+push() {
+    location="$(curl -fsS -X POST -o /dev/null -w '%header{location}' "${api}/blobs/uploads/")"
+    curl -fsS -X PUT -H 'Content-Type: application/octet-stream' \
+        --data-binary "@$1" "${location}&digest=$(digest "$1")"
+}
+printf '{}' > /tmp/config
+head -c 1M /dev/urandom > /tmp/layer
+push /tmp/config
+push /tmp/layer
+printf '{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.empty.v1+json","digest":"%s","size":2},"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar","digest":"%s","size":1048576}]}' \
+    "$(digest /tmp/config)" "$(digest /tmp/layer)" > /tmp/manifest
+type=application/vnd.oci.image.manifest.v1+json
+curl -fsS -X PUT -H "Content-Type: ${type}" --data-binary @/tmp/manifest "${api}/manifests/latest"
+curl -fsS -H "Accept: ${type}" "${api}/manifests/latest" | cmp - /tmp/manifest
+curl -fsSL "${api}/blobs/$(digest /tmp/layer)" | cmp - /tmp/layer
+[ "$(curl -sS -o /dev/null -w '%{http_code}' -X DELETE "${api}/manifests/$(digest /tmp/manifest)")" = 405 ]
+head -c 1K /dev/urandom > /tmp/orphan
+push /tmp/orphan
+kill "${server}"
+wait "${server}"
+gc=(/out/registry garbage-collect /etc/distribution/config.yml)
+"${gc[@]}" --dry-run > /tmp/gc
+grep -Fx '3 blobs marked, 1 blobs and 0 manifests eligible for deletion' /tmp/gc
+grep -Fx "blob eligible for deletion: $(digest /tmp/orphan)" /tmp/gc
+"${gc[@]}" --quiet
+blob() { local d; d="$(digest "$1")"; d="${d#sha256:}"; echo "/tmp/data/docker/registry/v2/blobs/sha256/${d:0:2}/${d}/data"; }
+[ ! -e "$(blob /tmp/orphan)" ]
+for kept in /tmp/config /tmp/layer /tmp/manifest; do cmp "$(blob "${kept}")" "${kept}"; done
+rm -r /tmp/data /tmp/config /tmp/layer /tmp/manifest /tmp/orphan /tmp/gc
+EORUN
+
+# The registry execs nothing and has no C library: the binary, the config,
+# the CA bundle for its outbound TLS (S3, GCS and Azure storage, proxy
+# upstream, notification endpoints), the license (Apache-2.0) and the
+# vendored modules' ones.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /usr/share/doc/distribution/
+COPY --link --from=build --chown=0:0 /out/vendor/ /usr/share/doc/distribution/vendor/
+COPY --link config.yml /etc/distribution/
+# Owned by root, not by the build's user: the registry can't rewrite its
+# binary.
+COPY --link --from=build --chown=0:0 /out/registry /usr/bin/
+COPY --link --from=build /rootfs/ /
+
+# Numeric, so runAsNonRoot can check it. No privilege needed: 5000 is
+# above 1024.
+USER 65532:65532
+# Upstream's: without it, every span is exported to an OTLP collector on
+# localhost, and each failed export logged. OTEL_TRACES_EXPORTER=otlp and
+# OTEL_EXPORTER_OTLP_ENDPOINT turn tracing on.
+ENV OTEL_TRACES_EXPORTER=none
+
+EXPOSE 5000/tcp
+VOLUME ["/var/lib/registry"]
+
+# Upstream's: `docker run <image> garbage-collect
+# /etc/distribution/config.yml` runs the other command.
+ENTRYPOINT ["/usr/bin/registry"]
+CMD ["serve", "/etc/distribution/config.yml"]
+
+# Smoke test: the binary runs on this platform (the build stage tested the
+# server).
+RUN ["/usr/bin/registry", "--version"]
