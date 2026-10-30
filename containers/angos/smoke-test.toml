@@ -1,0 +1,22 @@
+# The build stage's server test (Containerfile): one repository on a
+# throwaway filesystem store. The access policy covers every route: the
+# probes, the metrics and the UI are open, the rest needs the user the
+# test merges in a second file (`-c`).
+[server]
+bind_address = "127.0.0.1"
+port = 8000
+
+[blob_store.fs]
+root_dir = "/tmp/angos"
+
+[global.access_policy]
+default = "deny"
+rules = [
+  "request.action in ['healthz', 'readyz', 'metrics', 'ui-asset', 'ui-config']",
+  "identity.username != null",
+]
+
+[repository."smoke-test"]
+
+[ui]
+enabled = true
