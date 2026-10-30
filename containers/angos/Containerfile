@@ -121,7 +121,9 @@ EORUN
 # smoke-test.toml (next to this file) merged with a second file holding
 # a random throwaway user, as upstream's guides keep credentials apart
 # (smoke-test.toml opens the probes, the metrics and the UI to anonymous
-# requests). The version is the binary's S3 user agent (no --version).
+# requests). The version, with no --version: the root package of the
+# list cargo auditable embeds (zlib JSON in .dep-v0). Not the version
+# strings: the compiler may turn them into instructions (amd64 does).
 # Anonymous registry requests refused, the embedded UI served, then a
 # 1 MiB blob and a manifest pushed and pulled back through the OCI API,
 # the pushes (201) counted in the metrics, and a graceful stop.
@@ -129,7 +131,9 @@ EORUN
 # hadolint ignore=DL3001
 RUN --mount=type=bind,source=smoke-test.toml,target=/etc/angos/smoke-test.toml \
     <<EORUN
-grep -qaF "angos/${BASE_VERSION}" /out/angos
+version="$(objcopy --dump-section .dep-v0=/dev/stdout /out/angos /dev/null \
+    | python3 -c 'import json, sys, zlib; print(*(p["name"] + " " + p["version"] for p in json.loads(zlib.decompress(sys.stdin.buffer.read()))["packages"] if p.get("root")))')"
+[ "${version}" = "angos ${BASE_VERSION}" ]
 hex() { od -An -vtx1 -N16 /dev/urandom | tr -d ' \n'; }
 password="$(hex)"
 hash="$(printf '%s' "${password}" | argon2 "$(hex)" -id -t 2 -k 19456 -p 1 -e)"
