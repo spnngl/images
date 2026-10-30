@@ -20,7 +20,7 @@ target "configarr" {
     # Upstream's major (its Dockerfile's corepack prepare).
     pnpm = [
       # renovate: datasource=npm depName=pnpm depType=automerge
-      { version = "12.16.0" },
+      { version = "12.16.1" },
     ]
   }
   args = {
