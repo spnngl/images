@@ -9,7 +9,7 @@ target "valkey" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=valkey-io/valkey extractVersion=^(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "9.1.2", checksum = "7f1dffedff6de73058b2c2a389422b6ecd56c8fb" },
+      { version = "9.1.3", checksum = "29173b67508b2de4c0f0ed551f3b47cf19fc3ca8" },
     ]
   }
   args = merge(apt_args(debian), {
