@@ -70,7 +70,7 @@
   with `sed`: no `jq` for one test.
 - **Not root, unlike upstream's compose files:** every port is above
   1024 and the server needs no privilege (`container-security.md`).
-  The state folder is 65532's in the image, so a new named volume is
+  The state folder is 65532's in the image, its parents root's, so a new named volume is
   writable; a bind mount needs that owner.
 - **`TUWUNEL_ADDRESS=0.0.0.0`:** the default is loopback, unreachable
   from outside a container (upstream's compose files set the same). A

@@ -29,7 +29,7 @@
   chart sets none or `["/garage"]`), and `docker exec <container>
   /garage status` is unchanged.
 - **Not root, unlike upstream:** every port is above 1024. The state
-  folders are 65532's in the image, so a new named volume is writable; a
+  folders are 65532's in the image, their parents root's, so a new named volume is writable; a
   bind mount needs that owner. Garage refuses a secret file readable by
   others.
 - **Debian's CA bundle**, for TLS to Consul, Kubernetes or an OTLP

@@ -74,8 +74,12 @@ Done when every item has an answer and a source file.
   (`curl --aws-sigv4` for S3); `kill` and `wait` (`# hadolint
   ignore=DL3001`); temp files removed. Renovate automerges toolchain
   bumps on this test.
-- **State folders** created in the build stage, copied
-  `--chown=65532:65532`: a new named volume takes their owner.
+- **State folders**, 65532's: a new named volume takes their owner. At
+  the root (`/data`): created in the build stage, copied
+  `--chown=65532:65532`. Deeper (`/var/lib/<name>`): created while root
+  under `/rootfs`, the parents root's and the folder `install -d -o 65532
+  -g 65532`, copied `COPY --from=build /rootfs/ /`: `--chown` gives the
+  parents it creates to the user too.
 - **Final stage**: `FROM scratch`, `ARG BASE_VERSION`, labels
   `org.opencontainers.image.{version,licenses,source}` (source
   `https://github.com/spnngl/images`, `# hadolint ignore=DL3050` with its

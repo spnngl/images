@@ -59,6 +59,13 @@ ADD --link \
     --checksum=${BASE_CHECKSUM} \
     https://git.deuxfleurs.fr/Deuxfleurs/garage.git#v${BASE_VERSION} /src
 
+# State directories, copied with their owners: the image's user's, so a
+# named volume mounted there starts with that owner; their parents root's,
+# which a COPY --chown would give to the user.
+RUN install -d /rootfs/var/lib \
+    && install -d -o 65532 -g 65532 /rootfs/var/lib/garage \
+        /rootfs/var/lib/garage/meta /rootfs/var/lib/garage/data
+
 # Build and test as the image's user, not root: neither the crates' build
 # scripts nor the server get root, and the source stays root's. No passwd
 # entry needed: CARGO_HOME and RUSTUP_HOME are set, /usr/local/cargo is
@@ -118,10 +125,6 @@ wait "${server}"
 rm -r /tmp/garage /tmp/object
 EORUN
 
-# State directories, owned by the image's user: a named volume mounted
-# there starts with that owner, so it is writable without a chown.
-RUN mkdir -p /out/var/lib/garage/meta /out/var/lib/garage/data
-
 FROM scratch
 ARG BASE_VERSION
 
@@ -140,7 +143,7 @@ COPY --link --from=build --chown=0:0 /out/garage /garage
 COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # AGPL: the source is upstream's tag.
 COPY --link --from=build /src/LICENSE /usr/share/doc/garage/
-COPY --link --from=build --chown=65532:65532 /out/var/lib/garage/ /var/lib/garage/
+COPY --link --from=build /rootfs/ /
 
 # Numeric, so runAsNonRoot can check it. No privilege needed: every port
 # is above 1024.

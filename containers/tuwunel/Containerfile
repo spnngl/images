@@ -70,6 +70,12 @@ ADD --link \
     --checksum=${BASE_CHECKSUM} \
     https://github.com/matrix-construct/tuwunel.git#v${BASE_VERSION} /src
 
+# State directory, copied with its owners: the image's user's, so a named
+# volume mounted there starts with that owner; its parents root's, which a
+# COPY --chown would give to the user.
+RUN install -d /rootfs/var/lib \
+    && install -d -o 65532 -g 65532 /rootfs/var/lib/tuwunel
+
 # Build and test as the image's user, not root: neither the crates' build
 # scripts nor the server get root, and the source stays root's. No passwd
 # entry needed: CARGO_HOME and RUSTUP_HOME are set. WORKDIR creates its
@@ -169,10 +175,6 @@ stop
 rm -r /tmp/smoke-db
 EORUN
 
-# State directory, owned by the image's user: a named volume mounted
-# there starts with that owner, so it is writable without a chown.
-RUN mkdir -p /out/var/lib/tuwunel
-
 FROM scratch
 ARG BASE_VERSION
 
@@ -191,7 +193,7 @@ COPY --link --from=build --chown=0:0 /out/tuwunel /usr/bin/tuwunel
 COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 # Apache-2.0: the source is upstream's tag.
 COPY --link --from=build /src/LICENSE /usr/share/doc/tuwunel/
-COPY --link --from=build --chown=65532:65532 /out/var/lib/tuwunel/ /var/lib/tuwunel/
+COPY --link --from=build /rootfs/ /
 
 # Numeric, so runAsNonRoot can check it. No privilege needed: every port
 # is above 1024.
