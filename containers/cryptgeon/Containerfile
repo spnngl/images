@@ -34,7 +34,7 @@ ADD --link \
 # The web frontend: static files the server serves. Node: upstream's
 # major (.nvmrc); pnpm: upstream's (package.json's packageManager), which
 # corepack downloads and verifies.
-FROM docker.io/library/node:24.22-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS frontend
+FROM docker.io/library/node:26.13-trixie-slim@sha256:e4db4c914bf8ad241bd24804fc25d272d89bad97e68cdc8a1414862790a02c39 AS frontend
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # HOME for the build user below (no passwd entry): corepack and pnpm keep
