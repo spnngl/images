@@ -1,4 +1,4 @@
-# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.3
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.4
 #
 # Configarr built with Dalec (https://project-dalec.github.io/dalec/): one
 # Debian trixie package (upstream's bundle and the node binary it runs

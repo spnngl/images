@@ -1,4 +1,4 @@
-# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.3
+# syntax=ghcr.io/project-dalec/dalec/frontend:0.22.4
 #
 # NZBGet built with Dalec (https://project-dalec.github.io/dalec/): one
 # Debian trixie package (the app, its web UI and default configuration),
