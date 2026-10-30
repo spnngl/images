@@ -94,7 +94,7 @@ By what the app needs at runtime; name that need in the image's
   commands run through `/bin/sh`; and gentoo, a build environment.
 - **User** `65532:65532`, numeric so `runAsNonRoot` can check it. Root
   only when the app needs it, with the reason in the header
-  (`cs-firewall-bouncer`, `nftables-exporter`, `gentoo`).
+  (`cs-firewall-bouncer`, `nftables-exporter`, `spegel`, `gentoo`).
 - **File times**: CI clamps the layers' file times to
   `SOURCE_DATE_EPOCH`. An image whose file times matter sets
   `output = ["type=image,rewrite-timestamp=false"]` on its target;

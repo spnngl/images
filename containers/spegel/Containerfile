@@ -1,0 +1,158 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Spegel (stateless peer-to-peer OCI registry mirror for Kubernetes nodes,
+# serving the images each node's containerd already holds) built from
+# source as tagged, no patch, one static binary on scratch. Differs from
+# upstream's ghcr.io/spegel-org/spegel (distroless static): scratch, with
+# the os-release of the stage below.
+#
+# Runtime contract: root (UID/GID 0), as upstream's: containerd's socket and
+# /etc/containerd/certs.d are root's. No capability, a read-only root
+# filesystem and no-new-privileges: it only writes to its host paths.
+# Arguments are a subcommand and its flags (or their variables), as
+# upstream's Helm chart (charts/spegel) passes them:
+# - registry: containerd 2.2 or later, its socket mounted at
+#   /run/containerd/containerd.sock and its content store read-only at
+#   /var/lib/containerd/io.containerd.content.v1.content; registry on
+#   5000/tcp, router (libp2p) on 5001/tcp and 5001/udp, metrics and debug
+#   on 9090/tcp; probes GET /readyz and /livez on 5000. --data-dir
+#   (the chart's /var/lib/spegel) keeps the node's peer identity across
+#   restarts.
+# - configuration (init container) and cleanup: /etc/containerd/certs.d,
+#   the host's, writable; cleanup's readiness probe on the --addr port.
+# - basic auth between peers: username and password files in
+#   /etc/secrets/basic-auth, from a secret.
+# https://spegel.dev/docs/
+
+# preflight.Check (pkg/preflight): with KUBERNETES_SERVICE_HOST set,
+# registry refuses to start unless os-release's PRETTY_NAME is
+# "Distroless", upstream's base. A stage of its own: the smoke test mounts
+# the file the image copies (containers/spegel/REFERENCES.md).
+FROM scratch AS os-release
+COPY <<EOF /etc/os-release
+PRETTY_NAME="Distroless"
+EOF
+
+# Versions come from containers/spegel/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): git and go read theirs,
+# and root's (/root) is closed to it. Before SHELL: hadolint (2.15.1)
+# checks the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved.
+# --keep-git-dir: go build stamps the version `spegel version` prints
+# from git (the tag on HEAD, a clean tree).
+ADD --link \
+    --keep-git-dir=true \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/spegel-org/spegel.git#v${BASE_VERSION} /src
+
+# git refuses a repository another user owns: trust this one, while root.
+RUN git config --system --add safe.directory /src
+
+# Build and test as UID 65532, not root: neither the build nor the test
+# needs it, and the source stays root's. WORKDIR creates its folder owned
+# by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (.goreleaser.yaml): CGO_ENABLED=0, -trimpath,
+# `-s -w`. Then its unit tests, on which, with the smoke test below,
+# Renovate automerges. Without upstream CI's -race
+# (.github/workflows/go.yaml), one package at a time (-p 1): the
+# libp2p tests wait 5 s for up to 31 local peers, which a slowed or busy
+# runner misses (containers/spegel/REFERENCES.md). GOTOOLCHAIN=local (the
+# golang image's): no toolchain download. Caches: containers/minio's ids,
+# the same user.
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+CGO_ENABLED=0 go build -trimpath -ldflags '-s -w' -o /out/spegel .
+go test -p 1 ./...
+EORUN
+
+# Smoke test, here because scratch has no shell to run it: the version
+# upstream's release prints, a static binary, registry past its preflight
+# check with the image's os-release up to its dial of the missing
+# containerd socket, then the mirror configuration's round trip as the
+# chart runs it: configuration backs up an existing hosts.toml and writes
+# Spegel's; cleanup restores it and serves its readiness probe, which
+# cleanup-wait polls. kill (DL3001) stops the server this step started,
+# not a container's.
+# hadolint ignore=DL3001
+RUN --mount=type=bind,from=os-release,source=/etc/os-release,target=/etc/os-release \
+    <<EORUN
+/out/spegel version | grep -Fx "spegel version v${BASE_VERSION} ${BASE_CHECKSUM}"
+go version -m /out/spegel | grep -E '^\s+build\s+CGO_ENABLED=0$'
+# It fails, on the dial the grep checks.
+KUBERNETES_SERVICE_HOST=127.0.0.1 /out/spegel registry --bootstrap-kind static \
+    --containerd-sock /tmp/containerd.sock 2> /tmp/registry.log || :
+grep -F 'dial unix:///tmp/containerd.sock' /tmp/registry.log
+certs=/tmp/certs.d
+mkdir -p "${certs}/docker.io"
+printf "server = 'https://registry-1.docker.io'\n" > /tmp/hosts.toml
+cp /tmp/hosts.toml "${certs}/docker.io/"
+/out/spegel configuration --containerd-registry-config-path "${certs}" \
+    --mirrored-registries https://docker.io --mirror-targets http://127.0.0.1:30020
+grep -Fx "[host.'http://127.0.0.1:30020']" "${certs}/docker.io/hosts.toml"
+grep -Fx "capabilities = ['pull', 'resolve']" "${certs}/docker.io/hosts.toml"
+cmp "${certs}/_backup/docker.io/hosts.toml" /tmp/hosts.toml
+/out/spegel cleanup --containerd-registry-config-path "${certs}" --addr 127.0.0.1:8080 &
+server=$!
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/readyz
+cmp "${certs}/docker.io/hosts.toml" /tmp/hosts.toml
+[ ! -e "${certs}/_backup" ]
+/out/spegel cleanup-wait --probe-endpoint 127.0.0.1:8080 --threshold 2 --period 100ms
+kill "${server}"
+wait "${server}"
+rm -r "${certs}" /tmp/hosts.toml /tmp/registry.log
+EORUN
+
+# Spegel execs nothing and has no C library: the binary, the CA bundle,
+# the os-release and the license (containers/spegel/REFERENCES.md).
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="MIT" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=os-release /etc/os-release /etc/
+COPY --link --from=build /src/LICENSE /usr/share/doc/spegel/
+# Upstream image's path, so commands copied from its docs apply as is.
+# Owned by root, not by the build's user.
+COPY --link --from=build --chown=0:0 /out/spegel /spegel
+
+# No USER: root, scratch's default (the header).
+
+# Upstream's chart defaults; documentation only.
+EXPOSE 5000/tcp 5001/tcp 5001/udp 9090/tcp
+
+# Upstream's entrypoint: arguments are Spegel's subcommand and flags. No
+# CMD: every subcommand needs flags of the deployment.
+ENTRYPOINT ["/spegel"]
+
+# Smoke test: the binary runs on this platform (the build stage tested it).
+RUN ["/spegel", "version"]
