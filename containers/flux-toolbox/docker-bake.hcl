@@ -17,7 +17,7 @@ target "flux-toolbox" {
   matrix = {
     base = [
       # renovate: datasource=github-release-attachments depName=fluxcd/flux2 depType=automerge
-      { version = "v2.9.6", checksum = "0bfa9accec565e0e351f2b3b8ddb7d97b54fb41b84c42856fb36db265330af03" },
+      { version = "v2.10.0", checksum = "4267dbab83ad0dab0570cf87f5af8392b862e9a6d23d57cb856601444f031788" },
     ]
     flux_operator = [
       # renovate: datasource=github-release-attachments depName=controlplaneio-fluxcd/flux-operator depType=automerge
