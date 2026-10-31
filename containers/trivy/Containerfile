@@ -1,13 +1,14 @@
 # syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 #
 # Trivy (vulnerability, misconfiguration and secret scanner) built from
-# aquasecurity/trivy as tagged, no patch, one static binary on scratch.
-# Differs from upstream's image (Alpine with git and ca-certificates,
-# root): scratch, not root, telemetry and update check off. See
+# aquasecurity/trivy as tagged, no patch, one static binary on this
+# repository's git image: so with git, ssh and busybox's shell. Differs
+# from upstream's image (Alpine with git and ca-certificates, root): static
+# git, not root, telemetry and update check off. See
 # containers/trivy/REFERENCES.md.
 #
-# Runtime contract: UID/GID 65532 (no passwd entry); the arguments are
-# Trivy's (`docker run -v "${PWD}:/src:ro" <image> fs /src`, in /src).
+# Runtime contract: UID/GID 65532 (nonroot, HOME /tmp: busybox's passwd);
+# the arguments are Trivy's (`docker run -v "${PWD}:/src:ro" <image> fs /src`, in /src).
 # /var/cache/trivy writable by it, a volume: the vulnerability, Java and
 # checks databases, the scan cache, and Trivy's plugins, modules and VEX
 # repositories (XDG_DATA_HOME). Mount a volume there, or every run
@@ -19,16 +20,16 @@
 # Runs with a read-only root filesystem, no capability and
 # no-new-privileges, with a tmpfs on /tmp: Trivy writes its clones and
 # image layers there.
-# Unavailable, as the program they run is not in the image: sources
-# fetched with git (plugin, Terraform module and VEX repository `git::`
-# URLs), and the pip analyzer's license lookup (python). Repository scans
-# (`trivy repo`) need no git. Images come from a registry or a tarball:
-# a mounted Docker or Podman socket is another group's, which 65532 lacks.
+# Unavailable, as the program they run is not in the image: the pip
+# analyzer's license lookup (python). Sources fetched with git (plugin,
+# Terraform module and VEX repository `git::` URLs) work, over https or
+# ssh (a key and known_hosts through GIT_SSH_COMMAND, as the git image's
+# header says). Images come from a registry or a tarball: a mounted Docker
+# or Podman socket is another group's, which 65532 lacks.
 # https://trivy.dev/latest/docs/
 
 # Versions come from containers/trivy/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
-# Debian trixie: its ca-certificates is the CA bundle copied below.
 FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
 
 ARG BASE_VERSION
@@ -59,12 +60,10 @@ ADD --link \
 # The image's folders, copied with their owners and modes, as
 # containers/zot: the cache folder the user's, so a new Docker volume on it
 # takes this ownership, its parents root's, which a COPY --chown would give
-# to the user. /tmp root's, 1777, which a tmpfs mounted over it takes:
-# scratch has none.
+# to the user.
 RUN <<EORUN
 install -d /rootfs/var/cache
 install -d -o 65532 -g 65532 /rootfs/var/cache/trivy
-install -d -m 1777 /rootfs/tmp
 EORUN
 
 # Build and test as the image's user, not root: neither the build nor the
@@ -86,8 +85,9 @@ CGO_ENABLED=0 go build -trimpath -o /out/trivy \
     ./cmd/trivy
 EORUN
 
-# Smoke test, here because scratch has no shell to run it, and because
-# Trivy and golang bumps are automerged on it. Offline (--network=none),
+# Smoke test, here because it needs the Go toolchain (the empty database)
+# and the build's offline mount, and because Trivy and golang bumps are
+# automerged on it. Offline (--network=none),
 # as the image's user: the version and a static binary, then a server over
 # an empty vulnerability database (the real one is 1.6 GB, downloaded from
 # ghcr.io): a bbolt file made by a Go program, as Trivy opens it read-only
@@ -144,19 +144,21 @@ wait "${server}"
 rm -r /tmp/cache /tmp/target /tmp/mkdb.go
 EORUN
 
-# Trivy execs nothing in a scan and has no C library: the binary, the CA
-# bundle for its outbound TLS (the databases on ghcr.io, image registries),
-# the report templates, the state folders, and the licenses.
-FROM scratch
+# The git image: static git (go-getter runs it for `git::` sources, and
+# `git submodule` is a shell script), ssh, busybox's shell and passwd with
+# 65532, a CA bundle for Trivy's outbound TLS (the databases on ghcr.io,
+# image registries), and a 1777 /tmp. On top: the binary, the report
+# templates, the state folders, and the licenses.
+FROM ghcr.io/spnngl/images/git:2.56.0@sha256:159aaf0d4da09d02c7e89955b15b69719275a1cf148ce3f23cdfba3d0c815a17
 ARG BASE_VERSION
 
+# The licenses of git, OpenSSH and busybox: GPL-2.0-only, SSH-OpenSSH.
 # source: links the ghcr.io package to this repository.
 # hadolint ignore=DL3050
 LABEL org.opencontainers.image.version="${BASE_VERSION}" \
-    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.licenses="Apache-2.0 AND GPL-2.0-only AND SSH-OpenSSH" \
     org.opencontainers.image.source="https://github.com/spnngl/images"
 
-COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 COPY --link --from=build /src/LICENSE /src/NOTICE /usr/share/doc/trivy/
 # Upstream's image path: the documentation's @/contrib/<name>.tpl.
 COPY --link --from=build /src/contrib/*.tpl /contrib/
@@ -164,14 +166,15 @@ COPY --link --from=build /src/contrib/*.tpl /contrib/
 COPY --link --from=build --chown=0:0 /out/trivy /usr/bin/
 COPY --link --from=build /rootfs/ /
 
-# Root's, created before USER: a mount point for what is scanned.
+# Root's, created before USER: a mount point for what is scanned (the git
+# image's /git is the user's).
 WORKDIR /src
 # Numeric, so runAsNonRoot can check it.
 USER 65532:65532
 # Variables, not flags, so that they stay when CMD is replaced.
 # XDG_DATA_HOME: Trivy keeps plugins, modules and VEX repositories under
-# $XDG_DATA_HOME/.trivy, or $HOME/.trivy, and HOME is unset without a
-# passwd entry: in the volume, with the databases. The last two: the image
+# $XDG_DATA_HOME/.trivy, or $HOME/.trivy, and HOME is /tmp, a tmpfs when
+# the root is read-only: in the volume, with the databases. The last two: the image
 # is the update, and no usage data is sent.
 ENV TRIVY_CACHE_DIR=/var/cache/trivy \
     XDG_DATA_HOME=/var/cache/trivy/data \
@@ -182,9 +185,12 @@ ENV TRIVY_CACHE_DIR=/var/cache/trivy \
 EXPOSE 4954/tcp
 VOLUME ["/var/cache/trivy"]
 
-# Upstream's entrypoint: arguments are Trivy's, with no default command.
+# Upstream's entrypoint: arguments are Trivy's, with no default command
+# (the git image's `--version` reset).
 ENTRYPOINT ["/usr/bin/trivy"]
+CMD []
 
-# Smoke test: the binary runs on this platform (the build stage tested the
-# server).
-RUN ["/usr/bin/trivy", "--version"]
+# Smoke test: the binary and git run on this platform (the build stage
+# tested the server), and git's shell scripts find the shell: go-getter runs
+# `git submodule update` after every clone.
+RUN ["/bin/sh", "-euc", "trivy --version && git --version && git init -q /tmp/t && git -C /tmp/t submodule status && rm -r /tmp/t"]
