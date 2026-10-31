@@ -26,7 +26,7 @@
 # `docker buildx bake` (containers/AGENTS.md); git's and kubectl's are
 # these FROM lines, their images' tags.
 FROM ghcr.io/spnngl/images/git:2.56.0@sha256:2de8527c3df0d80a80d5ac8714d1bf6f04623ea922ba8b4a5391ebbb65ed8312 AS base
-FROM ghcr.io/spnngl/images/kubectl:1.37.1@sha256:57363e74d52c9222aa1cdfb98b3cc4337c1c692163b8a66b5461563f908cc138 AS kubectl
+FROM ghcr.io/spnngl/images/kubectl:1.37.2@sha256:aa2d6ac39ed4fd2fe644d8546afb659e774e6b3d2b9cd075c87b995dbcaa3519 AS kubectl
 
 # The build stage is the base itself: busybox has what checking and
 # unpacking need (sha256sum, tar, gzip), and the binaries are tested on
