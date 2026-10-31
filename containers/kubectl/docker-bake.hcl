@@ -25,7 +25,7 @@ target "kubectl" {
     base = [
       {
         # renovate: datasource=github-tags depName=kubectl-1.35 packageName=kubernetes/kubernetes versioning=semver extractVersion=^v(?<version>1\.35\.\d+)$ depType=automerge
-        version = "1.35.9", checksum = "329000efd0b26bd78155e51e4df449130f0fca00"
+        version = "1.35.10", checksum = "ae6fece6fea92ecfcccd13af7d5f2ea8cb9b33fe"
         # renovate: datasource=docker depName=golang-1.26 packageName=docker.io/library/golang extractVersion=^(?<version>1\.26\.\d+-trixie)$ depType=automerge
         golang = { tag = "1.26.10-trixie", digest = "sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4" }
       },
