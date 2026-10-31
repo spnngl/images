@@ -1,0 +1,190 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Trivy (vulnerability, misconfiguration and secret scanner) built from
+# aquasecurity/trivy as tagged, no patch, one static binary on scratch.
+# Differs from upstream's image (Alpine with git and ca-certificates,
+# root): scratch, not root, telemetry and update check off. See
+# containers/trivy/REFERENCES.md.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry); the arguments are
+# Trivy's (`docker run -v "${PWD}:/src:ro" <image> fs /src`, in /src).
+# /var/cache/trivy writable by it, a volume: the vulnerability, Java and
+# checks databases, the scan cache, and Trivy's plugins, modules and VEX
+# repositories (XDG_DATA_HOME). Mount a volume there, or every run
+# downloads the databases from ghcr.io again. `server` listens on 4954/tcp
+# (TRIVY_LISTEN), /healthz answers `ok`; set TRIVY_TOKEN to require a
+# token. Report templates in /contrib/: `--template
+# "@/contrib/html.tpl"`. TRIVY_DISABLE_TELEMETRY and
+# TRIVY_SKIP_VERSION_CHECK are true: no request to check.trivy.dev.
+# Runs with a read-only root filesystem, no capability and
+# no-new-privileges, with a tmpfs on /tmp: Trivy writes its clones and
+# image layers there.
+# Unavailable, as the program they run is not in the image: sources
+# fetched with git (plugin, Terraform module and VEX repository `git::`
+# URLs), and the pip analyzer's license lookup (python). Repository scans
+# (`trivy repo`) need no git. Images come from a registry or a tarball:
+# a mounted Docker or Podman socket is another group's, which 65532 lacks.
+# https://trivy.dev/latest/docs/
+
+# Versions come from containers/trivy/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads it, and root's
+# (/root) is closed to it. Before SHELL: hadolint (2.15.1) checks the RUNs
+# after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: the tag must resolve to this commit, tags can be moved. No
+# .git: the build is given the version, it reads nothing from git.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/aquasecurity/trivy.git#v${BASE_VERSION} /src
+
+# The image's folders, copied with their owners and modes, as
+# containers/zot: the cache folder the user's, so a new Docker volume on it
+# takes this ownership, its parents root's, which a COPY --chown would give
+# to the user. /tmp root's, 1777, which a tmpfs mounted over it takes:
+# scratch has none.
+RUN <<EORUN
+install -d /rootfs/var/cache
+install -d -o 65532 -g 65532 /rootfs/var/cache/trivy
+install -d -m 1777 /rootfs/tmp
+EORUN
+
+# Build and test as the image's user, not root: neither the build nor the
+# test get root, and the source stays root's. WORKDIR creates its folder
+# owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (goreleaser.yml, build-linux), version included:
+# goreleaser's {{.Version}} is the tag without its v. Caches:
+# containers/minio's ids, the same user.
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+CGO_ENABLED=0 go build -trimpath -o /out/trivy \
+    -ldflags "-s -w -extldflags '-static' \
+    -X github.com/aquasecurity/trivy/pkg/version/app.ver=${BASE_VERSION}" \
+    ./cmd/trivy
+EORUN
+
+# Smoke test, here because scratch has no shell to run it, and because
+# Trivy and golang bumps are automerged on it. Offline (--network=none),
+# as the image's user: the version and a static binary, then a server over
+# an empty vulnerability database (the real one is 1.6 GB, downloaded from
+# ghcr.io): a bbolt file made by a Go program, as Trivy opens it read-only
+# and can't initialize one. --skip-db-update accepts it because its
+# metadata names the schema version of the trivy-db module this tag
+# requires. The caches are for that program and for finding the module.
+# Then the probe, a request refused without the token, and a client scan
+# through the server, which finds a secret: Trivy scans secrets on the
+# client and the server returns them, with no database. The key is Trivy's
+# own test key, split so that no scanner flags this file (AWS's documented
+# example is allow-listed, and would find nothing). kill (DL3001) stops the
+# server this step started, not a container's.
+# hadolint ignore=DL3001
+RUN --network=none \
+    --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+/out/trivy --version | grep -Fx "Version: ${BASE_VERSION}"
+go version -m /out/trivy | grep -E '^\s+build\s+CGO_ENABLED=0$'
+hex() { od -An -vtx1 -N16 /dev/urandom | tr -d ' \n'; }
+TRIVY_TOKEN="$(hex)"
+export TRIVY_TOKEN TRIVY_CACHE_DIR=/tmp/cache TRIVY_DISABLE_TELEMETRY=true TRIVY_SKIP_VERSION_CHECK=true
+schema="$(grep -E '^\s+SchemaVersion\s+= [0-9]+$' "$(go list -m -f '{{.Dir}}' github.com/aquasecurity/trivy-db)/pkg/db/db.go" | grep -Eo '[0-9]+$')"
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+install -d /tmp/cache/db /tmp/target
+cat > /tmp/mkdb.go <<EOF
+package main
+
+import bolt "go.etcd.io/bbolt"
+
+func main() {
+	db, err := bolt.Open("/tmp/cache/db/trivy.db", 0o600, nil)
+	if err != nil {
+		panic(err)
+	}
+	if err := db.Close(); err != nil {
+		panic(err)
+	}
+}
+EOF
+go run /tmp/mkdb.go
+printf '{"Version":%s,"NextUpdate":"2999-01-01T00:00:00Z","UpdatedAt":"%s","DownloadedAt":"%s"}' \
+    "${schema}" "${now}" "${now}" > /tmp/cache/db/metadata.json
+printf 'AWS_ACCESS_KEY_ID=AKIA%s\n' 0123456789ABCDEF > /tmp/target/credentials
+/out/trivy server --listen 127.0.0.1:4954 --skip-db-update &
+server=$!
+curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:4954/healthz | grep -Fx ok
+[ "$(curl -sS -o /dev/null -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' \
+    http://127.0.0.1:4954/twirp/trivy.scanner.v1.Scanner/Scan)" = 401 ]
+/out/trivy fs --server http://127.0.0.1:4954 --scanners secret --format json /tmp/target \
+    | grep -F '"RuleID": "aws-access-key-id"'
+kill "${server}"
+wait "${server}"
+rm -r /tmp/cache /tmp/target /tmp/mkdb.go
+EORUN
+
+# Trivy execs nothing in a scan and has no C library: the binary, the CA
+# bundle for its outbound TLS (the databases on ghcr.io, image registries),
+# the report templates, the state folders, and the licenses.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /src/NOTICE /usr/share/doc/trivy/
+# Upstream's image path: the documentation's @/contrib/<name>.tpl.
+COPY --link --from=build /src/contrib/*.tpl /contrib/
+# Owned by root, not by the build's user: Trivy can't rewrite its binary.
+COPY --link --from=build --chown=0:0 /out/trivy /usr/bin/
+COPY --link --from=build /rootfs/ /
+
+# Root's, created before USER: a mount point for what is scanned.
+WORKDIR /src
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+# Variables, not flags, so that they stay when CMD is replaced.
+# XDG_DATA_HOME: Trivy keeps plugins, modules and VEX repositories under
+# $XDG_DATA_HOME/.trivy, or $HOME/.trivy, and HOME is unset without a
+# passwd entry: in the volume, with the databases. The last two: the image
+# is the update, and no usage data is sent.
+ENV TRIVY_CACHE_DIR=/var/cache/trivy \
+    XDG_DATA_HOME=/var/cache/trivy/data \
+    TRIVY_LISTEN=0.0.0.0:4954 \
+    TRIVY_DISABLE_TELEMETRY=true \
+    TRIVY_SKIP_VERSION_CHECK=true
+
+EXPOSE 4954/tcp
+VOLUME ["/var/cache/trivy"]
+
+# Upstream's entrypoint: arguments are Trivy's, with no default command.
+ENTRYPOINT ["/usr/bin/trivy"]
+
+# Smoke test: the binary runs on this platform (the build stage tested the
+# server).
+RUN ["/usr/bin/trivy", "--version"]
