@@ -71,7 +71,7 @@ FROM natives-${TARGETARCH} AS natives
 # Node: upstream's major (package.json engines, its Dockerfile). The full
 # image, not slim: node-gyp needs python3, make and g++. Debian trixie,
 # as the final image's libc. Its yarn 1 reads upstream's yarn.lock.
-FROM docker.io/library/node:22.23-trixie@sha256:77d0c7953e80648137a237496c8edbcb3a14bedc5c5298b93a6d0dfa6c3e1271 AS build
+FROM docker.io/library/node:22.23-trixie@sha256:ead00acb9f552752e0fe17a428d692094ab5f9e021e7bb97202fa7b0cd702a04 AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM

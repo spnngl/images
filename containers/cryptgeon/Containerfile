@@ -34,7 +34,7 @@ ADD --link \
 # The web frontend: static files the server serves. Node: upstream's
 # major (.nvmrc); pnpm: upstream's (package.json's packageManager), which
 # corepack downloads and verifies.
-FROM docker.io/library/node:24.22-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS frontend
+FROM docker.io/library/node:24.22-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS frontend
 
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # HOME for the build user below (no passwd entry): corepack and pnpm keep
@@ -77,7 +77,7 @@ COPY --link --from=frontend --chown=0:0 /build/packages/frontend/build/ /app/fro
 
 # Debian trixie: its musl-tools build the C libraries, its valkey-server
 # runs the server test.
-FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+FROM docker.io/library/rust:1.99-trixie@sha256:09027f873d45b8ecd1dc86f1fa13b7a62b875c961f017a0e331267b350430137 AS build
 
 ARG BASE_VERSION
 ARG DEBIAN_CODENAME

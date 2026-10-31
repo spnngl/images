@@ -14,7 +14,7 @@ target "flux-aio" {
     debian = ["13"]
     golang = [
       # renovate: datasource=docker depName=flux-aio-golang packageName=docker.io/library/golang extractVersion=^(?<version>1\.27\.\d+-trixie)$
-      { tag = "1.27.3-trixie", digest = "sha256:c124b9ad3452f46061b5054607d26ea51730dae5372c5e469920063ba2bc6dcc" },
+      { tag = "1.27.3-trixie", digest = "sha256:c65ecfe613b539ac74c62a4c3b2c27e8f8a6076384c8f27e8a3c0f3be17cc385" },
     ]
     base = [
       # renovate: datasource=github-tags depName=fluxcd/flux2 extractVersion=^v(?<version>.+)$
