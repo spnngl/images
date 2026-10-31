@@ -14,7 +14,7 @@ target "mjolnir" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=matrix-org/mjolnir extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "2.0.1", checksum = "bbcab74bdf5581556f7b2393d2147c60bca2d62d" },
+      { version = "2.0.2", checksum = "23f2fec90e09752a7d28f58c35f76cfbd5e8999a" },
     ]
     # @tensorflow/tfjs-node, and the libtensorflow its install script
     # fetches at that version (scripts/install.js, deps-constants.js):
