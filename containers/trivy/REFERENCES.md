@@ -16,11 +16,18 @@
 
 ## Decisions
 
-- **Scratch, no git, no shell:** a scan runs no other program. Upstream's
-  image has `git` for `git::` sources (plugins, Terraform modules, VEX
-  repositories: go-getter runs it), and Python's license lookup execs
-  `python`; both are unavailable and listed in the header. `trivy repo`
-  clones with go-git, in the process (`pkg/fanal/artifact/repo/git.go`).
+- **`FROM` the git image:** go-getter runs `git` for `git::` sources
+  (plugins, Terraform modules, VEX repositories: `get_git.go` execs
+  `git init`, `fetch`, `submodule update`...), and `git submodule` is a
+  shell script, so it needs the image's busybox shell; `ssh://` remotes
+  need `ssh` and a passwd entry for 65532, which the image has. It is
+  static: no C library comes with it. Python's license lookup execs
+  `python`, unavailable and listed in the header. `trivy repo` needs
+  none of this: it clones with go-git, in the process
+  (`pkg/fanal/artifact/repo/git.go`). Checked in the built image: a
+  Terraform module from a `git::https://` source is cloned and scanned,
+  hardened. Not `scratch` with git's files copied in: no shell, no
+  passwd.
 - **Upstream's release build:** `CGO_ENABLED=0`, `-s -w`, `-extldflags
   '-static'` and `-X ...pkg/version/app.ver=<version>`; no git is read,
   so no `--keep-git-dir`. `-trimpath` is added (reproducible paths).
@@ -49,8 +56,8 @@
   A new Docker volume takes the folder's owner. Parents stay root's.
 - **`XDG_DATA_HOME` in the volume:** Trivy's plugins, modules and VEX
   repositories go under `$XDG_DATA_HOME/.trivy`, or `$HOME/.trivy`
-  (`fsutils.HomeDir`), and `HOME` is unset without a passwd entry: they
-  would not persist, or fail to write.
+  (`fsutils.HomeDir`), and `HOME` is `/tmp` (the git image's passwd), a tmpfs
+  when the root is read-only: they would not persist.
 - **`TRIVY_LISTEN=0.0.0.0:4954`:** the flag's default is
   `localhost:4954`, unreachable from outside the container. Only
   `server` reads it. A variable, so it stays when `CMD` is replaced.
@@ -61,13 +68,14 @@
   documentation's `@/contrib/<name>.tpl` works.
 - **`WORKDIR /src`:** a mount point for what is scanned, root's, as
   `containers/kustomize`.
-- **`/tmp`, root's, 1777:** clones and image layers are written to
-  `os.TempDir()`; a tmpfs mounted over it takes the mode.
-- **The image holds the binary, Debian's CA bundle** (the databases on
-  `ghcr.io`, image registries), the templates, `LICENSE` and `NOTICE`.
+- **`/tmp`, root's, 1777 (the git image's):** clones and image layers
+  are written to `os.TempDir()`; a tmpfs mounted over it takes the mode.
+- **On top of the git image:** the binary, the templates, `LICENSE` and
+  `NOTICE`. The CA bundle (the databases on `ghcr.io`, image registries)
+  is the git image's, refreshed by its weekly rebuild.
 - **No `HEALTHCHECK`:** no curl in the image, and Kubernetes ignores it;
   probe `/healthz`.
-- **No `CMD`, `ENTRYPOINT` the absolute path:** as upstream's, whose
-  arguments are Trivy's.
+- **`CMD []`, `ENTRYPOINT` the absolute path:** as upstream's, whose
+  arguments are Trivy's; the git image's `--version` is reset.
 - **Automerged, `depType=automerge`:** patch and minor releases; majors
   wait (`renovate.json5`).
