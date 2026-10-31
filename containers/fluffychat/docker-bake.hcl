@@ -22,7 +22,7 @@ target "fluffychat" {
     ]
     vodozemac = [
       # renovate: datasource=github-tags depName=famedly/dart-vodozemac extractVersion=^(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "0.8.1", checksum = "494dbbc732f8c1dbf8e6c07a11e9ca57f399ff7e" },
+      { version = "0.9.0", checksum = "774956e945a39451441e72f03195a1ad2e78c3a8" },
     ]
     native_imaging = [
       # renovate: datasource=github-release-attachments depName=famedly/dart_native_imaging depType=automerge
@@ -30,7 +30,7 @@ target "fluffychat" {
     ]
     livekit = [
       # renovate: datasource=github-tags depName=livekit/client-sdk-flutter extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "2.13.1", checksum = "ffc0a879383c4a347542fbfefe122c74006d7b91" },
+      { version = "2.13.2", checksum = "7adc5959f735045261e6a81accb5cb6a9ad79a7b" },
     ]
     wasm_pack = [
       # renovate: datasource=crate depName=wasm-pack versioning=semver depType=automerge
