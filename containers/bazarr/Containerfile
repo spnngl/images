@@ -49,7 +49,7 @@ FROM gcr.io/distroless/python3-debian13:nonroot@sha256:64e54c4b1200da244d80181d9
 
 # The web app, built as upstream's release workflow builds it: npm
 # install, npm run build. Node: upstream's major (frontend/.nvmrc).
-FROM docker.io/library/node:24.22-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS frontend
+FROM docker.io/library/node:24.22-trixie-slim@sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446 AS frontend
 
 # HOME for the build user below: npm keeps its cache in ~/.npm. Before
 # SHELL: hadolint (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh,
@@ -83,7 +83,7 @@ FROM ghcr.io/astral-sh/uv:${UV_VERSION}@${UV_DIGEST} AS uv
 # Debian trixie, the release distroless' python3-debian13 is built from:
 # the libraries copied here are the ones the final image's Python and its
 # base have.
-FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS build
+FROM docker.io/library/debian:trixie-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4 AS build
 
 ARG BASE_VERSION
 ARG DEBIAN_CODENAME

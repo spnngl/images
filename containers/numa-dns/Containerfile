@@ -37,7 +37,7 @@
 # Versions come from containers/numa-dns/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
 # Debian trixie: its musl-tools build the C libraries.
-FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+FROM docker.io/library/rust:1.99-trixie@sha256:09027f873d45b8ecd1dc86f1fa13b7a62b875c961f017a0e331267b350430137 AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
