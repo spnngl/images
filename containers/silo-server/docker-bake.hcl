@@ -10,7 +10,7 @@ target "silo-server" {
     # Upstream has no release: main, at a commit (REFERENCES.md).
     base = [
       # renovate: datasource=git-refs depName=Silo-Server/silo-server packageName=https://github.com/Silo-Server/silo-server
-      { version = "main", checksum = "6de6d5e5e285a9b423e95a1122cb39e5bb9ca93b" },
+      { version = "main", checksum = "9d3f24ca443688504147fa6938d1641845fc4c3c" },
     ]
     # Builds the web app only.
     node = [
