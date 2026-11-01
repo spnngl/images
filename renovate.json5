@@ -269,7 +269,7 @@
             "separateMajorMinor": false
         },
         {
-            "description": "RAPx and the Rust nightly its build names (containers/rapx): one PR, so a RAPx release comes with the nightly it supports. RAPx is a rustc driver built against rustc's internals: the build fails while the newest nightly is newer than what RAPx's newest release supports (lockstep). The PR then waits for RAPx's next release, or the nightly is set by hand to the release's publish date (containers/rapx/AGENTS.md, Updates). Proposed on Saturday between midnight and 5am, like the snapshot above: a nightly comes every day, and nearly every PR would fail. A new year is a major update of the nightly (versioning by date): not automerged.",
+            "description": "RAPx and the Rust nightly its build names (containers/rapx): one PR, in lockstep (containers/rapx/AGENTS.md). Proposed on Saturday between midnight and 5am, like the snapshot above: a nightly comes every day. A new year is a major update of the nightly (versioning by date), never automerged.",
             "matchDepNames": ["rapx", "rust-nightly"],
             "groupName": "rapx",
             "separateMajorMinor": false,
