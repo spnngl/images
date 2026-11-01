@@ -201,9 +201,9 @@ timezone, labels, semantic commits, action digests and automerge under
   (`containers/prowlarr/REFERENCES.md`). `crates-io` reads a crate's
   versions from crates.io's API, each with its `.crate` checksum and
   publish date (the built-in `crate` datasource gives no checksum), and
-  `rust-nightly` the dates of Rust's nightlies from its manifests list
-  (`containers/rapx/REFERENCES.md`). The nightly has no release date, so
-  it stays out of the 3-day rule.
+  `crates-io-date` the same releases' publish dates, as the
+  versions of the Rust nightly built with them (`containers/rapx/REFERENCES.md`);
+  both are in the 3-day rule.
 - **Renovate's image, one version:** `renovate.yml`'s `extract` job
   and the validator of `AGENTS.md`'s checks. The workflow holds it in
   `RENOVATE_VERSION`, after a `# renovate:` comment: the shared preset's

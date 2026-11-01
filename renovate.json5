@@ -50,14 +50,15 @@
                 "{ \"releases\": [versions[yanked = false].{ \"version\": num, \"releaseTimestamp\": created_at, \"digest\": checksum }] }"
             ]
         },
-        // The dated nightlies of Rust (containers/rapx): the dist/<date>/
-        // folders of Rust's manifests list, which has one line per channel
-        // manifest, all channels, the date as version.
-        "rust-nightly": {
-            "defaultRegistryUrlTemplate": "https://static.rust-lang.org/manifests.txt",
-            "format": "plain",
+        // The Rust nightly a crate's release builds with (containers/rapx):
+        // a rustc driver like RAPx supports the nightlies of its time, so
+        // the version is the date a release was published, the nightly
+        // dated that day. A nightly newer than the newest release never
+        // appears: the cap that keeps RAPx and its nightly in lockstep.
+        "crates-io-date": {
+            "format": "json",
             "transformTemplates": [
-                "{ \"releases\": [releases[$contains(version, \"/channel-rust-nightly.toml\")].{ \"version\": $substringBefore($substringAfter(version, \"/dist/\"), \"/\") }] }"
+                "{ \"releases\": [versions[yanked = false].{ \"version\": $substringBefore(created_at, \"T\"), \"releaseTimestamp\": created_at }] }"
             ]
         }
     },
@@ -175,6 +176,7 @@
                 "forgejo-tags",
                 "custom.servarr",
                 "custom.crates-io",
+                "custom.crates-io-date",
                 "npm",
                 "crate"
             ],
@@ -269,8 +271,8 @@
             "separateMajorMinor": false
         },
         {
-            "description": "RAPx and the Rust nightly its build names (containers/rapx): one PR, in lockstep (containers/rapx/AGENTS.md). Proposed on Saturday between midnight and 5am, like the snapshot above: a nightly comes every day. A new year is a major update of the nightly (versioning by date), never automerged.",
-            "matchDepNames": ["rapx", "rust-nightly"],
+            "description": "RAPx and the Rust nightly its build names (containers/rapx): one PR, as the nightly is the date of the RAPx release (datasource crates-io-date), so they stay in lockstep. Proposed on Saturday between midnight and 5am, like the snapshot above. A new year is a major update of the nightly (versioning by date), never automerged.",
+            "matchDepNames": ["rapx", "rapx-nightly"],
             "groupName": "rapx",
             "separateMajorMinor": false,
             "schedule": ["* 0-4 * * 6"],

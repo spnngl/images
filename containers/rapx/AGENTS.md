@@ -10,9 +10,10 @@ sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 - `ENTRYPOINT ["/usr/local/bin/cargo", "rapx"]`: arguments are
   `cargo rapx`'s (`check -f`, `verify`, `analyze dot-mir`...).
-- **Lockstep**: RAPx's version and `NIGHTLY_VERSION` move together.
-  A release builds on the nightlies of its time; a newer nightly fails
-  in `cargo auditable install`.
+- **Lockstep**: `NIGHTLY_VERSION` is the date of the RAPx release
+  (`BASE_VERSION`), as a release builds on the nightlies of its time; a
+  newer nightly fails in `cargo auditable install`. Renovate moves both
+  in one PR.
 - The build stage installs the toolchain twice: full (rustc-dev,
   rust-src) to build, minimal for the image.
 - The image keeps no shell. The `smoke` stage tests it with busybox's
@@ -29,10 +30,9 @@ sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Updates
 
-Renovate moves the crate (checksum from crates.io) and the nightly (dates
-from Rust's manifests list) in one pull request, proposed on Saturday,
-and automerges it once the build and `smoke` pass.
-
-When the build fails on lockstep, set `NIGHTLY_VERSION` to the date of
-RAPx's release (crates.io, `Versions`), keeping RAPx's version Renovate's.
-Done when the build and `smoke` pass.
+Renovate moves the crate (checksum from crates.io) and the nightly (the
+release's publish date) in one pull request, proposed on Saturday, and
+automerges it once the build and `smoke` pass. A failing `smoke` means
+RAPx's output changed: update its assertions (Rules), done when the
+build passes. When rustup finds no nightly of the release's date (a
+day Rust skipped), set `NIGHTLY_VERSION` to the day before.
