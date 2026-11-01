@@ -10,30 +10,29 @@ sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 - `ENTRYPOINT ["/usr/local/bin/cargo", "rapx"]`: arguments are
   `cargo rapx`'s (`check -f`, `verify`, `analyze dot-mir`...).
-- The nightly's date (`NIGHTLY_VERSION`) and RAPx's version move
-  together: RAPx reads rustc's internals, and a release supports the
-  nightlies of its time. A nightly that RAPx can't build against fails the
-  build in `cargo auditable install`.
-- Nothing from rustc-dev or rust-src reaches the image: the build stage
-  installs the toolchain twice, the second time minimal.
-- No shell in the image. Tests run in the `smoke` stage (busybox's `ash`
-  and `grep`, copied to `/bin`), and the last stage needs that
-  stage's marker file, so every build runs them.
-- `smoke-test/` crates are copies of RAPx's own test cases, each with a
-  comment naming its path. An upgrade that changes RAPx's output changes
-  the assertions in `smoke`, never the other way round.
-- Packages of Debian's come through the `closure` stage with their dpkg
-  status, minus what distroless' base has. A package added to the
-  install list there lands in the image with its dependencies.
+- **Lockstep**: RAPx's version and `NIGHTLY_VERSION` move together.
+  A release builds on the nightlies of its time; a newer nightly fails
+  in `cargo auditable install`.
+- The build stage installs the toolchain twice: full (rustc-dev,
+  rust-src) to build, minimal for the image.
+- The image keeps no shell. The `smoke` stage tests it with busybox's
+  `ash` and `grep`, and the last stage needs `smoke`'s marker file: every
+  build runs the tests.
+- `smoke-test/` holds copies of RAPx's test cases, each with a comment
+  naming its source path. When an upgrade changes RAPx's output, change
+  the assertions in `smoke`.
+- Debian's packages come through the `closure` stage with their dpkg
+  status, minus what distroless' base has. A package added to its install
+  list lands in the image with its dependencies.
 - The build stage compiles as UID 65532 (only packages and the
   toolchain install as root): its cache ids end in `-65532`.
 
 ## Updates
 
-Renovate moves RAPx's crate (crates.io, with its checksum) and the
-nightly (dates in Rust's manifests list) in one pull request, proposed
-on Saturday, and automerges it once the build and `smoke` pass. When the
-build fails because the newest nightly is newer than what RAPx's newest
-release supports, set `NIGHTLY_VERSION` by hand to the date RAPx's
-release was published (crates.io page, `Versions`), and keep RAPx's
-version Renovate's.
+Renovate moves the crate (checksum from crates.io) and the nightly (dates
+from Rust's manifests list) in one pull request, proposed on Saturday,
+and automerges it once the build and `smoke` pass.
+
+When the build fails on lockstep, set `NIGHTLY_VERSION` to the date of
+RAPx's release (crates.io, `Versions`), keeping RAPx's version Renovate's.
+Done when the build and `smoke` pass.

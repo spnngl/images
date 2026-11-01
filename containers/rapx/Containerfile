@@ -117,7 +117,7 @@ RUN <<EORUN
 export RUSTUP_HOME=/tmp/rustup
 rustup toolchain install "${RUSTUP_TOOLCHAIN}" --profile minimal
 sysroot="$(rustc --print sysroot)"
-mkdir -p /out/usr/local/share/doc /out/var/cache/cargo
+mkdir -p /out/usr/local/share/doc /out/var/cache/cargo /out/src
 cp -a "${sysroot}/bin/cargo" "${sysroot}/bin/rustc" /out/usr/local/bin/
 cp -a "${sysroot}/lib/." /out/usr/local/lib/
 cp -a "${sysroot}/share/doc/." /out/usr/local/share/doc/
@@ -219,6 +219,7 @@ LABEL org.opencontainers.image.title="RAPx" \
 COPY --link --from=closure /rootfs/ /
 COPY --link --from=build --chown=0:0 /out/usr/ /usr/
 COPY --link --from=build --chown=65532:65532 /out/var/cache/cargo/ /var/cache/cargo/
+COPY --link --from=build --chown=65532:65532 /out/src/ /src/
 
 ENV CARGO_HOME=/var/cache/cargo
 USER 65532:65532
