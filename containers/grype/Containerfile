@@ -1,0 +1,136 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# Grype (vulnerability scanner for container images and filesystems) from
+# anchore/grype, built from source as upstream's release does, on scratch.
+# Unlike upstream's image, it runs as 65532 with a /cache for the database.
+# See containers/grype/REFERENCES.md.
+#
+# Runtime contract: UID/GID 65532 (no passwd entry). Sources: registries
+# and archives (`registry:`, `docker-archive:`, `oci-archive:`, `oci-dir:`,
+# `dir:`, `sbom:`, `purl:`); no Docker socket. XDG_CACHE_HOME=/cache holds
+# the vulnerability database (/cache/grype/db): a persistent volume keeps
+# it across runs, an empty one downloads it (~200 MB) at the first scan, and
+# a database older than 5 days fails the scan. /tmp holds the layers of the
+# scanned image: mount a volume or tmpfs sized for the largest one.
+# Registry credentials from the runtime: GRYPE_REGISTRY_AUTH_AUTHORITY,
+# _USERNAME and _PASSWORD, or a DOCKER_CONFIG folder. Runs with
+# `--read-only`, no capability and `no-new-privileges`.
+# Outbound HTTPS: grype.anchore.io (database), the registries.
+# https://github.com/anchore/grype
+
+# Versions come from containers/grype/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+# Debian trixie: its ca-certificates is the CA bundle copied below.
+FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# HOME for the build user below (no passwd entry): go reads its own, and
+# root's (/root) is closed to it. Before SHELL: hadolint (2.15.1) checks
+# the RUNs after an ENV or ARG as /bin/sh, whatever SHELL says.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+WORKDIR /src
+
+# Checks first: outside Bake, or on another Debian release than the tag
+# names, the build fails here.
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+EORUN
+
+# --checksum: the tag must resolve to this commit. No --keep-git-dir:
+# the build reads the commit from BASE_CHECKSUM, not from git.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/anchore/grype.git#v${BASE_VERSION} /src
+
+# Build and test as the image's user, not root, as containers/mc does.
+# WORKDIR creates its folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build (.goreleaser.yaml, builds[linux-build]):
+# CGO_ENABLED=0, the same tags and `-w -s`, the version variables of
+# cmd/grype/main.go set as goreleaser sets them (Version, Commit, Date,
+# Summary: a tag's description is the tag). -trimpath: a build path that
+# doesn't leak. Caches: containers/mc's ids, the same user.
+# /out/cache, /out/tmp: the final image's folders, made here because
+# scratch has no shell.
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
+    <<EORUN
+CGO_ENABLED=0 go build -trimpath \
+    -tags containers_image_openpgp,exclude_graphdriver_btrfs \
+    -ldflags "-w -s \
+        -X main.version=${BASE_VERSION} \
+        -X main.gitCommit=${BASE_CHECKSUM} \
+        -X main.buildDate=$(date -u -d "@${SOURCE_DATE_EPOCH}" +%Y-%m-%dT%H:%M:%SZ) \
+        -X main.gitDescription=v${BASE_VERSION}" \
+    -o /out/grype ./cmd/grype
+mkdir /out/cache /out/tmp
+EORUN
+
+# Smoke test, here because scratch has no shell to run it, and because
+# grype releases and golang bumps are automerged on it: the real database
+# (downloaded: the build needs the network), and a scan of one package it
+# knows is vulnerable (log4j-core 2.14.1, Log4Shell). --fail-on high must
+# fail the scan, and the report name the CVE.
+RUN <<EORUN
+/out/grype --version | grep -Fx "grype ${BASE_VERSION}"
+export XDG_CACHE_HOME=/tmp/cache
+/out/grype db update
+echo "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1" > /tmp/purls
+if /out/grype purl:/tmp/purls --fail-on high --output json > /tmp/report; then
+    false
+fi
+grep -F CVE-2021-44228 /tmp/report
+rm -r /tmp/cache /tmp/purls /tmp/report
+EORUN
+
+# The binary, the CA bundle for TLS to the database and registries, and
+# the license.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /src/COPYRIGHT /usr/share/doc/grype/
+# Owned by root, not by the build's user: grype can't rewrite its binary.
+COPY --link --from=build --chown=0:0 /out/grype /usr/bin/
+# Owned by the user: grype writes the database there.
+COPY --link --from=build --chown=65532:65532 /out/cache /cache
+# World-writable: a COPY gives a folder it creates mode 0755 whatever the
+# source's, and a tmpfs mounted here takes the image folder's mode (Docker),
+# so without --chmod 65532 can't write. (BuildKit drops the sticky bit.)
+COPY --link --from=build --chown=0:0 --chmod=1777 /out/tmp /tmp
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+# The default, ~/.cache, depends on HOME: unset without a passwd entry,
+# and the cache then falls to /.cache, closed to the user. XDG_CACHE_HOME
+# moves the database (/cache/grype/db) onto the volume.
+# GRYPE_CHECK_FOR_APP_UPDATE: no call to Anchore at every start; the
+# image's tag is the version.
+ENV XDG_CACHE_HOME=/cache \
+    GRYPE_CHECK_FOR_APP_UPDATE=false
+VOLUME /cache
+
+# Upstream's entrypoint: arguments are grype's (`docker run <image>
+# registry:<image>`).
+ENTRYPOINT ["/usr/bin/grype"]
+
+# Smoke test: the binary runs on this platform (the build stage tested
+# it).
+RUN ["/usr/bin/grype", "--version"]
