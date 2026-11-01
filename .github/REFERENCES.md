@@ -198,7 +198,12 @@ timezone, labels, semantic commits, action digests and automerge under
   timestamps; Debian's packages follow the weekly bump. The `servarr`
   one reads the update feed the *arr apps' updaters read: each
   release's archive sha256 (`digest`), so tracking downloads nothing
-  (`containers/prowlarr/REFERENCES.md`).
+  (`containers/prowlarr/REFERENCES.md`). `crates-io` reads a crate's
+  versions from crates.io's API, each with its `.crate` checksum and
+  publish date (the built-in `crate` datasource gives no checksum), and
+  `rust-nightly` the dates of Rust's nightlies from its manifests list
+  (`containers/rapx/REFERENCES.md`). The nightly has no release date, so
+  it stays out of the 3-day rule.
 - **Renovate's image, one version:** `renovate.yml`'s `extract` job
   and the validator of `AGENTS.md`'s checks. The workflow holds it in
   `RENOVATE_VERSION`, after a `# renovate:` comment: the shared preset's

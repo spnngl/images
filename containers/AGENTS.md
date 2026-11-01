@@ -70,6 +70,10 @@ By what the app needs at runtime; name that need in the image's
   Containerfile on distroless' `python3-debian13`, the modules from a
   hash-pinned lock installed with uv, the Debian packages it execs copied
   with their dpkg status (`containers/bazarr`).
+- A rustc driver (it links rustc's internals): a Containerfile on
+  distroless' `cc-debian13` with the dated nightly it is built against,
+  gcc and the libraries it runs copied with their dpkg status
+  (`containers/rapx`).
 - Data other images copy (lists, databases): `containers/datalists`,
   on `scratch`, tagged `latest`.
 - A distribution's root filesystem, for CI jobs that build its

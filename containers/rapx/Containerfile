@@ -1,0 +1,266 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+#
+# RAPx (https://github.com/safer-rust/RAPx), a static analyzer for Rust
+# programs: `cargo rapx check|analyze|opt|verify` on a crate. RAPx is a
+# rustc driver: it runs inside rustc and links its internals
+# (rustc_private), so the image holds the nightly toolchain RAPx was built
+# against, and the C toolchain cargo links build scripts and proc-macros
+# with. The crate published on crates.io, built here; the nightly's date
+# comes with the version (containers/rapx/docker-bake.hcl). On distroless'
+# cc-debian13, no shell: gcc, Graphviz and their libraries are Debian's,
+# copied with their dpkg status, so scanners see them (containers/bazarr
+# does the same). containers/rapx/REFERENCES.md has the reason for each
+# choice.
+#
+# Runtime contract: UID/GID 65532. Arguments are `cargo rapx`'s (the
+# entrypoint): `check -f`, `verify`, `analyze dot-mir`... Mount the crate
+# (writable: cargo's target/ folder, and the folders of the graphs
+# RAPx draws) on /src, the working directory. The registry cache is
+# CARGO_HOME, /var/cache/cargo: a volume, as a crate's dependencies are
+# fetched from crates.io. /tmp is gcc's and rustc's: with a read-only root
+# filesystem, a tmpfs there. Only this machine's compile target is
+# installed (no rustup, no `--target` for another). RAPX_CLEAN,
+# RAPX_RECURSIVE and RAPX_LOG are RAPx's. Runs with a read-only root
+# filesystem, no capability and no-new-privileges.
+# https://github.com/safer-rust/RAPx/blob/main/README.md
+
+# Versions come from containers/rapx/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md).
+
+# RAPx has no git tag: the crate is its release. --checksum: crates.io's.
+# --chmod: the build user reads it (a download is root's, mode 600).
+FROM scratch AS source
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ADD --link \
+    --chmod=0644 \
+    --checksum=sha256:${BASE_CHECKSUM} \
+    https://static.crates.io/crates/rapx/rapx-${BASE_VERSION}.crate /rapx.crate
+
+# The final image's base, by digest, which Renovate moves. Read by the
+# closure stage too: the packages it holds are the ones not to copy again.
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e AS runtime
+
+# Debian trixie, with Rust's own image: the packages below come from its
+# snapshot.
+FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+
+ARG BASE_VERSION
+ARG DEBIAN_CODENAME
+ARG DEBIAN_SNAPSHOT_VERSION
+ARG NIGHTLY_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+ENV RUSTUP_TOOLCHAIN=nightly-${NIGHTLY_VERSION}
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# libz3-dev, pkg-config and libclang-dev: z3-sys finds Z3 through
+# pkg-config and generates its bindings with libclang. cargo-auditable:
+# embeds the dependency list in the binaries, for the SBOM and the
+# vulnerability scans.
+# The nightly, with rustc-dev and rust-src: RAPx's build script reads
+# them from the sysroot. rustup checks every component against the
+# dated manifest's sha256.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends cargo-auditable libclang-dev libz3-dev pkg-config
+rm -rf /var/lib/apt/lists/*
+rustup toolchain install "${RUSTUP_TOOLCHAIN:?build with docker buildx bake, see containers/AGENTS.md}" --profile minimal --component rustc-dev,rust-src
+EORUN
+
+# Build as the image's user, not root: neither the crates' build scripts
+# nor RAPx's build script get root. No passwd entry needed: CARGO_HOME
+# and RUSTUP_HOME are set, /usr/local/cargo is writable by all. WORKDIR
+# creates its folder owned by USER: /out takes the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /build
+
+# RAPx's install (its install.sh runs cargo install), from the crate's own
+# Cargo.lock. rpath: rapx and cargo-rapx find the toolchain's
+# librustc_driver in ../lib, as rustc does, so the image needs no
+# LD_LIBRARY_PATH. -L: the linker finds libLLVM (a link script in the
+# sysroot's lib, which rustc doesn't search) there. Caches: uid sets the owner of a new cache only, and
+# one is shared by every build that uses its id (the target by default):
+# ids of their own, as containers/garage does.
+RUN --mount=type=bind,from=source,source=/rapx.crate,target=/rapx.crate \
+    --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=rapx-target-65532,uid=65532,gid=65532,target=/build/target \
+    <<EORUN
+tar -xzf /rapx.crate --strip-components=1
+sysroot="$(rustc --print sysroot)"
+export RUSTFLAGS="-L native=${sysroot}/lib -C link-arg=-Wl,-rpath,\$ORIGIN/../lib"
+cargo auditable install --locked --no-track --path . --root /out/usr/local
+EORUN
+
+# The toolchain at /usr/local, Rust's standalone installer's default
+# prefix, so cargo, rustc, rapx and cargo-rapx share /usr/local/bin, on
+# PATH. Installed again, in a folder of its own and without rustc-dev and
+# rust-src (most of the toolchain's size, which only the build reads): a
+# component can't be removed from the first one, rustup renames folders
+# across the build's layers. Not copied: rustdoc, the debugger scripts, the
+# manuals and completions, which RAPx never runs. The licenses of cargo and
+# rust are.
+RUN <<EORUN
+export RUSTUP_HOME=/tmp/rustup
+rustup toolchain install "${RUSTUP_TOOLCHAIN}" --profile minimal
+sysroot="$(rustc --print sysroot)"
+mkdir -p /out/usr/local/share/doc /out/var/cache/cargo
+cp -a "${sysroot}/bin/cargo" "${sysroot}/bin/rustc" /out/usr/local/bin/
+cp -a "${sysroot}/lib/." /out/usr/local/lib/
+cp -a "${sysroot}/share/doc/." /out/usr/local/share/doc/
+rm -r /tmp/rustup
+EORUN
+
+# Debian trixie, the release distroless' cc-debian13 is built from: the
+# libraries copied here are the ones the final image's base has.
+FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS closure
+
+ARG DEBIAN_CODENAME
+ARG DEBIAN_SNAPSHOT_VERSION
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# What the final image runs of Debian's: gcc and libc6-dev, the linker
+# cargo needs for build scripts and proc-macros (no g++, make or
+# pkg-config); libz3-4, which RAPx links; graphviz and fonts-dejavu-core,
+# for the graphs RAPx draws with `dot`; coreutils, the `mkdir` and `rm`
+# RAPx runs; zlib1g, which rustc's LLVM links.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+dpkg-query -W -f '${Package}\n' | sort > /tmp/before
+apt-get install -y --no-install-recommends coreutils fonts-dejavu-core gcc graphviz libc6-dev libz3-4 zlib1g
+dpkg-query -W -f '${Package}\n' | sort > /tmp/after
+rm -rf /var/lib/apt/lists/*
+EORUN
+
+# What the final image needs of Debian's: the packages the install added,
+# coreutils, and the packages owning the libraries ldd finds for every
+# file copied and for the toolchain below (its rpath finds librustc_driver
+# in /out), minus the packages the base has (/var/lib/dpkg/status.d/ of
+# runtime). Copied as dpkg installed them, with their status and md5sums
+# in /var/lib/dpkg/status.d/, where distroless records its own packages
+# and scanners read them.
+# /lib is a link to /usr/lib here and in runtime: the files are copied
+# under /usr, so a layer never replaces that link. Folders aren't copied:
+# --parents creates them. Files the list names but the disk lacks: docs
+# but the copyright, which trixie-slim's dpkg excludes
+# (/etc/dpkg/dpkg.cfg.d/docker).
+# What no package owns, because a postinst made it: `cc`, which rustc
+# links through (update-alternatives); Graphviz's plugin registry, which
+# `dot` reads (without it, it tries to write it, and a non-root user
+# can't); fontconfig's configuration links and font cache.
+RUN --mount=type=bind,from=runtime,target=/runtime \
+    --mount=type=bind,from=build,source=/out,target=/out \
+    <<EORUN
+mkdir -p /rootfs/var/lib/dpkg/status.d
+stage() {
+    while read -r pkg; do
+        dpkg-query -L "${pkg}" | sed -E 's#^/(lib|bin|sbin)/#/usr/\1/#' | while read -r file; do
+            if [ -f "${file}" ] || [ -L "${file}" ]; then
+                echo "${file}"
+            fi
+        done | xargs -r -d '\n' cp -a --parents -t /rootfs/
+        dpkg-query -s "${pkg}" > "/rootfs/var/lib/dpkg/status.d/${pkg}"
+        md5sums="$(dpkg-query --control-path "${pkg}" md5sums)"
+        if [ -f "${md5sums}" ]; then
+            cp "${md5sums}" "/rootfs/var/lib/dpkg/status.d/${pkg}.md5sums"
+        fi
+    done
+}
+find /runtime/var/lib/dpkg/status.d -type f ! -name '*.md5sums' -printf '%f\n' | sort > /tmp/base
+{ comm -13 /tmp/before /tmp/after; echo coreutils; } | sort -u | comm -23 - /tmp/base > /tmp/packages
+stage < /tmp/packages
+find /rootfs /out -type f -exec ldd {} + 2>/dev/null > /tmp/ldd || true
+if grep -F 'not found' /tmp/ldd; then exit 1; fi
+awk '$3 ~ "^/(usr/)?lib/" { print $3 }' /tmp/ldd | sort -u | xargs -r realpath | xargs dpkg-query -S | cut -d: -f1 | sort -u | comm -23 - /tmp/base | comm -23 - /tmp/packages > /tmp/more
+stage < /tmp/more
+wc -l /tmp/packages /tmp/more
+ln -s gcc /rootfs/usr/bin/cc
+cp -a --parents /usr/lib/*/graphviz/config* /etc/fonts /var/cache/fontconfig /rootfs/
+mkdir -p /rootfs/usr/share/doc/rapx
+cp /usr/share/common-licenses/MPL-2.0 /rootfs/usr/share/doc/rapx/
+rm /tmp/before /tmp/after /tmp/base /tmp/packages /tmp/more /tmp/ldd
+EORUN
+
+
+FROM runtime AS image
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.title="RAPx" \
+    org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="MPL-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+COPY --link --from=closure /rootfs/ /
+COPY --link --from=build --chown=0:0 /out/usr/ /usr/
+COPY --link --from=build --chown=65532:65532 /out/var/cache/cargo/ /var/cache/cargo/
+
+ENV CARGO_HOME=/var/cache/cargo
+USER 65532:65532
+WORKDIR /src
+ENTRYPOINT ["/usr/local/bin/cargo", "rapx"]
+CMD ["--help"]
+
+# The tests, in a stage of their own: busybox's `ash` and `grep` copied
+# beside the real binaries, so that RAPx runs with the image's own mkdir,
+# rm, dot and cc. The image keeps no shell. Each smoke-test/ crate is one
+# of RAPx's own test cases (containers/rapx/REFERENCES.md); the output
+# lines are its tests' own.
+FROM image AS smoke
+ARG BASE_VERSION
+ENV CARGO_HOME=/tmp/cargo
+COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:1cc558b1f5eb0f08cdbb0dc2b38c434877bc4c106ba357520a4c1d2505061afb /bin/busybox /bin/ash
+COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:1cc558b1f5eb0f08cdbb0dc2b38c434877bc4c106ba357520a4c1d2505061afb /bin/busybox /bin/grep
+COPY --link --chown=65532:65532 smoke-test/ /tmp/smoke/
+SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
+
+# Checks: the version, the use-after-free check, the graphs (the files
+# Graphviz drew), the verifier (a sound and an unsound function). RAPx
+# prints on stderr; cargo exits 0 whatever it finds.
+RUN cargo rapx --version | grep -F "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+
+WORKDIR /tmp/smoke/uaf_1
+RUN <<EORUN
+cargo rapx check -f 2>&1 | grep -F 'Dangling pointer detected in function "create_vec"'
+cargo rapx analyze dot-mir
+[ -s MIR_dot_graph/create_vec.png ]
+EORUN
+
+WORKDIR /tmp/smoke/mut_ptr_read_precond
+RUN <<EORUN
+cargo rapx verify --mode targeted > /tmp/verify.log 2>&1
+grep -A 12 'function: read_slot$' /tmp/verify.log | grep -F 'result: SOUND'
+grep -A 12 'function: read_slot_without_init$' /tmp/verify.log | grep -F 'result: UNSOUND'
+touch /tmp/smoke-passed
+EORUN
+
+# The image, once its tests passed: this exec-form instruction, which
+# needs the smoke stage's marker, is how a build runs them. Last
+# instruction, as a shell-less image's one check that RAPx starts.
+FROM image
+RUN --mount=type=bind,from=smoke,source=/tmp/smoke-passed,target=/tmp/smoke-passed ["/usr/local/bin/cargo", "rapx", "--version"]
