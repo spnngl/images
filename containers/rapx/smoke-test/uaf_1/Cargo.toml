@@ -1,0 +1,11 @@
+# Copied from RAPx's rapx/tests/check/uaf_1/Cargo.toml, at the commit of the release this image builds.
+[package]
+name = "uaf_1"
+version = "0.1.0"
+edition = "2024"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[workspace]

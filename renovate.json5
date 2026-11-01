@@ -38,6 +38,27 @@
             "transformTemplates": [
                 "{ \"sourceUrl\": $substringBefore($[0].url, \"/releases/download/\"), \"releases\": [$.{ \"version\": version, \"releaseTimestamp\": releaseDate, \"digest\": hash }] }"
             ]
+        },
+        // The crates.io versions of a crate (RAPx: the crate is its release,
+        // upstream has no git tag), each with its .crate's sha256 (`checksum`)
+        // and publish date. The URL, with the crate's name, is the dependency's
+        // `registryUrl` (containers/rapx/docker-bake.hcl). Not the built-in
+        // `crate` datasource: it gives no digest. Yanked versions left out.
+        "crates-io": {
+            "format": "json",
+            "transformTemplates": [
+                "{ \"releases\": [versions[yanked = false].{ \"version\": num, \"releaseTimestamp\": created_at, \"digest\": checksum }] }"
+            ]
+        },
+        // The dated nightlies of Rust (containers/rapx): the dist/<date>/
+        // folders of Rust's manifests list, which has one line per channel
+        // manifest, all channels, the date as version.
+        "rust-nightly": {
+            "defaultRegistryUrlTemplate": "https://static.rust-lang.org/manifests.txt",
+            "format": "plain",
+            "transformTemplates": [
+                "{ \"releases\": [releases[$contains(version, \"/channel-rust-nightly.toml\")].{ \"version\": $substringBefore($substringAfter(version, \"/dist/\"), \"/\") }] }"
+            ]
         }
     },
     "customManagers": [
@@ -146,13 +167,14 @@
     ],
     "packageRules": [
         {
-            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag, a release of the *arr apps, an npm package or a crate (actions, k3s, upstream sources, Prowlarr, Radarr, Lidarr, Sonarr, configarr's pnpm, fluffychat's wasm-pack, automerged and run in a networked build step): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
+            "description": "Wait 3 days before proposing a GitHub or Forgejo release or tag, a release of the *arr apps, an npm package or a crate (actions, k3s, upstream sources, Prowlarr, Radarr, Lidarr, Sonarr, configarr's pnpm, fluffychat's wasm-pack, RAPx's crate, automerged and run in a networked build step): time for a broken or malicious release to be pulled, and for CRI-O to publish the repository of a new Kubernetes minor release. Not images: Renovate only gets release dates from Docker Hub, and holds updates without one.",
             "matchDatasources": [
                 "github-releases",
                 "github-release-attachments",
                 "github-tags",
                 "forgejo-tags",
                 "custom.servarr",
+                "custom.crates-io",
                 "npm",
                 "crate"
             ],
@@ -245,6 +267,14 @@
             ],
             "groupName": "fluffychat",
             "separateMajorMinor": false
+        },
+        {
+            "description": "RAPx and the Rust nightly its build names (containers/rapx): one PR, so a RAPx release comes with the nightly it supports. RAPx is a rustc driver built against rustc's internals: the build fails while the newest nightly is newer than what RAPx's newest release supports (lockstep). The PR then waits for RAPx's next release, or the nightly is set by hand to the release's publish date (containers/rapx/AGENTS.md, Updates). Proposed on Saturday between midnight and 5am, like the snapshot above: a nightly comes every day, and nearly every PR would fail. A new year is a major update of the nightly (versioning by date): not automerged.",
+            "matchDepNames": ["rapx", "rust-nightly"],
+            "groupName": "rapx",
+            "separateMajorMinor": false,
+            "schedule": ["* 0-4 * * 6"],
+            "updateNotScheduled": false
         },
         {
             "description": "The application images' FROM lines carry a digest. Not the bootc images': see ignorePresets.",
