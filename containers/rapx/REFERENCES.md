@@ -10,8 +10,7 @@
   by rustup, `./install.sh`).
 - The crate's own commit: `.cargo_vcs_info.json` in the crate.
   Upstream has no git tag; the smoke-test crates come from there.
-- Nightlies: `https://static.rust-lang.org/manifests.txt`, one
-  `dist/<date>/channel-rust-nightly.toml` per nightly.
+- Nightlies: `https://static.rust-lang.org/dist/<date>/channel-rust-nightly.toml`.
 
 ## Decisions
 
@@ -19,12 +18,15 @@
   release is a published version, and crates.io gives its checksum, which
   `ADD --checksum` verifies. `cargo install --locked` uses the crate's
   `Cargo.lock`.
-- **A dated nightly, from the same date as the release:** `rapx/build.rs`
-  detects rustc's internals by grepping the sysroot's source and adapts
-  to the nightlies of its time, so the build is only reproducible with a
-  pinned date. Renovate's built-in `crate` datasource gives no checksum,
-  and nothing lists nightlies: two custom datasources
-  (`renovate.json5`), in one group.
+- **The nightly dated the day of the release:** `rapx/build.rs` detects
+  rustc's internals by grepping the sysroot's source and adapts to the
+  nightlies of its time, so the build needs a pinned date, and the newest
+  nightly can be newer than what RAPx supports. A release's publish date
+  caps it: both 0.7.65 and 0.7.66 built and passed `smoke` on the
+  nightly of their day. The datasource `crates-io-date` turns crates.io's
+  publish dates into the nightly's versions, so one PR moves both
+  (`renovate.json5`). Renovate's built-in `crate` datasource gives no
+  checksum: `crates-io` is the second custom datasource.
 - **rustc-dev and rust-src in the build only:** `rapx/build.rs` and
   `rustc_private` need them (1.2 GB with them, 0.5 GB without). A
   component can't be removed in place, as rustup renames folders across
