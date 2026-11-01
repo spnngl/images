@@ -1,0 +1,9 @@
+# Copied from RAPx's rapx/tests/verify_cases/mut_ptr_read_precond/Cargo.toml, at the commit of the release this image builds.
+[package]
+name = "mut_ptr_read_precond"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[workspace]
