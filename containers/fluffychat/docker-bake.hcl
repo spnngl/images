@@ -34,7 +34,7 @@ target "fluffychat" {
     ]
     wasm_pack = [
       # renovate: datasource=crate depName=wasm-pack versioning=semver depType=automerge
-      { version = "0.15.0" },
+      { version = "0.15.1" },
     ]
     sws = [
       # renovate: datasource=github-tags depName=static-web-server/static-web-server extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
