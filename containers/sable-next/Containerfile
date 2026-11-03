@@ -49,6 +49,24 @@ FROM docker.io/library/node:24.22-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1
 # Debian trixie: its musl-tools build the server's C libraries.
 FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS rust
 
+# pnpm dependencies, shared by the wasm build script (which imports
+# proper-lockfile) and the frontend: one frozen, script-free install.
+FROM node AS pnpm-dependencies
+
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+# No passwd entry for the build user below: corepack and pnpm keep their
+# caches here.
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+RUN corepack enable pnpm
+
+USER 65532:65532
+WORKDIR /build
+COPY --link --from=source --chown=65532:65532 / /build/
+RUN --mount=type=cache,id=pnpm-store-65532,uid=65532,gid=65532,target=/tmp/pnpm-store \
+    pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/pnpm-store
+
 # The Rust core: upstream's release build of it (pnpm wasm:build).
 FROM rust AS wasm
 
@@ -70,6 +88,7 @@ COPY --link --from=node /usr/local/bin/node /usr/local/bin/
 USER 65532:65532
 WORKDIR /build
 COPY --link --from=source --chown=65532:65532 / /build/
+COPY --link --from=pnpm-dependencies --chown=65532:65532 /build/node_modules/ /build/node_modules/
 
 # wasm-bindgen and binaryen's wasm-opt: the releases upstream's mise
 # installs, as its .mise/mise.lock names them for this platform, with
@@ -111,30 +130,17 @@ RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/l
     node scripts/build/build-wasm.mjs --release
 
 # The web app: static files.
-FROM node AS frontend
+FROM pnpm-dependencies AS frontend
 
 ARG BASE_VERSION
-ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-# HOME for the build user below (no passwd entry): corepack and pnpm keep
-# their caches there. Before SHELL: hadolint (2.15.1) checks the RUNs
-# after an ENV or ARG as /bin/sh, whatever SHELL says.
-ENV HOME=/tmp
-SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
-
-# pnpm: upstream's (package.json's packageManager), which corepack
-# downloads and verifies. The shim goes in /usr/local/bin: root's.
-RUN corepack enable pnpm
 
 # Built as the image's user, in its own copy: neither the packages nor
 # the build get root.
-USER 65532:65532
-WORKDIR /build
-COPY --link --from=source --chown=65532:65532 / /build/
 # --chown: a --link layer holds the parent folders too, root's otherwise.
 COPY --link --from=wasm --chown=65532:65532 /build/src/generated/wasm/ /build/src/generated/wasm/
 
-# Upstream's release build (.forgejo/actions/setup): pnpm install
-# --frozen-lockfile, then vite build, with mise's NODE_OPTIONS and the
+# Upstream's release build (.forgejo/actions/setup): after pnpm install
+# --frozen-lockfile, vite build with mise's NODE_OPTIONS and the
 # release workflow's variables, its Sentry DSN left out (as its forks):
 # Sentry stays off and its settings hidden. VITE_SENTRY_ENVIRONMENT:
 # the stable release's, which makes the sourcemaps hidden (no
@@ -148,9 +154,7 @@ COPY --link --from=wasm --chown=65532:65532 /build/src/generated/wasm/ /build/sr
 # core's WebAssembly holds the string); the bundle holds the release
 # VITE_APP_VERSION names as a string, the About page's "v<version>"
 # (unset, it reads "vdev").
-# The store is a cache of its own, as the cargo caches.
-RUN --mount=type=cache,id=pnpm-store-65532,uid=65532,gid=65532,target=/tmp/pnpm-store <<EORUN
-pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/pnpm-store
+RUN <<EORUN
 VITE_APP_VERSION="${BASE_VERSION}" SABLE_BUILD_FLAVOR=stable VITE_SENTRY_ENVIRONMENT=production \
     NODE_OPTIONS=--max-old-space-size=4096 pnpm exec vite build
 find dist -name '*.map' -delete

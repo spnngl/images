@@ -77,8 +77,10 @@
   permits are for the desktop app or the CLIs of other jobs (electron,
   `@sentry/cli`, workerd); esbuild and lightningcss ship their binaries
   in platform packages. `prepare` runs `svelte-kit sync`, which `vite
-  build` runs itself, and installs git hooks. The build and the test
-  show nothing needs them.
+  build` runs itself, and installs git hooks. The `pnpm-dependencies`
+  stage is shared by the wasm build and frontend: `build-wasm.mjs`
+  imports `proper-lockfile`, a devDependency. The build and the test show
+  no install scripts are needed.
 - **DeepFilterNet downloaded by the build:** `vite build` fetches two
   assets and checks their sha256 (`fetch-deepfilternet.mjs`): upstream
   pins them, so no pin here. They are in neither the SBOM nor the
