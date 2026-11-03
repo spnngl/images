@@ -1,0 +1,301 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+
+# BuildKit (https://github.com/moby/buildkit), rootless: buildkitd under
+# RootlessKit (a user namespace) with runc, the build client buildctl, and
+# git for git sources, built from source as static binaries on this
+# repository's git image. Not shell-less: git's `git submodule` is a shell
+# script (containers/buildkit/REFERENCES.md).
+#
+# Runtime contract: UID/GID 65532 (nonroot, HOME /tmp: busybox's passwd).
+# It needs what a user namespace needs, none of it root: the container
+# runtime's default seccomp profile and AppArmor policy blocking
+# unshare/mount, so run it Unconfined (docker: `--security-opt
+# seccomp=unconfined --security-opt apparmor=unconfined --security-opt
+# systempaths=unconfined`; Kubernetes: `seccompProfile` and
+# `appArmorProfile` Unconfined, host user namespace, `allowPrivilegeEscalation:
+# true` for the setuid newuidmap and newgidmap) and a kernel allowing
+# unprivileged user namespaces (containers/buildkit/AGENTS.md). Default
+# capabilities. Kubernetes has no `systempaths=unconfined`: the default
+# argument below is for it, `--oci-worker-no-process-sandbox`.
+# State: /var/lib/buildkit, writable by 65532, a volume to mount an
+# emptyDir or a disk on (not nosuid, not nodev). Listens on the unix
+# socket /run/user/65532/buildkit/buildkitd.sock only, BUILDKIT_HOST for
+# buildctl. A network address is root-equivalent: add it with TLS,
+# arguments `--addr tcp://0.0.0.0:1234 --tlscacert /certs/ca.pem
+# --tlscert /certs/cert.pem --tlskey /certs/key.pem` (port 1234, the
+# certificates from the runtime). Configuration: /etc/buildkit/buildkitd.toml.
+
+# Versions come from containers/buildkit/docker-bake.hcl: build with
+# `docker buildx bake --allow security.insecure` (containers/AGENTS.md).
+# Alpine: the golang image's, for the *-static libseccomp that runc links
+# (containers/buildkit/REFERENCES.md).
+FROM docker.io/library/golang:1.27-alpine3.24@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+ARG RUNC_VERSION
+ARG RUNC_CHECKSUM
+ARG ROOTLESSKIT_VERSION
+ARG ROOTLESSKIT_CHECKSUM
+ARG SHADOW_VERSION
+ARG SHADOW_CHECKSUM
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+# The image's SBOM also lists this stage's packages: libseccomp and
+# libcap, linked into runc and newuidmap, which scanners can't see in
+# the binaries.
+ARG BUILDKIT_SBOM_SCAN_STAGE=true
+# Alpine's shell, busybox's ash: POSIX, with pipefail. By its name, so
+# that hadolint knows it has pipefail (DL4006).
+SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
+
+# build-base: gcc, make, musl's headers and static libc. bash: runc's
+# Makefile. libseccomp-dev, libseccomp-static and linux-headers: runc's
+# cgo. libcap-dev and libcap-static: newuidmap's capability handling, see
+# below. autoconf, automake, libtool and gettext-dev: shadow's configure,
+# from git, not a release tarball (autoreconf runs gettext's autopoint).
+# Not pinned (DL3018): Alpine keeps only the newest build of each package
+# in a release branch; the image digest pins the branch, Renovate moves
+# it, the weekly rebuild picks up fixes (containers/buildkit/REFERENCES.md).
+# /rootfs: the image's folders, and /setuid, made here as root: the build
+# user below has no right to create them under /.
+# hadolint ignore=DL3018
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+apk add --no-cache \
+    autoconf automake bash build-base gettext-dev libcap-dev libcap-static \
+    libseccomp-dev libseccomp-static libtool linux-headers pkgconf
+# 100000 and 65536: what Debian's useradd and BuildKit's own image give a
+# user. By number, which newuidmap matches as it does a name (the git
+# image's passwd calls 65532 nonroot).
+install -d /rootfs/etc /rootfs/run/user
+install -d -o 65532 -g 65532 /setuid
+echo '65532:100000:65536' > /rootfs/etc/subuid
+echo '65532:100000:65536' > /rootfs/etc/subgid
+install -d -o 65532 -g 65532 -m 0700 /rootfs/run/user/65532 /rootfs/var/lib/buildkit
+EORUN
+
+# --checksum: each tag must resolve to this commit, tags can be moved.
+# No .git: the versions are given below.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/moby/buildkit.git#v${BASE_VERSION} /src/buildkit
+ADD --link \
+    --checksum=${RUNC_CHECKSUM} \
+    https://github.com/opencontainers/runc.git#v${RUNC_VERSION} /src/runc
+ADD --link \
+    --checksum=${ROOTLESSKIT_CHECKSUM} \
+    https://github.com/rootless-containers/rootlesskit.git#v${ROOTLESSKIT_VERSION} /src/rootlesskit
+ADD --link \
+    --checksum=${SHADOW_CHECKSUM} \
+    https://github.com/shadow-maint/shadow.git#${SHADOW_VERSION} /src/shadow
+
+# Build as the image's user, not root: the sources stay root's. WORKDIR
+# creates its folder owned by USER: /out takes the image's files.
+# HOME: Go's caches.
+USER 65532:65532
+ENV HOME=/tmp
+WORKDIR /out
+WORKDIR /build
+
+# BuildKit's Dockerfile, as its release binaries (the `buildkitd` and
+# `buildctl` stages): CGO off, static, the tags it gives buildkitd, the
+# version, commit and package in the --version output (and the gRPC
+# user agent). Dependencies are vendored. -trimpath: no build path in
+# the binaries. Not stripped, as upstream's.
+WORKDIR /build/buildkit
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build <<EORUN
+cp -R /src/buildkit/. .
+pkg=github.com/moby/buildkit
+ldflags="-X ${pkg}/version.Version=v${BASE_VERSION} -X ${pkg}/version.Revision=${BASE_CHECKSUM} -X ${pkg}/version.Package=${pkg}"
+export CGO_ENABLED=0 GOFLAGS=-mod=vendor
+go build -trimpath -ldflags "${ldflags} -extldflags -static" \
+    -tags 'osusergo netgo static_build seccomp' \
+    -o /out/usr/bin/buildkitd ./cmd/buildkitd
+go build -trimpath -ldflags "${ldflags}" -o /out/usr/bin/buildctl ./cmd/buildctl
+install -D -m 0644 LICENSE /out/usr/share/doc/buildkit/LICENSE
+EORUN
+
+# RootlessKit: upstream's build, CGO off. Its version is a constant in
+# the source. Its dependencies are not vendored: downloaded, checked
+# against go.sum.
+WORKDIR /build/rootlesskit
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build <<EORUN
+cp -R /src/rootlesskit/. .
+CGO_ENABLED=0 go build -trimpath -o /out/usr/bin/rootlesskit ./cmd/rootlesskit
+install -D -m 0644 LICENSE /out/usr/share/doc/rootlesskit/LICENSE
+EORUN
+
+# runc, as BuildKit's Dockerfile builds it: cgo, for libseccomp, linked
+# statically (`make static`: musl's static-pie). Without libpathrs,
+# runc's default since 1.5 (a Rust library, safe path resolution):
+# BuildKit's Dockerfile builds it without too, and every RUN it starts
+# is unprivileged. runc 1.6 requires it (containers/buildkit/REFERENCES.md).
+# COMMIT: what `runc --version` prints, without a .git to read it from.
+WORKDIR /build/runc
+RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
+    --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build <<EORUN
+cp -R /src/runc/. .
+make static RUNC_BUILDTAGS=-libpathrs COMMIT="${RUNC_CHECKSUM}"
+install -D -m 0755 runc /out/usr/bin/runc
+install -D -m 0644 LICENSE /out/usr/share/doc/runc/LICENSE
+EORUN
+
+# newuidmap and newgidmap, from shadow: RootlessKit runs them (setuid
+# root, the only way to write a user namespace's id maps beyond its own
+# user). Static as the rest: libtool drops a -static given to configure,
+# `-all-static` at make time keeps it. libcap: with it, newuidmap drops
+# every capability but CAP_SETUID and takes the caller's UID back, as the
+# kernel wants to write the id map of a namespace that user created; with
+# root's UID and a container's default capabilities (no CAP_SYS_ADMIN) it
+# fails "write to uid_map failed: Operation not permitted". configure
+# doesn't look for libcap: LIBCAP gives it. Only the two programs and the
+# library they link; no PAM, SELinux, audit or login programs.
+# --strip: as distributions ship it. In /setuid, not /out: the last stage
+# copies them with their own mode, 4755 (setuid root).
+WORKDIR /build/shadow
+RUN <<EORUN
+cp -R /src/shadow/. .
+autoreconf -fi
+./configure --prefix=/usr --disable-shared --enable-static --disable-nls \
+    --disable-man --disable-logind --without-libpam --without-selinux \
+    --without-acl --without-attr --without-audit --without-su \
+    --without-libbsd --without-btrfs --without-skey --without-tcb
+make -j"$(nproc)" -C lib
+make -j"$(nproc)" -C src LDFLAGS=-all-static LIBCAP=-lcap newuidmap newgidmap
+install -D -s -m 0755 src/newuidmap src/newgidmap -t /setuid
+install -D -m 0644 COPYING /out/usr/share/doc/shadow/COPYING
+EORUN
+
+# Smoke test: the versions; every program static (no interpreter, so it
+# runs on any libc or none). The daemon is tested in the last stage, as
+# shipped.
+RUN <<EORUN
+/out/usr/bin/buildkitd --version | grep -Fx "buildkitd github.com/moby/buildkit v${BASE_VERSION} ${BASE_CHECKSUM}"
+/out/usr/bin/buildctl --version | grep -Fx "buildctl github.com/moby/buildkit v${BASE_VERSION} ${BASE_CHECKSUM}"
+/out/usr/bin/rootlesskit --version | grep -Fx "rootlesskit version ${ROOTLESSKIT_VERSION}"
+/out/usr/bin/runc --version | grep -Fx "runc version ${RUNC_VERSION}"
+find /out /setuid -type f -perm -u+x | while read -r f; do
+    readelf -h "${f}" > /dev/null 2>&1 || continue
+    if readelf -lW "${f}" | grep -F 'program interpreter' \
+        || readelf -dW "${f}" | grep -F NEEDED; then
+        exit 1
+    fi
+done
+EORUN
+
+FROM ghcr.io/spnngl/images/git:2.56.0@sha256:92ad8c89604940a7e437c4b710e4dad485313eae206e4100bdcb95cb34ca14fb
+ARG BASE_VERSION
+
+# Licenses: BuildKit's, runc's and RootlessKit's (Apache-2.0), shadow's
+# (BSD-3-Clause), libseccomp's (LGPL-2.1-only, linked into runc); git's,
+# OpenSSH's and busybox's come with the base image.
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0 AND BSD-3-Clause AND GPL-2.0-only AND LGPL-2.1-only AND SSH-OpenSSH" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# The programs, root's, not the build user's, so that the user can't
+# replace them. Then newuidmap and newgidmap, setuid root (--chmod). Then
+# the folders and the id ranges (the build stage's /rootfs).
+COPY --link --from=build --chown=0:0 /out/ /
+COPY --link --from=build --chown=0:0 --chmod=4755 /setuid/ /usr/bin/
+COPY --link --from=build /rootfs/ /
+
+# USER: what buildkitd reads, not the UID, to tell that it runs rootless
+# (cmd/buildkitd/main.go, isRootlessConfig); then its defaults are the
+# user's: the state under XDG_DATA_HOME/buildkit, the configuration under
+# XDG_CONFIG_HOME/buildkit, the socket under XDG_RUNTIME_DIR/buildkit.
+# Set to the paths above, not HOME's (/tmp, writable but not a volume).
+ENV USER=nonroot \
+    XDG_RUNTIME_DIR=/run/user/65532 \
+    XDG_DATA_HOME=/var/lib \
+    XDG_CONFIG_HOME=/etc \
+    BUILDKIT_HOST=unix:///run/user/65532/buildkit/buildkitd.sock
+
+# Numeric, so runAsNonRoot can check it.
+USER 65532:65532
+
+# Smoke test, with the entitlement `security.insecure`: the container
+# the build runs in must be allowed what a user namespace needs
+# (docker buildx bake --allow, setup-buildx-action's buildkitd-flags,
+# containers/AGENTS.md). The daemon runs as in a container, out of
+# /tmp (a tmpfs: nothing of it stays in a layer), and builds an image:
+# - a git source with a submodule, over git://, as git's daemon serves it:
+#   buildkitd execs git, and `git submodule` its shell;
+# - a RUN as root and a RUN as another user in the build's own user
+#   namespace: what the user namespaces' id ranges, newuidmap and runc
+#   do together.
+# kill (DL3001) stops the daemon and the git server this step started.
+# /tmp: the working directory, a tmpfs here.
+WORKDIR /tmp
+# hadolint ignore=DL3001
+RUN --security=insecure --mount=type=tmpfs,target=/tmp <<EORUN
+set -xeu
+# The insecure RUN has the capabilities newuidmap would get from its
+# setuid bit: only a container without them shows it works (AGENTS.md).
+[ -u /usr/bin/newuidmap ] && [ -u /usr/bin/newgidmap ]
+export XDG_RUNTIME_DIR=/tmp/run XDG_DATA_HOME=/tmp/data
+export BUILDKIT_HOST="unix://${XDG_RUNTIME_DIR}/buildkit/buildkitd.sock"
+export GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=smoke GIT_AUTHOR_EMAIL=smoke@localhost
+export GIT_COMMITTER_NAME=smoke GIT_COMMITTER_EMAIL=smoke@localhost
+mkdir -m 0700 "${XDG_RUNTIME_DIR}"
+
+# The repositories: main has the submodule sub.
+mkdir git
+git init -q -b main git/sub.git
+echo sub > git/sub.git/file
+git -C git/sub.git add file
+git -C git/sub.git commit -q -m sub
+git daemon --reuseaddr --listen=127.0.0.1 --base-path=/tmp/git --export-all &
+gitd=$!
+i=0
+until git ls-remote git://127.0.0.1:9418/sub.git > /dev/null 2>&1; do
+    i=$((i + 1))
+    [ "${i}" -lt 30 ]
+    sleep 1
+done
+git init -q -b main git/main.git
+git -C git/main.git submodule add -q git://127.0.0.1:9418/sub.git sub
+git -C git/main.git commit -q -m main
+
+# The build: busybox from this image runs the checks, as the context's
+# only program.
+mkdir ctx
+cp /bin/busybox ctx/busybox
+cat > ctx/Dockerfile <<EOF
+FROM scratch
+ADD git://127.0.0.1:9418/main.git#main /repo
+COPY busybox /busybox
+RUN ["/busybox", "grep", "-Fx", "sub", "/repo/sub/file"]
+RUN ["/busybox", "sh", "-c", "[ \$(/busybox id -u) = 0 ]"]
+USER 1000
+RUN ["/busybox", "sh", "-c", "[ \$(/busybox id -u) = 1000 ]"]
+EOF
+rootlesskit buildkitd --oci-worker-no-process-sandbox > buildkitd.log 2>&1 &
+daemon=$!
+trap 'cat /tmp/buildkitd.log >&2' EXIT
+i=0
+until buildctl debug workers > /dev/null 2>&1; do
+    i=$((i + 1))
+    [ "${i}" -lt 30 ]
+    sleep 1
+done
+buildctl build --frontend dockerfile.v0 --local context=ctx --local dockerfile=ctx \
+    --output type=oci,dest=/tmp/image.tar
+trap - EXIT
+kill "${daemon}" "${gitd}"
+EORUN
+
+# The state: the working directory and the volume.
+WORKDIR /var/lib/buildkit
+VOLUME /var/lib/buildkit
+
+# rootlesskit's arguments are buildkitd's: `docker run <image> --addr ...`
+# replaces the default argument below, with Kubernetes' `args:`.
+ENTRYPOINT ["/usr/bin/rootlesskit", "/usr/bin/buildkitd"]
+CMD ["--oci-worker-no-process-sandbox"]

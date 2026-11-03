@@ -74,6 +74,9 @@ By what the app needs at runtime; name that need in the image's
   distroless' `cc-debian13` with the dated nightly it is built against,
   gcc and the libraries it runs copied with their dpkg status
   (`containers/rapx`).
+- A rootless build daemon: `containers/buildkit`, static binaries built
+  on the golang image and copied onto the git image, tested with
+  `security.insecure` (its Bake target's `entitlements`).
 - Data other images copy (lists, databases): `containers/datalists`,
   on `scratch`, tagged `latest`.
 - A distribution's root filesystem, for CI jobs that build its
@@ -95,7 +98,8 @@ By what the app needs at runtime; name that need in the image's
 - **Shell-less**: the final image has no shell, so everything it runs is
   exec form, with absolute paths. Busybox excepted: a shell is its
   purpose; git, built `FROM` busybox: hooks, aliases and some of its
-  commands run through `/bin/sh`; and gentoo, a build environment.
+  commands run through `/bin/sh`; buildkit, built `FROM` git: git's
+  `submodule` command is a shell script; and gentoo, a build environment.
 - **User** `65532:65532`, numeric so `runAsNonRoot` can check it. Root
   only when the app needs it, with the reason in the header
   (`cs-firewall-bouncer`, `nftables-exporter`, `spegel`, `gentoo`).
@@ -103,6 +107,10 @@ By what the app needs at runtime; name that need in the image's
   `SOURCE_DATE_EPOCH`. An image whose file times matter sets
   `output = ["type=image,rewrite-timestamp=false"]` on its target;
   `build-apps.yml` reads that option alone (`containers/gentoo`).
+- **Entitlements**: a build step that needs more than a build container
+  gets (a daemon making a user namespace) sets `entitlements =
+  ["security.insecure"]` on its target; `build-apps.yml` passes it as
+  `allow`. Locally, the builder must permit it (`containers/buildkit`).
 - **Runtime contract** (ports, volumes, environment) lives in the
   Containerfile's or spec's header, or in the image's `AGENTS.md`.
 

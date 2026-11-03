@@ -10,8 +10,8 @@ unsigned, to Docker Hub, `docker.io/loladelannoy/<name>:<BASE_VERSION>`:
   for the first install, with image-builder.
 - **Application images** (`containers/`): upstream apps the hosts run,
   shell-less (busybox excepted: a shell is its purpose; git, built on
-  it: its hooks and aliases need one; and gentoo, a build environment
-  for CI jobs), from a
+  it: its hooks and aliases need one; buildkit, built on git: it runs
+  `git submodule`; and gentoo, a build environment for CI jobs), from a
   Containerfile on `scratch`, a Dalec spec, or a DHI definition. Built with `docker buildx`.
 
 The two share no build input: different builders, workflows and rules.
