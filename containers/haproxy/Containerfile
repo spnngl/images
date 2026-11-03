@@ -163,7 +163,7 @@ server=$!
 [ "$(curl -fsS --retry 30 --retry-delay 1 --retry-connrefused http://127.0.0.1:8080/)" = '[1]' ]
 [ "$(curl -fsS --insecure --http3-only https://127.0.0.1:8443/)" = '[1]' ]
 [ "$(curl -fsS -H 'X-Smoke-Test-Src: 1.1.1.1' http://127.0.0.1:8080/)" = 'AS13335 AU' ]
-curl -fsS http://127.0.0.1:8080/metrics | grep -q '^haproxy_process_'
+curl -fsS http://127.0.0.1:8080/metrics | grep '^haproxy_process_' > /dev/null
 kill -USR1 "${server}"
 wait "${server}"
 rm /tmp/haproxy-vv /tmp/features /tmp/sections /tmp/symbols /tmp/smoke-test.crt /tmp/smoke-test.key
