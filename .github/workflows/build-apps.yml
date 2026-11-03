@@ -115,6 +115,8 @@ jobs:
       #   commits keep the build cache (.github/REFERENCES.md).
       # - rewritetimestamp: the target's output's rewrite-timestamp, true
       #   when it sets none (see build).
+      # - allow: the target's entitlements, comma-separated; none for most
+      #   (see build).
       # Bake takes one -f per file, and contexts from the repo root:
       # relative paths, from where it runs.
       # nullglob: no Bake file gives no target, not the pattern.
@@ -162,6 +164,7 @@ jobs:
                     repositories: (reduce ($target.tags[] | sub(":[^:/]+$"; "")) as $r ([]; if index([$r]) then . else . + [$r] end)),
                     buildargs: (($target.args // {}) + {SOURCE_DATE_EPOCH: $epochs[$target.context]} | to_entries | map("\(.key)=\(.value)") | join("\n")),
                     rewritetimestamp: (first($target.output[]? | ."rewrite-timestamp" // empty) // "true"),
+                    allow: (($target.entitlements // []) | join(",")),
                     resolved: $target
                   }
               )
@@ -291,6 +294,10 @@ jobs:
       # (containers/AGENTS.md). Pull requests: also an OCI layout, for the
       # scan below (nothing else keeps the image on the runner).
       # An empty line is no output.
+      # allow: the entitlements the target asks for (buildkit's smoke test
+      # runs a daemon: security.insecure); setup-buildx's builder permits
+      # security.insecure and network.host by default, so a target gets
+      # nothing it doesn't name.
       # Build cache, one scope per target and platform; mode=max: the
       # build stages hold the work. ignore-error: fork pull requests can't
       # write it. Weekly and manual rebuilds skip it, to fetch the
@@ -304,6 +311,7 @@ jobs:
           target: ${{ matrix.image.target }}
           platforms: linux/${{ matrix.platform.arch }}
           build-args: ${{ matrix.image.buildargs }}
+          allow: ${{ matrix.image.allow }}
           provenance: mode=max,version=v1
           sbom: true
           cache-from: type=gha,scope=${{ env.ARTIFACT }}

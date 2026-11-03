@@ -70,6 +70,13 @@ Dalec, and one way to build, attest and sign is simpler.
   option, and the workflow reads that option alone: its own outputs
   replace the rest. Not an `args` entry: a Containerfile warns on an
   argument it doesn't read, Dalec fails on it.
+- **`allow` from the target's `entitlements`:** an image whose build runs
+  something privileged asks for it in Bake (`containers/buildkit`: its
+  smoke test starts a daemon, which `security.insecure` lets create a
+  user namespace). The workflow reads that attribute and passes it to
+  `build-push-action`; setup-buildx's default builder permits
+  `security.insecure` and `network.host` (`defaultBuildkitdFlags`), so
+  nothing else changes, and a target that names none gets none.
 - **`docker/build-push-action`** on a `docker-container` builder (the
   docker driver can't attest). The image sets its own
   `org.opencontainers.image.source` label.
