@@ -6,7 +6,7 @@
 # Base image major release, also the tag of this image. CI sets it with
 # --build-arg (.github/workflows/build-bootc.yml); keep this default in sync.
 # Available tags: https://quay.io/repository/fedora/fedora-bootc?tab=tags
-ARG BASE_VERSION=44
+ARG BASE_VERSION=45
 
 
 # The host system, shared by dockerenv and kubeenv.

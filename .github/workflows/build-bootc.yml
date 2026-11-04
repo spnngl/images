@@ -105,10 +105,10 @@ jobs:
         # The push job reuses this list (YAML anchor).
         image: &images
           - name: fedora
-            version: "44"
+            version: "45"
             target: dockerenv
           - name: fedora
-            version: "44"
+            version: "45"
             target: kubeenv
             # Renovate updates both in one replacement (renovate.json5):
             # keep them on consecutive lines, in this order.
