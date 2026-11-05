@@ -1,0 +1,20 @@
+# The softnet budget of usr/lib/sysctl.profiles.d/mlx5-large.conf, on large
+# machines with a Mellanox NIC: their traffic outruns the NET_RX softirq's
+# default budget. After systemd-sysctl, so that these values win. Enabled by
+# the Containerfile (`wants`).
+[Unit]
+Description=Apply sysctl tuning on large machines with Mellanox NICs
+DefaultDependencies=no
+After=systemd-sysctl.service systemd-udev-settle.service
+Before=network-pre.target
+ConditionMemory=>=128G
+ConditionCPUs=>=64
+ConditionPathExistsGlob=/sys/bus/pci/drivers/mlx5_core/0000*
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/systemd/systemd-sysctl /usr/lib/sysctl.profiles.d/mlx5-large.conf
+
+[Install]
+WantedBy=multi-user.target

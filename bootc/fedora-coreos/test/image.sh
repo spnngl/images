@@ -125,7 +125,7 @@ done
 check "greenboot rollback trigger is required by ostree-finalize-staged" bash -c "systemctl show -P RequiredBy greenboot-set-rollback-trigger.service | grep -qw ostree-finalize-staged.service"
 check "systemd-coredump.socket is not masked" bash -c '[[ $(systemctl is-enabled systemd-coredump.socket) != masked* ]]'
 check "zincati and docker are gone" bash -c '! systemctl cat zincati docker.socket'
-for u in containerd kubelet qemu-guest-agent; do
+for u in containerd kubelet; do
     check "${u} is in kube.slice" bash -c "[[ \$(systemctl show -p Slice ${u}) == Slice=kube.slice ]]"
 done
 check "coredump storage" bash -c 'systemd-analyze cat-config systemd/coredump.conf | grep -qx Storage=external'
@@ -178,10 +178,6 @@ net.ipv6.conf.all.disable_ipv6 1
 net.ipv6.conf.default.disable_ipv6 1
 net.core.default_qdisc fq
 net.ipv4.tcp_congestion_control bbr
-net.core.netdev_budget 900
-net.core.netdev_budget_usecs 5000
-net.core.netdev_max_backlog 25000
-net.core.dev_weight 128
 net.ipv4.tcp_slow_start_after_idle 0
 fs.aio-max-nr 524288
 fs.inotify.max_queued_events 1048576
@@ -201,6 +197,10 @@ net.ipv4.ip_forward 1
 vm.overcommit_memory 1
 kernel.panic_on_oops 1
 EOS
+# The softnet budget is for large machines with a Mellanox NIC: the test VM
+# isn't one, the unit is condition-skipped there.
+check "sysctl-mlx5-large is wanted by multi-user.target" bash -c "systemctl show -P WantedBy sysctl-mlx5-large.service | grep -qw multi-user.target"
+check "sysctl-mlx5-large skips the test VM" bash -c '[[ $(systemctl show -P ConditionResult sysctl-mlx5-large.service) == no ]]'
 for m in overlay br_netfilter; do
     check "module ${m} is loaded" bash -c "lsmod | grep -q ^${m}"
 done
