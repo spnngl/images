@@ -471,9 +471,11 @@ jobs:
       # uploads, then publishes it, and deletes the draft if an upload fails:
       # a published release always has its disk. A re-run replaces the assets
       # of its release, or publishes the draft a killed run left.
+      # Outside the checkout, gh finds no repository: GH_REPO names it.
       - working-directory: ${{ runner.temp }}/disk
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
         run: |-
           release="fedora-coreos-${BASE_VERSION}-v${KUBERNETES_VERSION}-${GITHUB_SHA::7}"
           asset=fedora-coreos-openstack.x86_64.qcow2
