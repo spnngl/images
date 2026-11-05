@@ -13,21 +13,15 @@ ignore:
   - vulnerability: CVE-2026-33186
     reason: grpc of kubelet and kubeadm; next Kubernetes release
     package: {name: google.golang.org/grpc, version: v1.72.2}
-  - vulnerability: CVE-2026-33186
-    reason: grpc of crictl; next cri-tools release
-    package: {name: google.golang.org/grpc, version: v1.75.0}
   - vulnerability: CVE-2026-78663
     reason: x/net of crictl; next cri-tools release
-    package: {name: golang.org/x/net, version: v0.47.0}
+    package: {name: golang.org/x/net, version: v0.51.0}
   - vulnerability: CVE-2026-78663
     reason: x/net of kubelet, kubeadm and kubectl; next Kubernetes release
     package: {name: golang.org/x/net, version: v0.56.0}
-  - vulnerability: CVE-2025-68121
-    reason: Go 1.25.0 of crictl; next cri-tools release
-    package: {name: stdlib, version: go1.25.0}
   - vulnerability: CVE-2026-78663
-    reason: Go 1.25.0 of crictl; next cri-tools release
-    package: {name: stdlib, version: go1.25.0}
+    reason: Go 1.26.2 of crictl; next cri-tools release
+    package: {name: stdlib, version: go1.26.2}
 
   # Fedora's packages: fixed by a FCOS release, through BASE_VERSION, or a
   # Fedora update.
