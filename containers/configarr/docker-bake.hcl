@@ -15,7 +15,7 @@ target "configarr" {
     # Updates).
     node = [
       # renovate: datasource=docker depName=docker.io/library/node
-      { tag = "24.22.2-trixie-slim", digest = "sha256:54f84b4cf8432b21aaffd5d3ce8d41e12cea0d10d33c09d2f3c9879d49d6b446" },
+      { tag = "26.13.0-trixie-slim", digest = "sha256:ed670413da17a3a71ef1bf95ae5fb78817a39442c32f6428719e06358aec9128" },
     ]
     # Upstream's major (its Dockerfile's corepack prepare).
     pnpm = [
