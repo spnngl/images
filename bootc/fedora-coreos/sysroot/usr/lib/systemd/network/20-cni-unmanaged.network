@@ -1,0 +1,10 @@
+# Cilium owns its interfaces: pods' lxc* (netkit or veth), cilium_host,
+# cilium_net, cilium_vxlan, and any veth. Each link networkd manages costs it
+# sockets.
+#
+# 99-vm-dhcp.network skips them already (Kind=!*); this keeps them out whatever else matches.
+[Match]
+Name=lxc* cilium_* veth* cali*
+
+[Link]
+Unmanaged=yes

@@ -1,0 +1,9 @@
+# The Kubernetes daemons (containerd, kubelet) and the QEMU guest agent, out
+# of system.slice: Slice=kube.slice in their units' drop-ins. Pods aren't
+# here: the kubelet puts them in kubepods.slice, next to this one.
+# No resource limits: the kubelet's kubeReserved/systemReserved caps
+# kubepods.slice instead. See systemd.slice(5) and
+# https://kubernetes.io/docs/tasks/administer-cluster/reserve-compute-resources/
+[Unit]
+Description=Kubernetes daemons (containerd, kubelet)
+Documentation=man:systemd.slice(5)

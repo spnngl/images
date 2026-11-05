@@ -1,0 +1,29 @@
+#!/bin/bash
+# Get the instance's meta_data.json, from the config drive when there is one
+# (a cloud can have no metadata service), else from the metadata service, as
+# Afterburn does. Then make udev re-evaluate the disks, so that
+# /dev/disk/by-tag/* appear (usr/libexec/openstack-disk-by-tag reads the file).
+# Run by usr/lib/systemd/system/openstack-disk-tags.service.
+set -euo pipefail
+
+dest=/run/openstack/meta_data.json
+# The file can hold the instance's user metadata: root only.
+umask 077
+mkdir -p "${dest%/*}"
+
+drive=$(blkid -l -t LABEL=config-2 -o device || true)
+if [[ -n ${drive} ]]; then
+    mnt=$(mktemp -d)
+    trap 'umount "${mnt}" 2>/dev/null || true; rmdir "${mnt}"' EXIT
+    mount -o ro "${drive}" "${mnt}"
+    cp "${mnt}/openstack/latest/meta_data.json" "${dest}.tmp"
+else
+    # The metadata service can answer late after network-online.
+    curl --silent --show-error --fail --retry 10 --retry-delay 2 --retry-all-errors \
+        --output "${dest}.tmp" http://169.254.169.254/openstack/latest/meta_data.json
+fi
+mv "${dest}.tmp" "${dest}"
+
+udevadm control --reload-rules
+udevadm trigger --action=change --subsystem-match=block
+udevadm settle

@@ -1,0 +1,4 @@
+# Cinder volume tags to /dev/disk/by-tag/<tag>. string_escape=replace: a tag is
+# anyone's text, it can't add a path component or a second link.
+ACTION!="remove", SUBSYSTEM=="block", KERNEL=="sd*[!0-9]", ENV{ID_SERIAL_SHORT}=="?*", IMPORT{program}="/usr/libexec/openstack-disk-by-tag"
+ACTION!="remove", SUBSYSTEM=="block", KERNEL=="sd*[!0-9]", ENV{OS_TAG}=="?*", OPTIONS+="string_escape=replace", SYMLINK+="disk/by-tag/$env{OS_TAG}"

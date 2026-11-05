@@ -1,0 +1,14 @@
+# Cilium installs cilium-cni in /opt/cni/bin (/var/opt/cni/bin), and containerd
+# executes it: the exception to wx-remount.service's noexec /var.
+[Unit]
+Description=Allow execution in /var/opt/cni/bin
+Before=kubelet.service containerd.service
+
+[Mount]
+What=/var/opt/cni/bin
+Where=/var/opt/cni/bin
+Type=none
+Options=bind,exec
+
+[Install]
+WantedBy=local-fs.target

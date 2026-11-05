@@ -1,0 +1,10 @@
+# Started by etcd-network-tuning.path. NICs that appear later (hotplug)
+# aren't tuned.
+[Unit]
+Description=Prioritise etcd traffic on the physical NICs
+After=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/etcd-network-tuning.sh
