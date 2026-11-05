@@ -101,6 +101,12 @@ check "amd-hsmp is for bare metal only" bash -c "systemctl cat amd-hsmp | grep -
 check "qemu-guest-agent runs on the VM" systemctl is-active qemu-guest-agent
 check "etcd-network-tuning.path is wanted by paths.target" bash -c "systemctl show -P WantedBy etcd-network-tuning.path | grep -qw paths.target"
 check "etcd-network-tuning waits for the etcd manifest" bash -c '[[ $(systemctl show -P ActiveState etcd-network-tuning.service) == inactive ]] || test -e /etc/kubernetes/manifests/etcd.yaml'
+check "openscap.timer is wanted by timers.target" bash -c "systemctl show -P WantedBy openscap.timer | grep -qw timers.target"
+# Profile `node`: what the build's scan can't check (systemd services) too.
+check "openscap.service scans the node, no rule fails" bash -c '
+    sudo systemctl start openscap.service &&
+    ! sudo grep -E "<result>(fail|error)</result>" /var/lib/openscap/results.xml &&
+    sudo test -s /var/lib/openscap/openscap.prom'
 check "rpm-ostree-countme.timer is masked" bash -c '[[ $(systemctl is-enabled rpm-ostree-countme.timer) == masked ]]'
 for u in auditd chronyd; do
     check "${u} is active" systemctl is-active "${u}"

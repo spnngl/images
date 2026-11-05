@@ -1,0 +1,3 @@
+# A command runs in a pseudo-terminal of its own: it can't push input to the
+# caller's terminal once sudo exits.
+Defaults use_pty

@@ -1,0 +1,46 @@
+#!/bin/bash
+# Scan the node with the image's OpenSCAP content, profile `node` of
+# usr/share/xml/scap/fedora-coreos/tailoring.xml, and list what /etc changed
+# from the image: /usr is the image's, read-only, but /etc drifts. See
+# usr/lib/systemd/system/openscap.service.
+#
+# Output, in /var/lib/openscap:
+#   results.xml, report.html  the scan
+#   etc-diff.txt              `ostree admin config-diff`: M(odified), A(dded),
+#                             D(eleted), paths relative to /etc
+#   openscap.prom             counts of both, for node-exporter's textfile
+#                             collector: mount /var/lib/openscap into its
+#                             pod, and give that path to
+#                             --collector.textfile.directory
+set -euo pipefail
+
+dir=/var/lib/openscap
+cd "${dir}"
+
+# Exit 2: rules failed, the results are written.
+status=0
+oscap xccdf eval --profile xccdf_local_profile_node \
+    --tailoring-file /usr/share/xml/scap/fedora-coreos/tailoring.xml \
+    --results results.xml --report report.html \
+    /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml >/dev/null || status=$?
+[[ ${status} == 0 || ${status} == 2 ]] || exit "${status}"
+
+ostree admin config-diff >etc-diff.txt
+
+# Written whole, then renamed: the collector never reads half a file.
+{
+    echo "# HELP openscap_rules Rules of the last scan, by result."
+    echo "# TYPE openscap_rules gauge"
+    for result in pass fail error unknown notapplicable notchecked; do
+        echo "openscap_rules{result=\"${result}\"} $(grep -c "<result>${result}</result>" results.xml || true)"
+    done
+    echo "# HELP openscap_etc_changes Files of /etc changed from the image, by change."
+    echo "# TYPE openscap_etc_changes gauge"
+    for change in M A D; do
+        echo "openscap_etc_changes{change=\"${change}\"} $(grep -c "^${change} " etc-diff.txt || true)"
+    done
+    echo "# HELP openscap_last_scan_timestamp_seconds End of the last scan."
+    echo "# TYPE openscap_last_scan_timestamp_seconds gauge"
+    echo "openscap_last_scan_timestamp_seconds $(date +%s)"
+} >openscap.prom.tmp
+mv openscap.prom.tmp openscap.prom

@@ -37,15 +37,30 @@ EOF
 # mdadm, lvm2, cryptsetup, tpm2-tools, chrony, socat, iptables-nft and
 # - systemd-resolved. systemd-networkd manages the network.
 # - greenboot checks an update boots and rolls back when it doesn't.
+# - openscap-scanner and scap-security-guide check the image (scan stage,
+#   below) and the nodes (openscap.timer); audispd-plugins holds audit's
+#   syslog plugin.
 #
+# scap-security-guide holds about 40 products' content and the remediation
+# scripts, 735 MB; the scans read Fedora's data stream alone, 21 MB. rpm skips
+# the rest as net shared paths (exact paths), which `rpm -V` doesn't report
+# missing.
+ssg=/usr/share/xml/scap/ssg/content
+skip="$(dnf -q repoquery --latest-limit=1 --list scap-security-guide |
+    grep "^${ssg}/" | grep -vx "${ssg}/ssg-fedora-ds.xml" | paste -sd:)"
+echo "%_netsharedpath /usr/share/scap-security-guide:${skip}" > /etc/rpm/macros.ssg
+
 # No weak dependencies, as FCOS itself is built.
 dnf -yq install --setopt=install_weak_deps=False \
     "kubelet-${KUBERNETES_VERSION}" "kubeadm-${KUBERNETES_VERSION}" "kubectl-${KUBERNETES_VERSION}" \
     cri-tools \
     conntrack-tools sysstat iproute-tc rootlesskit etcd net-tools qemu-guest-agent greenboot \
-    greenboot-default-health-checks systemd-networkd openscap-scanner scap-security-guide
+    greenboot-default-health-checks systemd-networkd openscap-scanner scap-security-guide \
+    audispd-plugins
 
-rm -f /etc/yum.repos.d/kubernetes.repo
+rm -f /etc/yum.repos.d/kubernetes.repo /etc/rpm/macros.ssg
+test "$(ls "${ssg}")" = ssg-fedora-ds.xml
+test ! -e /usr/share/scap-security-guide
 
 # Updates come from Cluster API (a new machine) or bootc-operator, never from
 # the node itself. moby-engine and docker-cli: containerd is the runtime.
@@ -75,8 +90,9 @@ grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /run/selinux-policy
 # State directories the packages ship: kubelet, etcd (kubeadm runs it as a
-# static pod) and sysstat's pcp-libs create theirs at runtime.
-rm -rf /var/lib/etcd /var/lib/kubelet /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated
+# static pod), sysstat's pcp-libs and audisp-remote create theirs at runtime.
+rm -rf /var/lib/etcd /var/lib/kubelet /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated \
+    /var/spool/audit
 # moby-engine's group, left behind by its removal.
 if getent group docker >/dev/null; then groupdel docker; fi
 EORUN
@@ -85,10 +101,15 @@ EORUN
 COPY --link ./fedora-coreos/sysroot/ /
 
 RUN <<EORUN
-# COPY keeps a file's mode, and git only stores the executable bit.
-chmod 0440 /etc/sudoers.d/99-rootless
-visudo -cf /etc/sudoers.d/99-rootless
-chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount}
+# COPY keeps a file's mode, and git only stores the executable bit. It also
+# gives its folders 0755: the packages' modes come back.
+chmod 0750 /etc/sudoers.d
+chmod 0700 /etc/ssh/sshd_config.d
+# The base's drop-ins too: CIS wants them 0600.
+chmod 0600 /etc/ssh/sshd_config.d/*.conf
+chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
+visudo -c
+chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount,openscap-scan}
 
 # The RPMs ship no bash completion, which etc/profile.d/kubernetes.sh loads.
 for tool in kubectl kubeadm crictl; do
@@ -101,11 +122,22 @@ chmod 0755 /usr/lib/greenboot/check/required.d/*.sh
 sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
 grep -qx 'SELINUX=permissive' /etc/selinux/config
 
-# To configure the system to notify users of last logon/access
-authselect select sssd
-sed -i -E --follow-symlinks "/\s*session\s+\[default=1\]\s+pam_lastlog2.so.*/ s/$/ showfailed/" /etc/pam.d/postlogin
-authselect check
-authselect apply-changes -b
+# No login with an empty password. The base's authselect profile stays,
+# `local`: SSSD has no provider for local users.
+authselect enable-feature without-nullok
+test -z "$(grep -l nullok /etc/pam.d/system-auth /etc/pam.d/password-auth)"
+
+# CIS's umask, 027, where no drop-in can set it: login.defs (useradd, PAM),
+# and bashrc's fallback for a shell started with umask 0 (etc/profile.d/umask.sh
+# sets the rest). Fail if a line was not found.
+sed -i -E 's/^UMASK(\s+)022$/UMASK\1027/' /etc/login.defs
+grep -qE '^UMASK\s+027$' /etc/login.defs
+sed -i 's/&& umask 022$/\&\& umask 027/' /etc/bashrc
+grep -q '&& umask 027$' /etc/bashrc
+
+# Audit events to the journal too. Fail if the plugin's line was not found.
+sed -i 's/^active = no$/active = yes/' /etc/audit/plugins.d/syslog.conf
+grep -qx 'active = yes' /etc/audit/plugins.d/syslog.conf
 
 # kubelet tries to create it, and /usr is read-only at runtime.
 mkdir -p /usr/libexec/kubernetes/kubelet-plugins/volume/exec
@@ -166,9 +198,10 @@ wants multi-user.target.wants containerd.service kubelet.service amd-hsmp.servic
     openstack-hostname.service openstack-disk-tags.service greenboot-healthcheck.service \
     systemd-networkd.service
 wants paths.target.wants etcd-network-tuning.path
+wants timers.target.wants openscap.timer
 # The base enables systemd-network-generator.service, which networkd's [Install]
 # would add too.
-wants sysinit.target.wants wx-remount.service auditd.service sssd.service chronyd.service
+wants sysinit.target.wants wx-remount.service auditd.service chronyd.service
 wants sockets.target.wants systemd-networkd.socket systemd-networkd-varlink.socket \
     systemd-networkd-resolve-hook.socket
 wants network-online.target.wants systemd-networkd-wait-online.service
@@ -190,28 +223,27 @@ test "$(readlink /opt)" = /var/opt
 rm -rf /tmp/*
 EORUN
 
-# Run OpenSCAP on the image, with a tailoring file that disables the rules that
-# don't apply to containers (mostly kernel & sysctl).
-RUN --mount=type=bind,rw,source=fedora-coreos/oscap,target=/tmp/oscap \
-    oscap xccdf eval \
-    --profile xccdf_local_profile_standard_container \
-    --tailoring-file /tmp/oscap/tailoring.xml \
-    --results /tmp/results.xml \
-    --report /tmp/report.html \
-    /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml || true
-
 # Keep this as the last instruction, on its own.
 # hadolint ignore=DL3059
 RUN bootc container lint
 
-# Dummy stage to export the OpenSCAP results with:
-#
-# ```bash
-# docker build -f bootc/fedora-coreos/Containerfile bootc/ -t coucou:latest --target export --output output
-# ```
-#
-# Don't forget to add `--results /tmp/results.xml --report /tmp/report.html`
-# to openscap xccdf eval to generate the files.
-FROM scratch AS export
-COPY --from=builder /tmp/results.xml /
-COPY --from=builder /tmp/report.html /
+# OpenSCAP scan of the image, in a stage of its own so that its files stay out
+# of the image. Profile `build` of the tailoring (sysroot/usr/share/xml/scap/):
+# what a build can check. Exit 2 means rules failed: the report is still
+# written, and build.sh fails after exporting it. Any other non-zero is the
+# scan's own failure.
+FROM builder AS scan
+RUN <<EORUN
+mkdir /openscap
+oscap xccdf eval --profile xccdf_local_profile_build \
+    --tailoring-file /usr/share/xml/scap/fedora-coreos/tailoring.xml \
+    --results /openscap/results.xml --report /openscap/report.html \
+    /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml
+EORUN
+
+# Its results alone: `--target openscap --output type=local,dest=<dir>`.
+FROM scratch AS openscap
+COPY --from=scan /openscap/ /
+
+# The image, last: the default target.
+FROM builder

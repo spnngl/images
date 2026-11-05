@@ -1,0 +1,12 @@
+# Daily, at a random time in the first hour, so that the nodes don't all scan
+# at once. Persistent: a node that was off then scans when it boots.
+[Unit]
+Description=Daily OpenSCAP scan of the node
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
