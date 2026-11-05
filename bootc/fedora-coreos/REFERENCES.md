@@ -1,0 +1,385 @@
+# fedora-coreos: references
+
+## Sources
+
+Read each at the version this repository pins.
+
+- Base image: <https://quay.io/repository/fedora/fedora-coreos?tab=tags>;
+  `github.com/coreos/fedora-coreos-config` (`manifests/`, `overlay.d/`,
+  `manifest-lock.<arch>.json`: what the base ships)
+- Disk images: `github.com/coreos/custom-coreos-disk-images`
+  (`README.md`, `custom-coreos-disk-images.sh`)
+- Kubernetes packages: `https://pkgs.k8s.io/core:/stable:/v<minor>/rpm/`
+  (kubelet, kubeadm, kubectl, cri-tools, kubernetes-cni)
+- Node settings being ported from the previous node images (Ubuntu, called
+  `capi-image-builder` below): `github.com/kubernetes-sigs/image-builder`
+  (`images/capi/ansible/roles/{containerd,kubernetes,node,sysprep}/`)
+- Cluster API: `github.com/kubernetes-sigs/cluster-api`
+  (`bootstrap/kubeadm/pkg/ignition/clc/clc.go`, `kubeadmconfig_controller.go`)
+- `github.com/coreos/ign-converter` (`translate/v23tov30`)
+- `github.com/fedora-iot/greenboot-rs` (`README.md`, `greenboot-rs.spec`,
+  `usr/`)
+- `github.com/bootc-dev/bootc-operator` (`api/v1alpha1/`,
+  `internal/controller/rollout.go`)
+- OpenSCAP: `github.com/OpenSCAP/openscap` (`utils/oscap-im`,
+  `src/OVAL/probes/oval_fts.c`) and its content, scap-security-guide:
+  `github.com/ComplianceAsCode/content` (`products/fedora/profiles/cis_server_l1.profile`,
+  `controls/cis_fedora.yml`, each rule's `rule.yml` and `oval/`), at the
+  versions of the base's
+  packages
+- `github.com/SSSD/sssd` (`src/man/sssd.conf.5.xml`)
+- grype: `github.com/anchore/grype` (`grype/presenter/models/`: its JSON;
+  `grype/match/ignore.go`, `grype/vulnerability_matcher.go`: ignore rules),
+  its database's Fedora data: `github.com/anchore/vunnel`
+  (`src/vunnel/providers/fedora/`), at the version of Fedora's package
+- Shared bootc sources: `bootc/REFERENCES.md`
+
+## Decisions
+
+### Base and Kubernetes
+
+- **Base `fedora-coreos`, stable stream (`<major>.<date>.3.<n>`):** Ignition,
+  Afterburn, coreos-installer, containerd, runc, bootupd and bootc are
+  already in it; cri-tools, kubernetes-cni, greenboot and qemu-guest-agent
+  aren't. Renovate proposes its stable releases only: the tags also hold the
+  `testing` (`.2.`) and `next` (`.1.`) streams.
+- **containerd from the base:** the runtime of `capi-image-builder`, updated
+  with the base. Our config is `/usr/lib/containerd/config.toml` (version 3,
+  imports `conf.d/*.toml` from `/usr/lib` then `/etc`), selected by
+  `containerd.service.d/20-config.conf`: the package's `/etc` file stays
+  untouched and the whole config is image content. `cri-base.json`
+  (`RLIMIT_NOFILE` 65535) and the pause image (`20-pause.toml`) are
+  generated at build, from `ctr oci spec` and
+  `kubeadm config images list`, so they can't drift from the versions
+  installed.
+- **Kubernetes RPMs from `pkgs.k8s.io`, one patch release:** signed repo;
+  ships `kubelet.service` and the kubeadm drop-in. The repo file is removed
+  in the same `RUN`. `kubernetes-cni` ships `/opt/cni/bin`, which is
+  `/var/opt` here: removed in that `RUN`, since `/var` ships empty.
+- **Tag `<BASE_VERSION>-v<KUBERNETES_VERSION>`:** Cluster API's
+  `spec.version` must match the kubeadm in the image, patch included.
+  `kubeadm init` without `--kubernetes-version` takes the newest patch
+  release of the series, which isn't in the image: pass the version.
+- **One stage:** kubeadm nodes only, no k3s, no Docker. Replaces the
+  `base`/`kubeenv`/`dockerenv` scheme of `bootc/AGENTS.md`.
+- **Removed `zincati`, `moby-engine`, `docker-cli`:** updates come only from
+  Cluster API or bootc-operator; containerd is the runtime.
+  `bootc-fetch-apply-updates.timer` and `rpm-ostreed-automatic.timer` stay
+  disabled. No `dnf autoremove`: it would take containerd with it. No weak
+  dependencies, as FCOS itself is built.
+- **`rpm-ostree-countme.timer` masked:** it reports each node to Fedora's
+  count of systems. Masked, not disabled: `preset-all` at first boot would
+  enable it again, and presets leave masked units alone.
+- **No host firewall, nftables only:** Cilium filters (host policies), so
+  `iptables-services` is removed and FCOS has neither firewalld nor ufw.
+  `iptables` itself stays, a dependency of kubelet, bootc and podman: it is
+  `iptables-nft`, which writes nf_tables. The legacy x_tables tables
+  (`ip_tables`, `ip6_tables`, `arp_tables`, `ebtables`) can't load
+  (`modprobe.d/blacklist.conf`, `install … /bin/false`), so no tool can add
+  rules that `nft list ruleset` doesn't show.
+- **SELinux permissive** (`/etc/selinux/config`): containerd runs with
+  `enable_selinux = false`, as in `capi-image-builder`; kept from those
+  nodes, against FCOS' advice (`docs/selinux.adoc`: enforcing, or a per-domain
+  permissive module). It still labels and logs denials.
+- **Versions not pinned:** containerd and runc (the base's) and cri-tools
+  (the newest of the Kubernetes minor's repository), unlike
+  `capi-image-builder`'s; they move with `BASE_VERSION` and are tested by
+  the build check.
+- **Ubuntu-isms not ported:** `rp_filter` stays Fedora's (loose, 2; Cilium
+  needs loose), `prips` has no Fedora package and no user, no
+  `etcd-client` (see No `etcd` package, under Vulnerabilities). FCOS' `core` user exists but can't log in
+  (`AllowUsers rootless`). Bare-metal kernel arguments come from Ignition
+  (Later).
+- **`/opt` is a symlink to `var/opt`** (already in the base): nothing in
+  `/opt` comes from the image.
+- **No preloaded images:** `/var` is filled at install only and never
+  updated afterwards, and every node reaches the registries. docker.io pulls try public mirrors first
+  (`etc/containerd/certs.d/docker.io/hosts.toml`): `mirror.gcr.io`, then
+  `public.ecr.aws/docker` (official images only), against Docker Hub's pull
+  limits. In `/etc`: a node's own mirror replaces it.
+- **containerd endpoints:** debug (pprof, no authentication) on a unix
+  socket, not `capi-image-builder`'s `0.0.0.0:23541`: the dedicated servers
+  have public IPs. Metrics stay on `0.0.0.0:23542` for Prometheus; Cilium
+  host policies decide who reaches them.
+- **Own `sysroot/`:** node settings differ from `bootc/fedora`: sshd on 22,
+  systemd-networkd, no firewalld.
+- **Node settings in the repo** (`rootless` user, its SSH keys, sysctls): a deliberate deviation from
+  "credentials from the runtime". `rootless` is `1500:1500` in `sysusers.d`, and
+  `tmpfiles.d` refers to it by number: Ignition may create users in the
+  initrd, which would take 1000 and collide, and `ostree-populate-var`
+  runs before `sysusers` and fails on a name ("Failed to resolve user",
+  emergency mode). The sysusers file also declares the group first, or
+  systemd-sysusers refuses the fixed GID.
+- **SSH keys from the image only:** `AuthorizedKeysFile` is
+  `/usr/lib/ssh/authorized_keys/%u`, read-only: a key comes and goes with an
+  image. Keys that Ignition, Afterburn or an OpenStack keypair write (to
+  `~/.ssh/authorized_keys.d`) are ignored. The test VM adds its key with a
+  drop-in of its own (`vm.sh`).
+- **sshd `00-hardening.conf`:** sshd keeps the first value of a keyword, so
+  `00-` beats Fedora's drop-ins. `UsePAM yes` stays: with a locked password
+  (`!`), `UsePAM no` would reject every login. The jump-host rule
+  (`90-allow-proxyjump.conf`) allows local forwarding only: `-J` needs no
+  more. `sshd -T` shows `Match` blocks only with `-C user=…`.
+- **Units enabled by links in `/usr/lib/systemd/system`:** FCOS runs
+  `systemctl preset-all` on first boot, which removes the `/etc` links of
+  `systemctl enable` that no preset names. A preset file would do too, but
+  only with the `enable` kept beside it for the first boot of the build
+  tests; links in `/usr` are image content, the same on every boot, and
+  `preset-all` leaves them alone. Each link is what the unit's `[Install]`
+  asks for. `systemctl is-enabled` reports such a unit `disabled` (it only
+  looks in `/etc`): check `systemctl show -P WantedBy` instead.
+- **Ported from `capi-image-builder`:** chrony sources (Cloudflare + Google,
+  `sourcedir /etc/chrony/sources.d` replaces the `pool` line), sysctls
+  (`995`-`998`, `90-kubernetes.conf` from image-builder's node
+  role; the softnet budget only on machines of 64 CPUs and 128 GB with a
+  Mellanox NIC, `sysctl-mlx5-large.service`, whose traffic outruns the
+  default budget), modules, `usb-storage` blacklist, resolved fallback DNS,
+  `kube.slice`, `amd-hsmp.service` (AMD CPUs only), coredump settings
+  (`systemd-coredump.socket` is static), the QEMU read-ahead udev rule
+  (kernel 7.x gives 8 MB read-ahead to rotational QEMU disks, OVH volumes are
+  capped at 50 MB/s). Left out: cloud-init default user, AppArmor, IPv6
+  forwarding (IPv6 is off in `995-ipv6.conf`). bash completions of kubectl,
+  kubeadm and crictl are generated at build: the RPMs ship none.
+- **etcd network tuning on control planes only** (`etcd-network-tuning.path`,
+  on kubeadm's etcd manifest): image-builder's udev rule runs it on every
+  NIC of every node, where it replaces a worker's multi-queue qdisc with one
+  queue for nothing. Each `prio` band gets `fq`, which BBR paces with.
+- **systemd-networkd, not NetworkManager** (as `capi-image-builder`'s
+  nodes): NetworkManager stays installed but masked,
+  because Ignition, `dracut-network`, `afterburn-dracut` and `kdump-utils`
+  require it, and FCOS' prebuilt initramfs runs it to fetch the Ignition
+  config. Its extras (`nmstate`, team, tui, cloud-setup) are removed;
+  ModemManager isn't installed. Units are enabled by `/usr/lib` links, as the
+  rest.
+  - VMs get DHCP on their NICs from `99-vm-dhcp.network`
+    (`Virtualization=vm`, last match, so Ignition's files win). Dedicated
+    servers get their network (bonds) from Ignition only: DHCP on a port
+    that isn't the right one gives a wrong default route.
+  - `network-online.target` once one link is routable (`--any`): an
+    OpenStack NIC without DHCP would hold the boot for 2 minutes.
+  - From `capi-image-builder`: `10-nodelocaldns.network` (`KeepConfiguration`:
+    the pod owns the address), `20-cni-unmanaged.network` (`lxc*`,
+    `cilium_*` and `veth*`: Cilium's pods use netkit, and networkd runs
+    out of file descriptors tracking hundreds of them) and
+    `10-cni-foreign.conf` (networkd never removes Cilium's routes, rules
+    and nexthops).
+- **VM or dedicated server, by `systemd-detect-virt`:**
+  VM-only: `qemu-guest-agent`, the QEMU read-ahead rule, the OpenStack
+  units, `99-vm-dhcp.network`. Bare-metal only: `amd-hsmp.service`.
+- **Cilium ≥ 1.20 cluster-wide before a node of this image joins:** older
+  releases fail on kernel 7.x's BPF verifier (see `vm.sh cluster`).
+- **OpenStack disk tags and hostname:** the previous images' udev helper
+  read cloud-init's `instance-data.json`. Here `openstack-fetch-metadata` (kernel
+  command line `ignition.platform.id=openstack` only) reads
+  `/openstack/latest/meta_data.json` into `/run/openstack`, and
+  `99-openstack-by-tag.rules` links `/dev/disk/by-tag/<tag>`.
+  The config drive is read first, as Afterburn does: a cloud can have no
+  metadata service. The file is root-only (user metadata), and udev escapes
+  the tag in the link name.
+  `openstack-hostname.service` runs `afterburn --cmdline` itself rather than
+  requiring `afterburn.service`, which fails on other platforms
+  ("unknown provider 'qemu'") and leaves `systemctl --failed` non-empty;
+  one shell, because systemd reads an `EnvironmentFile` before
+  `ExecStartPre` writes it.
+- **The data array and the public bond's MAC come with bare-metal
+  installs** (Later): RAID10, its LUKS bound to the TPM with no PCR, since PCR 4
+  changes with each bootc update.
+
+### OpenSCAP
+
+- **scap-security-guide's `cis_server_l1` profile, tailored**
+  (`usr/share/xml/scap/fedora-coreos/tailoring.xml`, each rule's reason
+  beside it): CIS Fedora Server level 1, a benchmark auditors know.
+  `standard`'s rules that CIS lacks and the image follows (crypto policy,
+  auditd retention, root logins) stay selected. Profile `node` for the
+  nodes; `build` also turns off what only a booted node shows: rules
+  asking systemd, mounts made at boot (`/tmp`, `/dev/shm`), and sysctls
+  (each rule also reads the running kernel, in a build the build host's).
+- **CIS's easy fixes are in the image:** sshd (`00-hardening.conf`,
+  drop-ins 0600), sudo `use_pty`, umask 027, login banners in
+  `/etc/issue{,.net}`, journald, `atm` and `can` modules off, kernel and
+  IPv4 sysctls (`usr/lib/sysctl.d/990-cis.conf`), no `dnsmasq` nor `rsync`
+  (`rpm -e` fails if a package requires them). umask has
+  no drop-in: `login.defs` and `/etc/bashrc` are edited in place.
+  `/etc/systemd/journald.conf` replaces the base's empty one, not a
+  drop-in, as the `ForwardToSyslog` check reads only it.
+- **`kernel.yama.ptrace_scope = 1`:** a debugger in a pod needs
+  `CAP_SYS_PTRACE` (`kubectl debug --profile=general`). The base's
+  `10-default-yama-scope.conf` (0) is deleted, not masked from `/etc`: its
+  package is required by `elfutils-libs`, and the rule reads every
+  `sysctl.d` file.
+- **Turned off, still to decide** (grouped last in the tailoring):
+  `accounts_tmout`, CIS's crypto policy, `systemd-journal-remote`.
+- **Content in the image, Fedora's data stream alone** (21 MB of 735):
+  the nodes scan with the build's content and tailoring. rpm's
+  `%_netsharedpath` (`lib/transaction.cc` of `github.com/rpm-software-management/rpm`,
+  exact paths) skips the other products and the remediation scripts, and
+  `rpm -V` doesn't report them missing.
+- **Scan in stages after the image** (`scan`, then `reports` from
+  `scratch`): the reports stay out of the image, and the image stays the
+  default target. `build.sh` exports them.
+- **`build.sh` fails on a failed rule**, before building the image:
+  `oscap` exits 2 when a rule fails, which the `scan` stage accepts so
+  that the report is exported; any other error fails the stage.
+- **Nodes scan daily** (`openscap.timer`, `usr/libexec/openscap-scan`):
+  profile `node`, results and counts for node-exporter's textfile collector
+  in `/var/lib/openscap`. A systemd timer, not a Kubernetes job: the
+  image's own scanner, content and tailoring, nothing to keep in step.
+- **`/etc` drift, from the same timer** (`ostree admin config-diff`):
+  `/usr` is the image's and read-only, `/etc` is what changes on a node.
+  It stands in for AIDE (`aide_build_database` off).
+- **`oscap xccdf eval`, not upstream's `oscap-im`:** `oscap-im` remediates
+  the image during the build; here every fix is a Containerfile line.
+  scap-security-guide spots a bootc image being built by `/ostree` being a
+  symlink, but OpenSCAP's file probe follows symlinks: the build is
+  scanned as a plain system (`oscap-im` uses the SCE engine instead). No
+  rule of `node` depends on it. Fixed upstream by
+  https://github.com/ComplianceAsCode/content/pull/15303.
+- **Upstream fixes:** when a scap-security-guide release carries
+  https://github.com/ComplianceAsCode/content/pull/15304 (Fedora keys,
+  rpm 6), `ensure_fedora_gpgkey_installed` goes back on. `display_login_attempts`
+  (`standard`, not CIS) can't pass on Fedora 43 and later:
+  https://github.com/ComplianceAsCode/content/issues/15305.
+- **authselect profile `local`, the base's, not `sssd`:** SSSD 2.11
+  removed the files provider, so it has nothing for local users; the
+  `sssd` daemon package isn't installed, and `sssd.service`'s conditions
+  skip it with no `/etc/sssd` config. `without-nullok`: no login with an
+  empty password.
+- **`/etc/securetty`, one empty line:** no PAM module of Fedora reads it;
+  `no_direct_root_logins` wants it.
+- **Audit syslog plugin** (`audispd-plugins`, `active = yes`): audit events
+  reach the journal. Its `/var/spool/audit` is removed, as `/var` ships
+  empty.
+
+### Vulnerabilities (grype)
+
+- **grype, not `oscap oval eval`:** Fedora publishes no OVAL vulnerability
+  feed (Red Hat's covers RHEL), and OVAL only sees rpm packages, not the
+  Go modules built into kubelet or containerd. grype's database
+  holds Fedora's security updates since 2026-02 (vunnel's `fedora`
+  provider, from Bodhi), and grype reads Go binaries' build info. Trivy
+  detects CoreOS but reports nothing for it.
+- **Fedora's package, not anchore's release:** signed by Fedora, updated
+  with the image's other packages, nothing to pin. It lags a few releases
+  behind; the database schema is the same, and it reads Fedora's data.
+- **`/usr` and `/etc` only:** what the image ships. `/var` holds pod
+  images and data, `/sysroot` a second copy of `/usr`.
+- **`--by-cve`:** one id per vulnerability on every node, whichever
+  database matched it (GHSA, GO-…).
+- **`grype.prom`, the fixable ones of Medium severity and above**, one
+  series per vulnerability, package and path, valued by grype's risk
+  score; EPSS and CVSS by id; counts of every match by severity and fix
+  state, and of the ignored ones by id, so an ignore rule stays visible;
+  the database's age. `grype.json` keeps every match.
+- **`build.sh` fails on a fixable Critical**: the stage reports, and the
+  build stops after exporting, as for OpenSCAP.
+- **Ignore rules for what the image can't fix**
+  (`usr/share/grype/ignore.yaml`): Kubernetes' and Fedora's builds, and
+  false positives. In the image, so the nodes ignore the same. Each names
+  the package's exact version: an update ends the rule. grype applies them
+  after `--by-cve` too, so a CVE id matches.
+- **A daily timer, as OpenSCAP's:** the database changes daily, the image
+  doesn't. Each node downloads the database when a newer one exists.
+- **No `etcd` package:** Fedora's is 3.5.13, built with Go 1.22.2 (five
+  fixable Criticals), and kubeadm's server is 3.6. `etcdctl` is the one in
+  kubeadm's etcd image (`crictl exec`), at the server's version.
+
+### Disk images, build and test
+
+- **Disk images with `custom-coreos-disk-images`, pinned to a commit
+  (`build.sh`, `disk_images_commit`):** greenboot boot counting needs the
+  bootupd static GRUB configs that only this installer writes. It sets
+  `mitigations=auto,nosmt` by default; `build.sh` passes
+  `--extra-kargs mitigations=auto`, because `nosmt` turns off half the CPUs
+  of a node.
+- **Container image on a cluster's BuildKit** (`BUILD_KUBE_CONTEXT`,
+  `kubectl port-forward` to a free local port, a `docker buildx` remote
+  builder, `--output type=oci`): the workstation is arm64 and the targets
+  are x86_64.
+- **Disk images in a privileged pod, the workbench** (`workbench.yaml`): the
+  BuildKit is rootless and can't run osbuild; the tool names its output
+  after the host architecture, so it runs on x86_64. Its namespace must
+  allow privileged pods; `activeDeadlineSeconds` bounds the pod's life.
+- **Test VM: `qemu-system-x86_64` with KVM in the workbench:** the node
+  exposes `/dev/kvm`. Ignition goes through `fw_cfg`, a throwaway SSH key
+  comes from Butane. Its disk is NVMe, as a dedicated server's.
+- **Workbench on the image's Fedora release** (`workbench.sh` writes the
+  major of `BASE_VERSION` into `workbench.yaml`): osbuild builds the disk
+  images from a tree of the same release, and the pin can't drift.
+- **Cilium ≥ 1.20 in `vm.sh cluster`:** 1.18.3 fails on kernel 7.2's BPF
+  verifier (`call bpf_set_retval#187: R1 is not a scalar`). It runs with the
+  legacy iptables modules blocked.
+- **amd64 first:** the targets are x86_64; arm64 builds come later.
+- **Not in CI yet:** out of scope until the image is pushed. `policy.json`
+  already asks CI's signature for `ghcr.io/spnngl/images`
+  (`bootc/REFERENCES.md`); until the image is pushed and signed, bare metal
+  follows `ostree-unverified-registry:`.
+- **Renovate, never automerged** (`renovate.json5`): `BASE_VERSION` through
+  the dockerfile manager; `KUBERNETES_VERSION` (GitHub releases of
+  `kubernetes/kubernetes`, one PR per patch and per minor release: kubeadm
+  upgrades one minor at a time), Cilium (its Helm
+  repository) and `disk_images_commit` (weekly, no release upstream)
+  through custom managers. No CI builds the image, so each PR waits for
+  the build check of `AGENTS.md`.
+
+### Bootstrap
+
+- **CABPK `format: ignition`, then a webhook** (`ignition-converter/`): FCOS
+  Ignition reads spec 3.x only; CABPK renders 2.3 for Flatcar. The webhook
+  mutates the bootstrap Secret (`cluster.x-k8s.io/secret`, `format:
+  ignition`). Files off the `root` filesystem are denied: the translator
+  would map an undeclared filesystem to `/`. Declared ones (`diskSetup`)
+  convert with no spec 3 `path`, rather than one parsed from CABPK's mount
+  units: with no file on them Ignition needs none, and those units mount
+  them at boot.
+- **OS updates:** VMs get a new machine through Cluster API. Bare metal is
+  updated in place by bootc-operator with greenboot-rs rolling back
+  (Later), because reinstalling a dedicated server
+  is slow.
+- **Bare-metal install through OVH rescue and `coreos-installer
+  --ignition-file`** (Later): BYOLinux lays the disks out as one ext4 RAID1
+  `/` and boots it with the image's own script; FCOS needs its own EFI,
+  `boot` and `root` partitions and Ignition at first boot.
+
+### Greenboot
+
+- **`greenboot-default-health-checks` kept**, though its checks do little
+  here: the watchdog one skips until `GREENBOOT_WATCHDOG_CHECK_ENABLED=true`
+  (`/etc/greenboot/greenboot.conf`), the DNS one skips as
+  `/etc/ostree/remotes.d` is empty, and the wanted check of the update
+  servers fails on that, a warning only. It orders greenboot after the
+  network.
+- **Our checks** (`usr/lib/greenboot/check/required.d/`): containerd
+  active; kubelet healthy (`127.0.0.1:10248/healthz`), skipped until
+  `/etc/kubernetes/kubelet.conf` exists, because a node that kubeadm hasn't
+  joined has no running kubelet. Ordered after containerd and kubelet
+  (`greenboot-healthcheck.service.d/10-ordering.conf`).
+- **`GREENBOOT_MAX_BOOT_ATTEMPTS` is greenboot's default (3):** tested by
+  `test-greenboot.sh`: three failed boots, then rollback. greenboot
+  remounts `/boot` read-write for the operation and restores it, which
+  W^X doesn't prevent.
+
+### W^X
+
+Every writable mount is `noexec,nosuid,nodev`: `/var`, `/etc`, `/sysroot`,
+`/sysroot/ostree/deploy/*/var`, `/boot`, `/boot/efi`, `/tmp`, `/dev/shm`,
+`/run` (`usr/libexec/wx-remount`; what isn't a mount point is skipped,
+`/boot/efi` isn't one on FCOS). Units run scripts from `/usr` or through an
+interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
+
+- **`bind` in the remount:** a plain remount of `/sysroot` (read-only xfs)
+  fails with "mount point is busy". A bind remount clears the per-mount
+  flags it isn't given, so `ro` is passed again where it was set: `/sysroot`
+  and `/boot` stay read-only (FCOS warns otherwise).
+- **`/sysroot/ostree/deploy/*/var`:** a bind mount of `/var` with its own
+  flags, so `/var`'s files could be executed through it.
+- **`After=local-fs.target`, `Before=sysinit.target`** (not before
+  `local-fs.target`): `/boot` is mounted by then, and everything the unit
+  remounts exists.
+- **Exception `/var/lib/kubelet` (`var-lib-kubelet.mount`, `bind,exec`):**
+  pod volumes (`emptyDir`, `configMap`, `secret`) hold files workloads
+  execute.
+- **Exception `/var/opt/cni/bin` (`var-opt-cni-bin.mount`, `bind,exec`):**
+  Cilium installs `cilium-cni` there and containerd runs it.
+- **No exception for `/var/lib/containerd`:** the cluster pod test passes
+  without it (container root filesystems are overlay mounts of their own).
