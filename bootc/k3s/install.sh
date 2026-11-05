@@ -90,6 +90,13 @@ firewall-offline-cmd --add-port=853/tcp --add-port=7881/tcp --add-port=7881/udp 
 firewall-offline-cmd --zone=trusted --add-source=10.42.0.0/16 --add-source=10.43.0.0/16
 firewall-offline-cmd --check-config
 
+# GitHub's release downloads fail now and then in CI, and the install
+# script's curl doesn't retry: a curlrc makes every curl below retry, with a
+# backoff of 1, 2, 4... seconds.
+mkdir /tmp/curl
+printf 'retry = 6\nretry-all-errors\n' > /tmp/curl/.curlrc
+export CURL_HOME=/tmp/curl
+
 # Install k3s with the install script of the same release, which checks the
 # binary's sha256. Run twice, once per role, with the same binary:
 # k3s.service runs `k3s server` (control-plane), k3s-agent.service
