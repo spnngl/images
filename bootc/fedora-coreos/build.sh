@@ -5,8 +5,8 @@
 # Usage: bootc/fedora-coreos/build.sh <platform>[,<platform>...]
 #   platform: qemu (test VM), openstack (qcow2), metal (raw, dedicated servers)
 # Env:    BUILD_KUBE_CONTEXT  kube context of the build cluster (required)
-# Image:  ghcr.io/spnngl/images/fedora-coreos:<BASE_VERSION>-v<KUBERNETES_VERSION>,
-#         both from the Containerfile. Not pushed: the archive stays in the
+# Image:  ghcr.io/spnngl/images/fedora-coreos:<IMAGE_TAG> (versions.sh), as
+#         CI's (build-bootc.yml). Not pushed: the archive stays in the
 #         workbench (/work/fedora-coreos.ociarchive) for `bootc switch`.
 # Output: output/fedora-coreos/fedora-coreos-<platform>.x86_64.{qcow2,raw}
 #         output/fedora-coreos/reports/openscap/{results.xml,report.html}
@@ -22,9 +22,6 @@ die() {
     exit 1
 }
 
-# A commit of main (no release), proposed weekly by Renovate (renovate.json5).
-disk_images_commit="12f696dfec3b4f7fe3c8748433aa2627c0f97367"
-
 platforms="${1:-}"
 [[ -n ${platforms} ]] || die "usage: $0 <platform>[,<platform>...] (qemu, openstack, metal)"
 [[ ${platforms} =~ ^(qemu|openstack|metal)(,(qemu|openstack|metal))*$ ]] ||
@@ -35,14 +32,9 @@ command -v kubectl >/dev/null || die "kubectl not found, install it: brew instal
 [[ -n ${BUILD_KUBE_CONTEXT:-} ]] || die "BUILD_KUBE_CONTEXT is unset, set it to the kube context of the build cluster"
 
 containerfile=bootc/fedora-coreos/Containerfile
-arg() {
-    sed -n -E "s/^ARG $1=\"?([^\"[:space:]]+)\"?.*/\1/p" "${containerfile}"
-}
-base_version="$(arg BASE_VERSION)"
-kubernetes_version="$(arg KUBERNETES_VERSION)"
-[[ -n ${base_version} && -n ${kubernetes_version} ]] ||
-    die "${containerfile} needs ARG BASE_VERSION and ARG KUBERNETES_VERSION"
-image="ghcr.io/spnngl/images/fedora-coreos:${base_version}-v${kubernetes_version}"
+# shellcheck source=/dev/null
+source <(bootc/fedora-coreos/versions.sh)
+image="ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}"
 
 workbench=bootc/fedora-coreos/workbench.sh
 builder="fcos-build-$$"
@@ -84,22 +76,7 @@ reports="${out}/reports"
 rm -rf "${reports}"
 docker buildx build --builder "${builder}" --platform linux/amd64 \
     --file "${containerfile}" --target reports --output "type=local,dest=${reports}" bootc/
-failed=""
-# Rules out of the profile are `notselected`.
-grep -o '<result>[a-z]*</result>' "${reports}/openscap/results.xml" | awk -F '[<>]' '
-    $3 != "notselected" { n[$3]++ }
-    END { printf "OpenSCAP:"; for (r in n) printf " %d %s", n[r], r; print "" }'
-if grep -qE '<result>(fail|error)</result>' "${reports}/openscap/results.xml"; then
-    failed+=" OpenSCAP rules failed: ${reports}/openscap/report.html."
-fi
-# grype.prom holds the fixable vulnerabilities of Medium severity and above.
-awk -F '"' '/^grype_vulnerability\{/ { n[$4]++ }
-    END { printf "grype, fixable:"; for (s in n) printf " %d %s", n[s], s; print "" }' \
-    "${reports}/grype/grype.prom"
-if grep -q '^grype_vulnerability{.*severity="Critical"' "${reports}/grype/grype.prom"; then
-    failed+=" Fixable Critical vulnerabilities: ${reports}/grype/grype.prom."
-fi
-[[ -z ${failed} ]] || die "${failed# }"
+bootc/fedora-coreos/check-reports.sh "${reports}"
 
 # The image, from the builder's cache.
 docker buildx build --builder "${builder}" --platform linux/amd64 \
@@ -108,29 +85,10 @@ docker buildx build --builder "${builder}" --platform linux/amd64 \
 "${workbench}" up
 "${workbench}" exec bash -c 'cat > /work/fedora-coreos.ociarchive' <"${archive}"
 
-# `exec` with no command runs stdin as a script. The commit is pinned: its
-# cosa-imports hold the osbuild manifests.
-# --imgref is what `bootc upgrade` follows. The script's default names the
-# archive, absent from the node, and requires a signature our images lack.
-# --extra-kargs: the script's default for Fedora CoreOS, mitigations=auto,nosmt,
-# turns off half the CPUs; mitigations=auto is the kernel's default.
-"${workbench}" exec <<EOF
-set -euxo pipefail
-cd /work
-if [ ! -d custom-coreos-disk-images ]; then
-    git clone https://github.com/coreos/custom-coreos-disk-images
-fi
-# A clone from an earlier run lacks a commit that Renovate bumped to.
-git -C custom-coreos-disk-images fetch --quiet origin ${disk_images_commit}
-git -C custom-coreos-disk-images checkout --quiet ${disk_images_commit}
-rm -f fedora-coreos-*.x86_64.*
-custom-coreos-disk-images/custom-coreos-disk-images.sh \\
-    --osname fedora-coreos \\
-    --ociarchive /work/fedora-coreos.ociarchive \\
-    --platforms ${platforms} \\
-    --imgref ostree-unverified-registry:${image} \\
-    --extra-kargs mitigations=auto
-EOF
+# --imgref is what `bootc upgrade` follows: CI's signed image of the same
+# tag. The script's default names the archive, absent from the node.
+"${workbench}" exec bash -s -- /work "${platforms}" "ostree-image-signed:docker://${image}" \
+    <bootc/fedora-coreos/disk-images.sh
 
 for platform in ${platforms//,/ }; do
     case "${platform}" in

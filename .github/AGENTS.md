@@ -36,5 +36,6 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
   `push` job signs in every registry but Docker Hub. A new registry
   also needs its login in that job and, if signed, a scope in the
   hosts' signature policy: every
-  `bootc/*/sysroot/*/etc/containers/policy.json`, `policy.jq`'s
+  `bootc/*/sysroot/*/etc/containers/policy.json` and
+  `bootc/fedora-coreos/sysroot/etc/containers/policy.json`, `policy.jq`'s
   `$scopes`, `registries.d/spnngl-images.yaml`.

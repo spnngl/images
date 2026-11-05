@@ -108,8 +108,18 @@ rm -rf /var/lib/kubelet /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrate
 if getent group docker >/dev/null; then groupdel docker; fi
 EORUN
 
+# Our policy.json, about to replace the base's, must still be the base's
+# plus our changes (fedora/policy.jq).
 # After the packages, so that editing sysroot/ keeps their layer cached.
+RUN --mount=type=bind,source=fedora/policy.jq,target=/tmp/policy.jq \
+    --mount=type=bind,source=fedora-coreos/sysroot/etc/containers/policy.json,target=/tmp/policy.json \
+    jq -e --slurpfile ours /tmp/policy.json -f /tmp/policy.jq /etc/containers/policy.json
+
 COPY --link ./fedora-coreos/sysroot/ /
+# The signature files every bootc image shares: the key policy.json names,
+# and where the signatures are (registries.d).
+COPY --link ./fedora/sysroot/common/usr/share/pki/containers/ /usr/share/pki/containers/
+COPY --link ./fedora/sysroot/common/etc/containers/registries.d/ /etc/containers/registries.d/
 
 RUN <<EORUN
 # COPY keeps a file's mode, and git only stores the executable bit. It also
@@ -253,6 +263,7 @@ RUN --mount=type=cache,target=/var/cache/grype \
     <<EORUN
 # OpenSCAP, profile `build` of the tailoring (sysroot/usr/share/xml/scap/):
 # what a build can check. Exit 2: rules failed, the report is written.
+# BuildKit only: podman's /run/.containerenv turns the machine rules off.
 mkdir -p /reports/openscap /reports/grype
 oscap xccdf eval --profile xccdf_local_profile_build \
     --tailoring-file /usr/share/xml/scap/fedora-coreos/tailoring.xml \

@@ -9,11 +9,12 @@ each choice: [REFERENCES.md](REFERENCES.md).
 
 - **One image stage, not the three of `bootc/AGENTS.md`**: kubeadm nodes
   only, no k3s, no Docker. The stages after it scan it (OpenSCAP, grype);
-  it is the default target. Tag `<BASE_VERSION>-v<KUBERNETES_VERSION>`; both
-  `ARG`s are in the Containerfile, and a new Kubernetes patch release is a
-  new tag (Cluster API's `spec.version` must match the image's kubeadm).
-- **Own `sysroot/`**, nothing from `bootc/fedora/sysroot/common/` (no
-  firewalld, sshd on 22, systemd-networkd). Files that Ignition or the user
+  it is the default target. Tag `<major>-v<minor>` of `BASE_VERSION` and
+  `KUBERNETES_VERSION`, the Containerfile's `ARG`s, written by
+  `versions.sh` for `build.sh` and CI: a patch release keeps the tag.
+- **Own `sysroot/`**; from `bootc/fedora/sysroot/common/` only the
+  signature files (public key, `registries.d`), copied by the
+  Containerfile (no firewalld, sshd on 22, systemd-networkd). Files that Ignition or the user
   may own stay in `/etc`; the rest is in `/usr`. SSH keys are only in
   `/usr/lib/ssh/authorized_keys/`: sshd reads no other file.
 - **No host firewall, no iptables rules:** Cilium filters; the legacy
@@ -32,24 +33,29 @@ each choice: [REFERENCES.md](REFERENCES.md).
   the Containerfile), never by `systemctl enable` or a preset: FCOS runs
   `systemctl preset-all` at first boot, which drops the `/etc` links no
   preset names.
-- **Nothing is pushed, signed or run in CI** (PLAN.md, out of scope). The
-  image lives as an OCI archive in the workbench.
+- **CI** (`.github/workflows/build-bootc.yml`) builds it with BuildKit,
+  as `build.sh` (podman's `/run/.containerenv` turns OpenSCAP's machine
+  rules off), for amd64 and arm64; scans amd64; on `main`, pushes and
+  signs `ghcr.io/spnngl/images/fedora-coreos:<major>-v<minor>` and
+  releases the OpenStack qcow2 (`disk-images.sh`).
 - **OpenSCAP** checks the image at build and the nodes against
   scap-security-guide's `cis_server_l1` profile, tailored in
   `sysroot/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
   image doesn't follow is turned off there, with its reason beside it;
   the ones still to decide are grouped last.
-  `build.sh` fails on a failed rule, after exporting the report. The
+  `check-reports.sh` fails `build.sh` and CI on a failed rule, after
+  exporting the report. The
   nodes scan daily (`openscap.timer`, results in `/var/lib/openscap`).
 - **grype** lists the CVEs of `/usr` and `/etc`, at build and daily on
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;
-  `build.sh` fails on a fixable Critical, after exporting the reports. One
+  `check-reports.sh` fails on a fixable Critical. One
   the image can't fix is ignored in `sysroot/usr/share/grype/ignore.yaml`,
   at the package's exact version, with its reason.
 - **Renovate** proposes `BASE_VERSION`, `KUBERNETES_VERSION`, the Cilium
-  of `vm.sh` and `build.sh`'s `disk_images_commit` (`renovate.json5`),
-  never automerged: run the build check before merging.
+  of `vm.sh` and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
+  automerged only for a `BASE_VERSION` of the same major, once CI is
+  green; run the build check before merging any other.
 
 ## Layout
 
@@ -58,6 +64,8 @@ each choice: [REFERENCES.md](REFERENCES.md).
   (`output/fedora-coreos/reports/`) on the cluster's BuildKit, then disk
   images (`qemu`, `openstack`, `metal`) in the workbench pod
   (`workbench.yaml`, `workbench.sh`).
+- `versions.sh`, `check-reports.sh`, `disk-images.sh`: the tag, the scan
+  gate and the disk images, shared by `build.sh` and CI.
 - `vm.sh`, `test.sh`, `test/`, `test-greenboot.sh`: a
   test VM in the workbench (an NVMe disk), and the checks run on it.
 - `ignition-converter/`: Go webhook that turns CABPK's Ignition spec 2.3

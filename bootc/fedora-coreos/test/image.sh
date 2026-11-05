@@ -17,6 +17,8 @@ for p in zincati moby-engine docker-cli firewalld ufw iptables-legacy iptables-s
     check "package ${p} is absent" bash -c "! rpm -q ${p}"
 done
 # iptables commands use nf_tables; the legacy x_tables tables can't load.
+check "signatures: our images use sigstore attachments" grep -q 'use-sigstore-attachments: true' /etc/containers/registries.d/spnngl-images.yaml
+check "signatures: the key policy.json names" bash -c 'test -s "$(jq -r '\''.transports.docker["ghcr.io/spnngl/images"][0].keyPath'\'' /etc/containers/policy.json)"'
 check "iptables is iptables-nft" bash -c 'iptables --version | grep -q nf_tables'
 for m in ip_tables ip6_tables arp_tables ebtables; do
     check "module ${m} can't load" bash -c "! sudo modprobe ${m} 2>/dev/null && ! lsmod | grep -q ^${m}"

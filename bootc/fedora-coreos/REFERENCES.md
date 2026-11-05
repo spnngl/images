@@ -56,10 +56,14 @@ Read each at the version this repository pins.
   ships `kubelet.service` and the kubeadm drop-in. The repo file is removed
   in the same `RUN`. `kubernetes-cni` ships `/opt/cni/bin`, which is
   `/var/opt` here: removed in that `RUN`, since `/var` ships empty.
-- **Tag `<BASE_VERSION>-v<KUBERNETES_VERSION>`:** Cluster API's
-  `spec.version` must match the kubeadm in the image, patch included.
-  `kubeadm init` without `--kubernetes-version` takes the newest patch
-  release of the series, which isn't in the image: pass the version.
+- **Tag `<major>-v<minor>`** (`versions.sh`, e.g. `44-v1.35`), as CI's
+  other images: a Fedora CoreOS release or a Kubernetes patch release
+  reaches the nodes with `bootc upgrade`; a new major or Kubernetes minor
+  is a new tag (`bootc switch`, or new machines through Cluster API).
+  `kubelet` and `kubeadm` then move to the new patch release under Cluster
+  API's `spec.version`, which `kubeadm upgrade` follows. `kubeadm init`
+  without `--kubernetes-version` takes the newest patch release of the
+  series, which may not be in the image: pass the version.
 - **One stage:** kubeadm nodes only, no k3s, no Docker. Replaces the
   `base`/`kubeenv`/`dockerenv` scheme of `bootc/AGENTS.md`.
 - **Removed `zincati`, `moby-engine`, `docker-cli`:** updates come only from
@@ -217,8 +221,14 @@ Read each at the version this repository pins.
   `rpm -V` doesn't report them missing.
 - **Scan in stages after the image** (`scan`, then `reports` from
   `scratch`): the reports stay out of the image, and the image stays the
-  default target. `build.sh` exports them.
-- **`build.sh` fails on a failed rule**, before building the image:
+  default target. `build.sh` and CI export them.
+- **Built with BuildKit, in CI too** (`builder: buildkit` in
+  `build-bootc.yml`, then `podman load` for the signing): podman and
+  buildah mount `/run/.containerenv` in every `RUN`, and SSG's
+  `installed_env_is_a_container` check turns the rules of a machine off
+  when it exists. `OSCAP_PROBE_ROOT` on a mount of the image gave
+  unstable results, and `chroot` lacks `/proc`.
+- **`build.sh` and CI fail on a failed rule**, before building the image:
   `oscap` exits 2 when a rule fails, which the `scan` stage accepts so
   that the report is exported; any other error fails the stage.
 - **Nodes scan daily** (`openscap.timer`, `usr/libexec/openscap-scan`):
@@ -271,8 +281,8 @@ Read each at the version this repository pins.
   score; EPSS and CVSS by id; counts of every match by severity and fix
   state, and of the ignored ones by id, so an ignore rule stays visible;
   the database's age. `grype.json` keeps every match.
-- **`build.sh` fails on a fixable Critical**: the stage reports, and the
-  build stops after exporting, as for OpenSCAP.
+- **`build.sh` and CI fail on a fixable Critical**: the stage reports,
+  and the build stops after exporting, as for OpenSCAP.
 - **Ignore rules for what the image can't fix**
   (`usr/share/grype/ignore.yaml`): Kubernetes' and Fedora's builds, and
   false positives. In the image, so the nodes ignore the same. Each names
@@ -287,11 +297,22 @@ Read each at the version this repository pins.
 ### Disk images, build and test
 
 - **Disk images with `custom-coreos-disk-images`, pinned to a commit
-  (`build.sh`, `disk_images_commit`):** greenboot boot counting needs the
-  bootupd static GRUB configs that only this installer writes. It sets
-  `mitigations=auto,nosmt` by default; `build.sh` passes
+  (`disk-images.sh`, `disk_images_commit`):** greenboot boot counting needs
+  the bootupd static GRUB configs that only this installer writes. It sets
+  `mitigations=auto,nosmt` by default; `disk-images.sh` passes
   `--extra-kargs mitigations=auto`, because `nosmt` turns off half the CPUs
-  of a node.
+  of a node. It installs from `ostree-image-signed:`, so the disk's
+  origin checks CI's signature from the first boot.
+- **qcow2 compressed after osbuild** (`qemu-img convert -c`): the
+  OpenStack pipeline writes it uncompressed, and a GitHub release asset
+  must be under 2 GiB.
+- **OpenStack qcow2 as a GitHub release, from CI** (`disk-image` job of
+  `build-bootc.yml`, on `main`): one release per Fedora CoreOS and
+  Kubernetes release, `fedora-coreos-<BASE_VERSION>-v<KUBERNETES_VERSION>`;
+  a rebuild of the same versions replaces its asset. Made from the image
+  just pushed, checked with the image's `policy.json`, in a privileged
+  container of the image's Fedora release (osbuild needs root and loop
+  devices).
 - **Container image on a cluster's BuildKit** (`BUILD_KUBE_CONTEXT`,
   `kubectl port-forward` to a free local port, a `docker buildx` remote
   builder, `--output type=oci`): the workstation is arm64 and the targets
@@ -309,18 +330,31 @@ Read each at the version this repository pins.
 - **Cilium ≥ 1.20 in `vm.sh cluster`:** 1.18.3 fails on kernel 7.2's BPF
   verifier (`call bpf_set_retval#187: R1 is not a scalar`). It runs with the
   legacy iptables modules blocked.
-- **amd64 first:** the targets are x86_64; arm64 builds come later.
-- **Not in CI yet:** out of scope until the image is pushed. `policy.json`
-  already asks CI's signature for `ghcr.io/spnngl/images`
-  (`bootc/REFERENCES.md`); until the image is pushed and signed, bare metal
-  follows `ostree-unverified-registry:`.
-- **Renovate, never automerged** (`renovate.json5`): `BASE_VERSION` through
+- **amd64 first:** the targets are x86_64. CI builds arm64 too, but
+  scans and makes disk images of amd64 only.
+- **Signed by CI as the other images** (`build-bootc.yml`):
+  `policy.json` asks its signature for `ghcr.io/spnngl/images`
+  (`bootc/REFERENCES.md`), and the build checks it with
+  `bootc/fedora/policy.jq`. The public key and `registries.d` file are
+  `bootc/fedora/sysroot/common/`'s, copied by the Containerfile: one copy
+  for every image. Without the `registries.d` file, podman and bootc don't
+  look up the signatures, and the policy refuses every update.
+- **VM tests by hand:** they need KVM and a cluster's workbench.
+- **Renovate** (`renovate.json5`): `BASE_VERSION` through
   the dockerfile manager; `KUBERNETES_VERSION` (GitHub releases of
   `kubernetes/kubernetes`, one PR per patch and per minor release: kubeadm
   upgrades one minor at a time), Cilium (its Helm
   repository) and `disk_images_commit` (weekly, no release upstream)
-  through custom managers. No CI builds the image, so each PR waits for
-  the build check of `AGENTS.md`.
+  through custom managers. CI doesn't run the VM tests, so each PR waits
+  for the build check of `AGENTS.md`, but one:
+- **A Fedora CoreOS release of the same major is automerged** once every
+  check is green, the build and scans of `build-bootc.yml` included: the
+  tag stays, a stable release has passed Fedora's own tests, and greenboot
+  rolls back a node that fails to come up. Renovate merges it itself
+  (`platformAutomerge: false`): GitHub's auto-merge waits for the required
+  checks only, and `build-bootc.yml` has none. A new major changes the
+  tag, and Kubernetes, Cilium and `disk_images_commit` aren't exercised by
+  CI: by hand.
 
 ### Bootstrap
 
