@@ -13,7 +13,8 @@ name: build-bootc
 on:
   # Only when a bootc image's input changed, and then every bootc image:
   # they share most of their files. bootc/*.sh: the local scripts
-  # (build.sh, run.sh), and *.md, the docs: not build inputs.
+  # (build.sh, run.sh), and *.md, the docs: not build inputs. Any file of
+  # bootc/fedora-coreos/ makes a fedora-coreos release (disk-image job).
   push:
     branches:
       - main
@@ -21,6 +22,7 @@ on:
       - bootc/**
       - "!bootc/*.sh"
       - "!bootc/**/*.md"
+      - bootc/fedora-coreos/**
       - .github/workflows/build-bootc.yml
   pull_request:
     paths: *paths
@@ -348,6 +350,14 @@ jobs:
           podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
           podman manifest push --all --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null --digestfile "${RUNNER_TEMP}/digest" "${TAG}" "docker://${TAG}"
           echo "digest=$(< "${RUNNER_TEMP}/digest")" >> "${GITHUB_OUTPUT}"
+      # The disk-image job builds from this exact image, not from its tag.
+      - if: matrix.image.name == 'fedora-coreos'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: fedora-coreos_digest
+          path: ${{ runner.temp }}/digest
+          overwrite: true
+          if-no-files-found: error
       # SLSA build provenance (workflow, commit, run) for the manifest list,
       # pushed next to the image as an OCI referrer. Hosts don't read it
       # (see bootc/REFERENCES.md, "Signing"); check it with
@@ -369,37 +379,75 @@ jobs:
             podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${TAG}"
           done
 
+  # Whether bootc/fedora-coreos/ changed since the newest fedora-coreos
+  # release. Compared with that release's tag, not with the push's commits:
+  # a run cancelled by a newer push (concurrency) loses no change.
+  disk-image-needed:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-26.04
+    outputs:
+      needed: ${{ steps.diff.outputs.needed }}
+    steps:
+      # The tags, and the history to compare with.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+      # No published release yet, or its tag gone: a release.
+      - id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          last="$(gh release list --limit 100 --json tagName,createdAt,isDraft \
+            --jq '[.[] | select((.tagName | startswith("fedora-coreos-")) and (.isDraft | not))] | max_by(.createdAt) | .tagName // ""')"
+          if [[ -n ${last} ]] && git diff --quiet "${last}" HEAD -- bootc/fedora-coreos; then
+            echo "bootc/fedora-coreos/ unchanged since ${last}: no release"
+            echo needed=false >> "${GITHUB_OUTPUT}"
+          else
+            echo needed=true >> "${GITHUB_OUTPUT}"
+          fi
+
   # fedora-coreos's OpenStack disk image, from the image just pushed, as a
-  # release asset: a release per Fedora CoreOS and Kubernetes release, whose
-  # asset each rebuild replaces. Nodes made from it follow the image's tag
-  # with `bootc upgrade`. amd64 only: the nodes are x86_64.
+  # release asset: a release per change of bootc/fedora-coreos/, the newest
+  # 3 kept. Nodes made from it follow the image's tag with `bootc upgrade`.
+  # amd64 only: the nodes are x86_64.
   disk-image:
-    needs: push
+    needs: [push, disk-image-needed]
     # Every push succeeded, fedora-coreos's included: the asset is made
     # from the image of this run.
     if: >-
       !cancelled() && github.event_name != 'pull_request' && needs.push.result == 'success'
+      && needs.disk-image-needed.outputs.needed == 'true'
     runs-on: ubuntu-26.04
     permissions:
       contents: write
+      # The qcow2's build provenance attestation, as the push job's.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG.
       - run: bootc/fedora-coreos/versions.sh >> "${GITHUB_ENV}"
+      # The digest of the manifest list the push job pushed.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: fedora-coreos_digest
+          path: ${{ runner.temp }}/image
       # osbuild keeps a raw disk and two trees of the image: room from the
       # runner's preinstalled SDKs, unused here.
       - run: |-
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
           df -h /
       # The signed image, checked with the policy.json it ships, as the push
-      # job checks it; registries.d and the key at the paths it names.
+      # job checks it; registries.d and the key at the paths it names. By
+      # digest: the tag may have moved since. The disk's origin stays the tag
+      # (disk-images.sh below), which nodes follow.
       - run: |-
           sudo install -D -m 0644 -t /etc/containers/registries.d/ bootc/fedora/sysroot/common/etc/containers/registries.d/spnngl-images.yaml
           sudo install -D -m 0644 -t /usr/share/pki/containers/ bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub
           mkdir "${RUNNER_TEMP}/disk"
           skopeo copy --override-arch amd64 --policy bootc/fedora-coreos/sysroot/etc/containers/policy.json \
-            "docker://ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}" "oci-archive:${RUNNER_TEMP}/disk/fedora-coreos.ociarchive"
+            "docker://ghcr.io/spnngl/images/fedora-coreos@$(< "${RUNNER_TEMP}/image/digest")" "oci-archive:${RUNNER_TEMP}/disk/fedora-coreos.ociarchive"
       # osbuild needs root and loop devices: a privileged container of the
       # image's Fedora release (bootc/fedora-coreos/REFERENCES.md).
       - run: |-
@@ -407,20 +455,47 @@ jobs:
             -v "${PWD}/bootc/fedora-coreos/disk-images.sh:/disk-images.sh:ro" \
             "registry.fedoraproject.org/fedora:${BASE_VERSION%%.*}" \
             bash /disk-images.sh /work openstack "ostree-image-signed:docker://ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}"
-      # A release asset must be under 2 GiB.
-      - env:
+      # Provenance of the qcow2 (workflow, commit, run): check it with
+      # gh attestation verify <file> -R <owner>/<repo>.
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: ${{ runner.temp }}/disk/fedora-coreos-openstack.x86_64.qcow2
+          create-storage-record: false
+      # A release asset must be under 2 GiB. gh creates a release as a draft,
+      # uploads, then publishes it, and deletes the draft if an upload fails:
+      # a published release always has its disk. A re-run replaces the assets
+      # of its release, or publishes the draft a killed run left.
+      - working-directory: ${{ runner.temp }}/disk
+        env:
           GH_TOKEN: ${{ github.token }}
         run: |-
-          release="fedora-coreos-${BASE_VERSION}-v${KUBERNETES_VERSION}"
-          asset="${RUNNER_TEMP}/disk/fedora-coreos-openstack.x86_64.qcow2"
+          release="fedora-coreos-${BASE_VERSION}-v${KUBERNETES_VERSION}-${GITHUB_SHA::7}"
+          asset=fedora-coreos-openstack.x86_64.qcow2
           size="$(stat -c %s "${asset}")"
           if ((size >= 2 * 1024 ** 3)); then
             echo "::error::${asset} is ${size} bytes, a release asset must be under 2 GiB"
             exit 1
           fi
+          sha256sum "${asset}" > "${asset}.sha256"
           if gh release view "${release}" > /dev/null 2>&1; then
-            gh release upload --clobber "${release}" "${asset}"
+            gh release upload --clobber "${release}" "${asset}" "${asset}.sha256"
+            gh release edit "${release}" --draft=false
           else
-            gh release create "${release}" --target "${GITHUB_SHA}" --title "${release}" "${asset}" \
-              --notes "OpenStack disk image of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\`: Fedora CoreOS ${BASE_VERSION}, Kubernetes ${KUBERNETES_VERSION}. A node made from it follows that tag with \`bootc upgrade\`. Each rebuild of the image replaces the asset."
+            gh release create "${release}" --target "${GITHUB_SHA}" --title "${release}" "${asset}" "${asset}.sha256" \
+              --notes "OpenStack disk image of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\`: Fedora CoreOS ${BASE_VERSION}, Kubernetes ${KUBERNETES_VERSION}, commit ${GITHUB_SHA}. A node made from it follows that tag with \`bootc upgrade\`. Check the download with \`sha256sum -c ${asset}.sha256\` and \`gh attestation verify ${asset} -R ${GITHUB_REPOSITORY}\`."
           fi
+      # The newest 3 published releases stay, older ones go with their tags.
+      # Drafts killed runs left go too; they have no tag yet.
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: |-
+          releases="$(gh release list --limit 100 --json tagName,createdAt,isDraft \
+            --jq '[.[] | select(.tagName | startswith("fedora-coreos-"))]')"
+          jq -r '[.[] | select(.isDraft | not)] | sort_by(.createdAt) | reverse | .[3:][].tagName' <<< "${releases}" |
+            while read -r old; do
+              gh release delete "${old}" --cleanup-tag --yes
+            done
+          jq -r '.[] | select(.isDraft).tagName' <<< "${releases}" |
+            while read -r draft; do
+              gh release delete "${draft}" --yes
+            done

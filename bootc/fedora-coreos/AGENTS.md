@@ -37,7 +37,8 @@ each choice: [REFERENCES.md](REFERENCES.md).
   as `build.sh` (podman's `/run/.containerenv` turns OpenSCAP's machine
   rules off), for amd64 and arm64; scans amd64; on `main`, pushes and
   signs `ghcr.io/spnngl/images/fedora-coreos:<major>-v<minor>` and
-  releases the OpenStack qcow2 (`disk-images.sh`).
+  releases the OpenStack qcow2 (`disk-images.sh`) when a file of this
+  folder changed, keeping the newest 3 releases.
 - **OpenSCAP** checks the image at build and the nodes against
   scap-security-guide's `cis_server_l1` profile, tailored in
   `sysroot/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
