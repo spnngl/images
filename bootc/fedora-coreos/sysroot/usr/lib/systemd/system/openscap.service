@@ -1,0 +1,11 @@
+# Run by openscap.timer. Idle priorities: the node's pods come first.
+[Unit]
+Description=OpenSCAP scan of the node and /etc drift
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/openscap-scan
+StateDirectory=openscap
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle

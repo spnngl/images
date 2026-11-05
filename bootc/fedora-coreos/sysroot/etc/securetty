@@ -1,1 +1,3 @@
-# No root login
+# No terminal where root logs in directly. No PAM module of Fedora reads this
+# file: OpenSCAP's no_direct_root_logins wants it, with the empty line below.
+

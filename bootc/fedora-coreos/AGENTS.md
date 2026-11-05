@@ -7,8 +7,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- **One stage, not the three of `bootc/AGENTS.md`**: kubeadm nodes only,
-  no k3s, no Docker. Tag `<BASE_VERSION>-v<KUBERNETES_VERSION>`; both
+- **One image stage, not the three of `bootc/AGENTS.md`**: kubeadm nodes
+  only, no k3s, no Docker. The stages after it scan it (OpenSCAP); it is
+  the default target. Tag `<BASE_VERSION>-v<KUBERNETES_VERSION>`; both
   `ARG`s are in the Containerfile, and a new Kubernetes patch release is a
   new tag (Cluster API's `spec.version` must match the image's kubeadm).
 - **Own `sysroot/`**, nothing from `bootc/fedora/sysroot/common/` (no
@@ -33,6 +34,13 @@ each choice: [REFERENCES.md](REFERENCES.md).
   preset names.
 - **Nothing is pushed, signed or run in CI** (PLAN.md, out of scope). The
   image lives as an OCI archive in the workbench.
+- **OpenSCAP** checks the image at build and the nodes against
+  scap-security-guide's `cis_server_l1` profile, tailored in
+  `sysroot/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
+  image doesn't follow is turned off there, with its reason beside it;
+  the ones still to decide are grouped last.
+  `build.sh` fails on a failed rule, after exporting the report. The
+  nodes scan daily (`openscap.timer`, results in `/var/lib/openscap`).
 - **Renovate** proposes `BASE_VERSION`, `KUBERNETES_VERSION`, the Cilium
   of `vm.sh` and `build.sh`'s `disk_images_commit` (`renovate.json5`),
   never automerged: run the build check before merging.
@@ -40,8 +48,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
 ## Layout
 
 - `Containerfile`, `sysroot/`: the image.
-- `build.sh`: container image on the cluster's BuildKit, then disk images
-  (`qemu`, `openstack`, `metal`) in the workbench pod
+- `build.sh`: container image and its OpenSCAP results
+  (`output/fedora-coreos/openscap/`) on the cluster's BuildKit, then disk
+  images (`qemu`, `openstack`, `metal`) in the workbench pod
   (`workbench.yaml`, `workbench.sh`).
 - `vm.sh`, `test.sh`, `test/`, `test-greenboot.sh`: a
   test VM in the workbench (an NVMe disk), and the checks run on it.
@@ -56,7 +65,7 @@ each choice: [REFERENCES.md](REFERENCES.md).
 export BUILD_KUBE_CONTEXT=<context>
 bootc/fedora-coreos/build.sh qemu,openstack,metal
 bootc/fedora-coreos/vm.sh up
-bootc/fedora-coreos/test.sh image     # packages, config, units, sshd, sysctls
+bootc/fedora-coreos/test.sh image     # packages, config, units, sshd, sysctls, OpenSCAP
 bootc/fedora-coreos/vm.sh cluster     # kubeadm init + Cilium
 bootc/fedora-coreos/test.sh cluster   # node Ready, pod runs scripts from emptyDir and configMap
 bootc/fedora-coreos/test.sh wx        # noexec everywhere but the exceptions
