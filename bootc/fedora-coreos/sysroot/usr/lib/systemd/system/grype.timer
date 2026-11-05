@@ -1,0 +1,13 @@
+# Daily, at a random time in the first hour, so that the nodes don't all scan
+# at once nor download the database together. Persistent: a node that was off
+# then scans when it boots.
+[Unit]
+Description=Daily grype scan of the node
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=1h
+Persistent=true
+
+[Install]
+WantedBy=timers.target

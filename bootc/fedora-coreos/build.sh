@@ -9,7 +9,8 @@
 #         both from the Containerfile. Not pushed: the archive stays in the
 #         workbench (/work/fedora-coreos.ociarchive) for `bootc switch`.
 # Output: output/fedora-coreos/fedora-coreos-<platform>.x86_64.{qcow2,raw}
-#         output/fedora-coreos/openscap/{results.xml,report.html}
+#         output/fedora-coreos/reports/openscap/{results.xml,report.html}
+#         output/fedora-coreos/reports/grype/{grype.json,grype.prom}
 #
 # Why this way, and why on a cluster: bootc/fedora-coreos/REFERENCES.md.
 set -euo pipefail
@@ -76,19 +77,29 @@ rm -f "${forward_log}"
 docker buildx create --name "${builder}" --driver remote "tcp://127.0.0.1:${port}" >/dev/null
 
 mkdir -p "${out}"
-# The OpenSCAP scan first: a failed rule stops here, with its report. The
-# build context is bootc/, shared by every bootc image.
-rm -rf "${out}/openscap"
+# The scans first: a failed OpenSCAP rule or a fixable Critical vulnerability
+# stops here, with the reports. The build context is bootc/, shared by every
+# bootc image.
+reports="${out}/reports"
+rm -rf "${reports}"
 docker buildx build --builder "${builder}" --platform linux/amd64 \
-    --file "${containerfile}" --target openscap --output "type=local,dest=${out}/openscap" bootc/
-results="${out}/openscap/results.xml"
+    --file "${containerfile}" --target reports --output "type=local,dest=${reports}" bootc/
+failed=""
 # Rules out of the profile are `notselected`.
-grep -o '<result>[a-z]*</result>' "${results}" | awk -F '[<>]' '
+grep -o '<result>[a-z]*</result>' "${reports}/openscap/results.xml" | awk -F '[<>]' '
     $3 != "notselected" { n[$3]++ }
     END { printf "OpenSCAP:"; for (r in n) printf " %d %s", n[r], r; print "" }'
-if grep -qE '<result>(fail|error)</result>' "${results}"; then
-    die "OpenSCAP rules failed, see ${out}/openscap/report.html"
+if grep -qE '<result>(fail|error)</result>' "${reports}/openscap/results.xml"; then
+    failed+=" OpenSCAP rules failed: ${reports}/openscap/report.html."
 fi
+# grype.prom holds the fixable vulnerabilities of Medium severity and above.
+awk -F '"' '/^grype_vulnerability\{/ { n[$4]++ }
+    END { printf "grype, fixable:"; for (s in n) printf " %d %s", n[s], s; print "" }' \
+    "${reports}/grype/grype.prom"
+if grep -q '^grype_vulnerability{.*severity="Critical"' "${reports}/grype/grype.prom"; then
+    failed+=" Fixable Critical vulnerabilities: ${reports}/grype/grype.prom."
+fi
+[[ -z ${failed} ]] || die "${failed# }"
 
 # The image, from the builder's cache.
 docker buildx build --builder "${builder}" --platform linux/amd64 \

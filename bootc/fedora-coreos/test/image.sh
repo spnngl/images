@@ -7,12 +7,13 @@
 
 # Packages (goss: package).
 for p in kubelet kubeadm kubectl cri-tools containerd runc conntrack-tools \
-    socat sysstat iproute-tc rootlesskit etcd net-tools qemu-guest-agent \
-    systemd-udev systemd-networkd openssh-clients; do
+    socat sysstat iproute-tc rootlesskit net-tools qemu-guest-agent \
+    systemd-udev systemd-networkd openssh-clients grype; do
     check "package ${p}" rpm -q "${p}"
 done
 for p in zincati moby-engine docker-cli firewalld ufw iptables-legacy iptables-services \
-    nmstate NetworkManager-team NetworkManager-tui NetworkManager-cloud-setup ModemManager; do
+    nmstate NetworkManager-team NetworkManager-tui NetworkManager-cloud-setup ModemManager \
+    etcd; do
     check "package ${p} is absent" bash -c "! rpm -q ${p}"
 done
 # iptables commands use nf_tables; the legacy x_tables tables can't load.
@@ -107,6 +108,10 @@ check "openscap.service scans the node, no rule fails" bash -c '
     sudo systemctl start openscap.service &&
     ! sudo grep -E "<result>(fail|error)</result>" /var/lib/openscap/results.xml &&
     sudo test -s /var/lib/openscap/openscap.prom'
+check "grype.timer is wanted by timers.target" bash -c "systemctl show -P WantedBy grype.timer | grep -qw timers.target"
+check "grype.service scans the node" bash -c '
+    sudo systemctl start grype.service &&
+    sudo grep -q "^grype_last_scan_timestamp_seconds " /var/lib/grype/grype.prom'
 check "rpm-ostree-countme.timer is masked" bash -c '[[ $(systemctl is-enabled rpm-ostree-countme.timer) == masked ]]'
 for u in auditd chronyd; do
     check "${u} is active" systemctl is-active "${u}"
