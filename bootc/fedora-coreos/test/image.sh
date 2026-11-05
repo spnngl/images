@@ -104,6 +104,8 @@ check "amd-hsmp is for bare metal only" bash -c "systemctl cat amd-hsmp | grep -
 check "qemu-guest-agent runs on the VM" systemctl is-active qemu-guest-agent
 check "etcd-network-tuning.path is wanted by paths.target" bash -c "systemctl show -P WantedBy etcd-network-tuning.path | grep -qw paths.target"
 check "etcd-network-tuning waits for the etcd manifest" bash -c '[[ $(systemctl show -P ActiveState etcd-network-tuning.service) == inactive ]] || test -e /etc/kubernetes/manifests/etcd.yaml'
+check "etcd-defrag.timer is wanted by timers.target" bash -c "systemctl show -P WantedBy etcd-defrag.timer | grep -qw timers.target"
+check "etcd-defrag waits for the etcd manifest" bash -c 'systemctl cat etcd-defrag.service | grep -qx ConditionPathExists=/etc/kubernetes/manifests/etcd.yaml'
 check "openscap.timer is wanted by timers.target" bash -c "systemctl show -P WantedBy openscap.timer | grep -qw timers.target"
 # Profile `node`: what the build's scan can't check (systemd services) too.
 check "openscap.service scans the node, no rule fails" bash -c '

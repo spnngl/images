@@ -148,6 +148,26 @@ Read each at the version this repository pins.
   on kubeadm's etcd manifest): image-builder's udev rule runs it on every
   NIC of every node, where it replaces a worker's multi-queue qdisc with one
   queue for nothing. Each `prio` band gets `fq`, which BBR paces with.
+- **etcd defrag on control planes, daily** (`etcd-defrag.timer`,
+  `usr/libexec/etcd-defrag`, skipped without kubeadm's etcd manifest):
+  etcd only reuses the space of deleted keys; a defrag returns it to the
+  disk and keeps the database under its quota. The member blocks
+  meanwhile, so each node runs at its own fixed time in a 6-hour window
+  (`RandomizedDelaySec`, `FixedRandomDelay`), not `Persistent` (a node
+  catching up at boot would defrag while its member resyncs), and skips
+  the run while another member is unhealthy (quorum). `endpoint health`
+  also fails on any alarm: a NOSPACE one, which the defrag fixes, is
+  accepted. Skipped too when it would free less than 100 MB
+  (`dbSize - dbSizeInUse`, as `ahrtr/etcd-defrag`'s rules): not worth a
+  freeze. A leader first hands leadership to a started voting member
+  (`move-leader`, as `etcd-defrag --move-leader`): blocked, it would make
+  the followers elect another one. After it, `alarm disarm` clears the
+  NOSPACE alarms; it clears every alarm, so not when a CORRUPT one is
+  raised. The member's local endpoint only, with kubeadm's healthcheck
+  client certificate and the `etcdctl` of its container (etcd
+  `etcdctl/ctlv3/command/ep_command.go`). `etcd-defrag.prom` (in
+  `/var/lib/etcd-defrag`) gives the last run's result (defragmented,
+  skipped_small, skipped_unhealthy, failed) and sizes, for node-exporter.
 - **systemd-networkd, not NetworkManager** (as `capi-image-builder`'s
   nodes): NetworkManager stays installed but masked,
   because Ignition, `dracut-network`, `afterburn-dracut` and `kdump-utils`
