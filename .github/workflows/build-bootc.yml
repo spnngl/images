@@ -452,7 +452,11 @@ jobs:
             "docker://ghcr.io/spnngl/images/fedora-coreos@$(< "${RUNNER_TEMP}/image/digest")" "oci-archive:${RUNNER_TEMP}/disk/fedora-coreos.ociarchive"
       # osbuild needs root and loop devices: a privileged container of the
       # image's Fedora release (bootc/fedora-coreos/REFERENCES.md).
+      # Ubuntu's AppArmor profile bwrap-userns-restrict attaches to every
+      # /usr/bin/bwrap, the container's too, and denies capabilities to what
+      # it runs: osbuild's stages. Unloaded on this throwaway runner.
       - run: |-
+          sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
           sudo podman run --rm --privileged -v /dev:/dev -v "${RUNNER_TEMP}/disk:/work" \
             -v "${PWD}/bootc/fedora-coreos/disk-images.sh:/disk-images.sh:ro" \
             "registry.fedoraproject.org/fedora:${BASE_VERSION%%.*}" \
