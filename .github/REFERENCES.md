@@ -20,8 +20,9 @@
 - **Triggers:** push to `main`, Sunday 07:00 Europe/Paris (base and
   package updates, fresh geo-blocking data) and manual runs push; pull
   requests lint and build. Push and pull request runs only when a bootc
-  input changed (`paths`: `bootc/` but its scripts and docs, the
-  workflow), then rebuild every bootc image: they share most files. A
+  input changed (`paths`: `bootc/` but its scripts and docs, every file
+  of `bootc/fedora-coreos/`, the workflow), then rebuild every bootc
+  image: they share most files. A
   failed push is retried by the next change or the weekly rebuild.
 - **The matrix is the list of images** (`name`, `version`, and for a
   stage `target`, tag `suffix`, `k3s`), `version` passed as
@@ -35,7 +36,7 @@
   amd64 job also builds the scan reports (artifact
   `fedora-coreos_reports`), failing on a failed rule or a fixable
   Critical, and on `main` the `disk-image` job releases its OpenStack
-  qcow2.
+  qcow2 when `bootc/fedora-coreos/` changed since the newest release.
 - **`build.sh`'s flags** (`--format=docker`, context `bootc/`), plus an
   `org.opencontainers.image.source` label linking the package to the
   repository, and `--platform` the runner's own. Rootless podman.

@@ -327,12 +327,22 @@ Read each at the version this repository pins.
   OpenStack pipeline writes it uncompressed, and a GitHub release asset
   must be under 2 GiB.
 - **OpenStack qcow2 as a GitHub release, from CI** (`disk-image` job of
-  `build-bootc.yml`, on `main`): one release per Fedora CoreOS and
-  Kubernetes release, `fedora-coreos-<BASE_VERSION>-v<KUBERNETES_VERSION>`;
-  a rebuild of the same versions replaces its asset. Made from the image
-  just pushed, checked with the image's `policy.json`, in a privileged
-  container of the image's Fedora release (osbuild needs root and loop
-  devices).
+  `build-bootc.yml`, on `main`): one release per change of this folder,
+  any file, docs and tests included (simplest rule), Renovate's version
+  bumps included: `fedora-coreos-<BASE_VERSION>-v<KUBERNETES_VERSION>-<short
+  sha>`. The change is found by comparing with the newest release's tag,
+  so a run cancelled by a newer push loses none; the weekly rebuild makes
+  no release. The newest 3 releases stay, older ones are deleted with
+  their tags: a node needs the disk only to be created, then follows the
+  image tag. Made from the image just pushed, by digest (the tag may move
+  meanwhile; the disk's origin stays the tag), checked with the image's
+  `policy.json`, in a privileged container of the image's Fedora release
+  (osbuild needs root and loop devices). With a `.sha256` file and a build
+  provenance attestation (`gh attestation verify`), as the image has. gh
+  publishes a release only once its assets are uploaded (cli/cli
+  `pkg/cmd/release/create/create.go`, `draftWhileUploading`), and only
+  published releases count as the newest one: a failed upload makes no
+  release without a disk.
 - **Container image on a cluster's BuildKit** (`BUILD_KUBE_CONTEXT`,
   `kubectl port-forward` to a free local port, a `docker buildx` remote
   builder, `--output type=oci`): the workstation is arm64 and the targets
