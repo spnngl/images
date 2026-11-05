@@ -137,7 +137,9 @@ Read each at the version this repository pins.
   (`995`-`998`, `90-kubernetes.conf` from image-builder's node
   role; the softnet budget only on machines of 64 CPUs and 128 GB with a
   Mellanox NIC, `sysctl-mlx5-large.service`, whose traffic outruns the
-  default budget), modules, `usb-storage` blacklist, resolved fallback DNS,
+  default budget), modules, `usb-storage` blacklist, resolved fallback DNS
+  (`FallbackDNS=`, image-builder `9a267a4`: as `DNS=`, they add to DHCP's in
+  `/run/systemd/resolve/resolv.conf`, past kubelet's three nameservers),
   `kube.slice`, `amd-hsmp.service` (AMD CPUs only), coredump settings
   (`systemd-coredump.socket` is static), the QEMU read-ahead udev rule
   (kernel 7.x gives 8 MB read-ahead to rotational QEMU disks, OVH volumes are
