@@ -1,0 +1,15 @@
+# Run by grype.timer. Idle priorities: the node's pods come first. The network
+# for grype's database (grype.anchore.io).
+[Unit]
+Description=grype scan of the node's known vulnerabilities
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/grype-scan
+StateDirectory=grype
+CacheDirectory=grype
+Nice=19
+CPUSchedulingPolicy=idle
+IOSchedulingClass=idle

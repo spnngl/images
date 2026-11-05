@@ -1,0 +1,78 @@
+#!/bin/bash
+# List the known vulnerabilities (CVEs) of the node's software with grype: rpm
+# packages, and Go binaries by the modules built into them. It scans /usr and
+# /etc, which the image ships. /var holds pod images and data, which the node
+# didn't ship, and /sysroot holds a second copy of /usr. The container build
+# runs it too (Containerfile, stage `scan`). See
+# usr/lib/systemd/system/grype.service.
+#
+# Environment, from systemd's StateDirectory= and CacheDirectory=:
+#   STATE_DIRECTORY  where the output goes
+#   CACHE_DIRECTORY  grype's database, downloaded from grype.anchore.io when a
+#                    newer one exists
+#
+# Output:
+#   grype.json  every match
+#   grype.prom  for node-exporter's textfile collector (see openscap-scan):
+#               each fixable vulnerability of Medium severity and above, and
+#               counts of all matches and of the ignored ones
+#
+# The vulnerabilities this image can't fix itself are ignored, each with its
+# reason: usr/share/grype/ignore.yaml.
+set -euo pipefail
+
+cd "${STATE_DIRECTORY:?}"
+export GRYPE_DB_CACHE_DIR="${CACHE_DIRECTORY:?}/db"
+export GRYPE_CHECK_FOR_APP_UPDATE=false
+
+# --by-cve: one id per vulnerability, whatever database matched it (GHSA, Go's
+# GO-...), so the same vulnerability has the same id on every node.
+grype dir:/ --quiet --by-cve --config /usr/share/grype/ignore.yaml \
+    --output json --file grype.json.tmp \
+    --exclude './proc/**' --exclude './sys/**' --exclude './dev/**' \
+    --exclude './run/**' --exclude './tmp/**' --exclude './var/**' \
+    --exclude './sysroot/**' --exclude './boot/**'
+mv grype.json.tmp grype.json
+
+# Prometheus' text format: a label value escapes \, " and newline.
+jq -r --arg now "$(date +%s)" '
+def esc: tostring | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"") | gsub("\n"; "\\n");
+def labels: to_entries | map("\(.key)=\"\(.value | esc)\"") | join(",") | "{\(.)}";
+def metric(name; help): "# HELP \(name) \(help)", "# TYPE \(name) gauge";
+
+def row: . as $m | .vulnerability | {
+    id, severity,
+    package: $m.artifact.name, version: $m.artifact.version,
+    type: $m.artifact.type,
+    path: ("/" + ($m.artifact.locations[0].path // "" | ltrimstr("/"))),
+    fix_state: .fix.state, fixed_in: (.fix.versions | join(" ")),
+    known_exploited: ((.knownExploited // []) | length > 0),
+    risk: (.risk // 0), epss: (.epss[0].epss // null),
+    cvss: ([.cvss[], $m.relatedVulnerabilities[]?.cvss[]?
+            | .metrics.baseScore] | max)
+};
+def rows: map(row) | unique_by([.id, .package, .version, .path]);
+
+. as $scan
+| (.matches | rows) as $all
+| (.ignoredMatches // [] | rows) as $ignored
+| ($all | map(select(.fix_state == "fixed"
+    and (.severity | IN("Medium", "High", "Critical"))))) as $fixable
+| metric("grype_vulnerability"; "Fixable vulnerability of Medium severity and above, by package and path. Value: grype'"'"'s risk score, from severity, EPSS and known exploitation."),
+  ($fixable[] | "grype_vulnerability\({id, severity, package, version, type, path, fixed_in, known_exploited} | labels) \(.risk)"),
+  metric("grype_vulnerability_epss"; "EPSS of a fixable vulnerability: probability of exploitation in the next 30 days."),
+  ($fixable | map(select(.epss != null)) | unique_by(.id)[] | "grype_vulnerability_epss\({id} | labels) \(.epss)"),
+  metric("grype_vulnerability_cvss_score"; "Highest CVSS base score of a fixable vulnerability."),
+  ($fixable | map(select(.cvss != null)) | unique_by(.id)[] | "grype_vulnerability_cvss_score\({id} | labels) \(.cvss)"),
+  metric("grype_matches"; "Vulnerabilities of the last scan, by package and path: all of them, by severity and fix state."),
+  ($all | group_by([.severity, .fix_state])[]
+    | "grype_matches\({severity: .[0].severity, fix_state: .[0].fix_state} | labels) \(length)"),
+  metric("grype_ignored_matches"; "Matches of the last scan that the ignore rules (usr/share/grype/ignore.yaml) left out, one per package and path, by vulnerability."),
+  ($ignored | group_by([.id, .severity])[]
+    | "grype_ignored_matches\({id: .[0].id, severity: .[0].severity} | labels) \(length)"),
+  metric("grype_db_built_timestamp_seconds"; "Build time of the vulnerability database the last scan used."),
+  "grype_db_built_timestamp_seconds \($scan.descriptor.db.status.built | fromdateiso8601)",
+  metric("grype_last_scan_timestamp_seconds"; "End of the last scan."),
+  "grype_last_scan_timestamp_seconds \($now)"
+' grype.json >grype.prom.tmp
+mv grype.prom.tmp grype.prom

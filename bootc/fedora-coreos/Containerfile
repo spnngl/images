@@ -40,6 +40,8 @@ EOF
 # - openscap-scanner and scap-security-guide check the image (scan stage,
 #   below) and the nodes (openscap.timer); audispd-plugins holds audit's
 #   syslog plugin.
+# - grype lists the CVEs of the image (scan stage, below) and of the nodes
+#   (grype.timer).
 #
 # scap-security-guide holds about 40 products' content and the remediation
 # scripts, 735 MB; the scans read Fedora's data stream alone, 21 MB. rpm skips
@@ -54,9 +56,9 @@ echo "%_netsharedpath /usr/share/scap-security-guide:${skip}" > /etc/rpm/macros.
 dnf -yq install --setopt=install_weak_deps=False \
     "kubelet-${KUBERNETES_VERSION}" "kubeadm-${KUBERNETES_VERSION}" "kubectl-${KUBERNETES_VERSION}" \
     cri-tools \
-    conntrack-tools sysstat iproute-tc rootlesskit etcd net-tools qemu-guest-agent greenboot \
+    conntrack-tools sysstat iproute-tc rootlesskit net-tools qemu-guest-agent greenboot \
     greenboot-default-health-checks systemd-networkd openscap-scanner scap-security-guide \
-    audispd-plugins
+    audispd-plugins grype
 
 rm -f /etc/yum.repos.d/kubernetes.repo /etc/rpm/macros.ssg
 test "$(ls "${ssg}")" = ssg-fedora-ds.xml
@@ -89,9 +91,9 @@ grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 # /var ships empty.
 dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /run/selinux-policy
-# State directories the packages ship: kubelet, etcd (kubeadm runs it as a
-# static pod), sysstat's pcp-libs and audisp-remote create theirs at runtime.
-rm -rf /var/lib/etcd /var/lib/kubelet /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated \
+# State directories the packages ship: kubelet, sysstat's pcp-libs and
+# audisp-remote create theirs at runtime.
+rm -rf /var/lib/kubelet /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated \
     /var/spool/audit
 # moby-engine's group, left behind by its removal.
 if getent group docker >/dev/null; then groupdel docker; fi
@@ -109,7 +111,7 @@ chmod 0700 /etc/ssh/sshd_config.d
 chmod 0600 /etc/ssh/sshd_config.d/*.conf
 chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
-chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount,openscap-scan}
+chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount,openscap-scan,grype-scan}
 
 # The RPMs ship no bash completion, which etc/profile.d/kubernetes.sh loads.
 for tool in kubectl kubeadm crictl; do
@@ -198,7 +200,7 @@ wants multi-user.target.wants containerd.service kubelet.service amd-hsmp.servic
     openstack-hostname.service openstack-disk-tags.service greenboot-healthcheck.service \
     systemd-networkd.service
 wants paths.target.wants etcd-network-tuning.path
-wants timers.target.wants openscap.timer
+wants timers.target.wants openscap.timer grype.timer
 # The base enables systemd-network-generator.service, which networkd's [Install]
 # would add too.
 wants sysinit.target.wants wx-remount.service auditd.service chronyd.service
@@ -227,23 +229,26 @@ EORUN
 # hadolint ignore=DL3059
 RUN bootc container lint
 
-# OpenSCAP scan of the image, in a stage of its own so that its files stay out
-# of the image. Profile `build` of the tailoring (sysroot/usr/share/xml/scap/):
-# what a build can check. Exit 2 means rules failed: the report is still
-# written, and build.sh fails after exporting it. Any other non-zero is the
-# scan's own failure.
+# Scans of the image, in a stage of their own so that their files stay out of
+# the image. They report what they find; build.sh fails on it after exporting
+# the reports.
 FROM builder AS scan
-RUN <<EORUN
-mkdir /openscap
+RUN --mount=type=cache,target=/var/cache/grype \
+    <<EORUN
+# OpenSCAP, profile `build` of the tailoring (sysroot/usr/share/xml/scap/):
+# what a build can check. Exit 2: rules failed, the report is written.
+mkdir -p /reports/openscap /reports/grype
 oscap xccdf eval --profile xccdf_local_profile_build \
     --tailoring-file /usr/share/xml/scap/fedora-coreos/tailoring.xml \
-    --results /openscap/results.xml --report /openscap/report.html \
-    /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml
+    --results /reports/openscap/results.xml --report /reports/openscap/report.html \
+    /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml || [[ $? == 2 ]]
+# grype, as the nodes run it. The cache keeps its database between builds.
+STATE_DIRECTORY=/reports/grype CACHE_DIRECTORY=/var/cache/grype /usr/libexec/grype-scan
 EORUN
 
-# Its results alone: `--target openscap --output type=local,dest=<dir>`.
-FROM scratch AS openscap
-COPY --from=scan /openscap/ /
+# The reports alone: `--target reports --output type=local,dest=<dir>`.
+FROM scratch AS reports
+COPY --from=scan /reports/ /
 
 # The image, last: the default target.
 FROM builder
