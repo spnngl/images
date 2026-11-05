@@ -124,6 +124,35 @@
         },
         {
             "customType": "regex",
+            "description": "Kubernetes release of bootc/fedora-coreos: the Containerfile's ARG KUBERNETES_VERSION. Its pkgs.k8s.io repository (v<minor>), its RPMs, its pause image and the image's tag (<BASE_VERSION>-v<KUBERNETES_VERSION>) all follow from it.",
+            "managerFilePatterns": ["/^bootc/fedora-coreos/Containerfile$/"],
+            "matchStrings": ["ARG KUBERNETES_VERSION=\"(?<currentValue>[^\"]+)\""],
+            "depNameTemplate": "kubernetes",
+            "packageNameTemplate": "kubernetes/kubernetes",
+            "datasourceTemplate": "github-releases",
+            "extractVersionTemplate": "^v(?<version>.+)$"
+        },
+        {
+            "customType": "regex",
+            "description": "Cilium chart of bootc/fedora-coreos's test cluster (vm.sh cluster).",
+            "managerFilePatterns": ["/^bootc/fedora-coreos/vm\\.sh$/"],
+            "matchStrings": ["cilium/cilium --version (?<currentValue>\\S+)"],
+            "depNameTemplate": "cilium",
+            "registryUrlTemplate": "https://helm.cilium.io",
+            "datasourceTemplate": "helm"
+        },
+        {
+            "customType": "regex",
+            "description": "custom-coreos-disk-images, which bootc/fedora-coreos/build.sh runs: pinned to a commit of its main branch (no release).",
+            "managerFilePatterns": ["/^bootc/fedora-coreos/build\\.sh$/"],
+            "matchStrings": ["disk_images_commit=\"(?<currentDigest>[0-9a-f]{40})\""],
+            "depNameTemplate": "coreos/custom-coreos-disk-images",
+            "packageNameTemplate": "https://github.com/coreos/custom-coreos-disk-images",
+            "currentValueTemplate": "main",
+            "datasourceTemplate": "git-refs"
+        },
+        {
+            "customType": "regex",
             "description": "Go of the Dalec specs: their golang-<major.minor>-go build dependency, from trixie-backports, whose golang-go (version 2:<major.minor>~...) depends on the newest one. Through Repology, by source package (golang-defaults builds golang-go): the deb datasource only reads Packages.gz, and backports only publishes Packages.xz.",
             "managerFilePatterns": ["/^containers/[^/]+/spec\\.yml$/"],
             "matchStrings": ["\\bgolang-(?<currentValue>\\d+\\.\\d+)-go: "],
@@ -401,6 +430,34 @@
             "matchDepNames": ["quay.io/fedora/fedora-bootc"],
             "overrideDatasource": "endoflife-date",
             "overridePackageName": "fedora"
+        },
+        {
+            "description": "Fedora CoreOS: the stable stream's releases only (<major>.<date>.3.<n>); its tags also hold the testing (.2.) and next (.1.) streams.",
+            "matchDepNames": ["quay.io/fedora/fedora-coreos"],
+            "allowedVersions": "/^\\d+\\.\\d{8}\\.3\\.\\d+$/"
+        },
+        {
+            "description": "Kubernetes of bootc/fedora-coreos: a PR per patch release of the current minor too, as k3s's, and one per minor release: kubeadm upgrades one minor at a time.",
+            "matchDepNames": ["kubernetes"],
+            "separateMinorPatch": true,
+            "separateMultipleMinor": true
+        },
+        {
+            "description": "custom-coreos-disk-images, pinned to a commit of its main branch: weekly, on Saturday between midnight and 5am like the pins above. The note keeps what changed.",
+            "matchDepNames": ["coreos/custom-coreos-disk-images"],
+            "schedule": ["* 0-4 * * 6"],
+            "updateNotScheduled": false,
+            "prBodyNotes": [
+                "What changed: https://github.com/{{{depName}}}/compare/{{{currentDigest}}}...{{{newDigest}}}"
+            ]
+        },
+        {
+            "description": "bootc/fedora-coreos isn't built by CI (bootc/fedora-coreos/AGENTS.md): every update is tested by hand. Never automerged.",
+            "matchFileNames": ["bootc/fedora-coreos/**"],
+            "automerge": false,
+            "prBodyNotes": [
+                "Not built by CI. Before merging, run the build check of [`bootc/fedora-coreos/AGENTS.md`](https://github.com/spnngl/images/blob/main/bootc/fedora-coreos/AGENTS.md#build-check). A new Fedora CoreOS release or Kubernetes version is a new image tag: VMs get new machines through Cluster API, dedicated servers move with `bootc switch`."
+            ]
         },
         {
             "description": "AlmaLinux 9 is kept for x86-64-v2 hosts until its end of life (build-bootc.yml): never moved to 10.",

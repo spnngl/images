@@ -1,0 +1,22 @@
+# Cinder volumes carry a tag in the instance's meta_data.json, and Cluster API
+# mounts them by that tag (/dev/disk/by-tag/<name>, see
+# usr/lib/udev/rules.d/99-openstack-by-tag.rules). cloud-init wrote that file
+# to /run/cloud-init/instance-data.json; FCOS has none, so this unit fetches
+# it, then asks udev to re-read the disks.
+[Unit]
+Description=Tag the OpenStack volumes (/dev/disk/by-tag)
+ConditionVirtualization=vm
+ConditionKernelCommandLine=ignition.platform.id=openstack
+Wants=network-online.target
+After=network-online.target
+# Before the units that mount the tagged disks: Ignition's mounts happen
+# earlier, and the kubeadm one needs them.
+Before=kubeadm.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/openstack-fetch-metadata
+
+[Install]
+WantedBy=multi-user.target

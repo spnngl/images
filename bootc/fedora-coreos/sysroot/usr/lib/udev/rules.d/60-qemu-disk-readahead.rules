@@ -1,0 +1,14 @@
+# Kernel 7.0 gives rotational disks read_ahead_kb = 2 x max_sectors_kb (8 MB)
+# (commit 459779d04ae8). QEMU disks report rotational with no optimal I/O
+# size, so every Cinder volume gets 8192 instead of 128. Anything that mmaps
+# its files (Elasticsearch, ClickHouse) then pulls up to 8 MB per page fault,
+# and OVH's 50 MB/s volume cap turns 2 ms reads into 125 ms ones.
+# Matching the QEMU vendor/model and a VM (systemd-detect-virt, run only for
+# the disks that match) leaves bare-metal disks alone.
+#
+# A rescan without a size change sends no uevent: run
+# `udevadm trigger --action=change /sys/block/sdX` after it.
+ACTION=="add|change", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd*", \
+  ATTRS{vendor}=="QEMU*", ATTRS{model}=="QEMU HARDDISK*", \
+  PROGRAM=="/usr/bin/systemd-detect-virt --vm --quiet", \
+  ATTR{queue/read_ahead_kb}="128"

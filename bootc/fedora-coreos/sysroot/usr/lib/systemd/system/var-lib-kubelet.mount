@@ -1,0 +1,15 @@
+# Pod volumes (emptyDir, configMap, secret) live in /var/lib/kubelet, and
+# workloads execute files from them: wx-remount.service makes /var noexec,
+# this bind mount is the exception.
+[Unit]
+Description=Allow execution in /var/lib/kubelet
+Before=kubelet.service
+
+[Mount]
+What=/var/lib/kubelet
+Where=/var/lib/kubelet
+Type=none
+Options=bind,exec
+
+[Install]
+WantedBy=local-fs.target

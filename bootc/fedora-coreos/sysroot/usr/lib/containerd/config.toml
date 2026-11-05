@@ -1,0 +1,14 @@
+# Same shape as kubernetes-sigs/image-builder's containerd role: a small
+# config.toml that imports drop-ins. The image's settings are in
+# conf.d/50-myconf.toml and the generated conf.d/20-pause.toml; a node's
+# own go in /etc/containerd/conf.d.
+version = 3
+imports = [
+  "/usr/lib/containerd/conf.d/*.toml",
+  "/etc/containerd/conf.d/*.toml",
+]
+
+# Kept from the base's /etc/containerd/config.toml: /opt is /var/opt here,
+# which isn't wanted for containerd's own plugins.
+[plugins.'io.containerd.internal.v1.opt']
+  path = '/var/lib/containerd/opt'

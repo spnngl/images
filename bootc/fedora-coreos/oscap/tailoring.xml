@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Tailoring
+    xmlns="http://checklists.nist.gov/xccdf/1.2"
+    id="xccdf_local_tailoring_container_build"
+>
+  <benchmark href="/usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml" />
+  <version time="2026-11-05T00:00:00">1.0</version>
+  <Profile
+        id="xccdf_local_profile_standard_container"
+        extends="xccdf_org.ssgproject.content_profile_standard"
+    >
+    <title>Container Build Tailored Profile</title>
+    <description
+        >Disables rules that check live kernel parameters, bootloader configurations, and mounted partitions which always fail inside a container build environment.</description>
+
+    <!-- Disable Partition Mount Rules -->
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_tmp_nodev"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_tmp_nosuid"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_tmp_noexec"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_var_tmp_nodev"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_var_tmp_nosuid"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_var_tmp_noexec"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_dev_shm_nodev"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_dev_shm_nosuid"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_mount_option_dev_shm_noexec"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_partition_for_tmp"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_partition_for_var"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_partition_for_var_log"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_partition_for_var_log_audit"
+            selected="false"
+        />
+
+    <!-- Disable Bootloader & GRUB Rules -->
+    <select
+            idref="xccdf_org.ssgproject.content_rule_grub2_password"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_grub2_uefi_password"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_file_permissions_grub2_cfg"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_file_owner_grub2_cfg"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_file_groupowner_grub2_cfg"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_grub2_audit_argument"
+            selected="false"
+        />
+
+    <!-- Disable Kernel sysctl Rules (Containers use the host kernel) -->
+    <select
+            idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_source_route"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_accept_source_route"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_icmp_echo_ignore_broadcasts"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_redirects"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_accept_redirects"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_ip_forward"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_all_accept_redirects"
+            selected="false"
+        />
+
+    <!-- Disable Service States (systemd init isn't running during podman build) -->
+    <select
+            idref="xccdf_org.ssgproject.content_rule_service_auditd_enabled"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_service_chronyd_enabled"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_service_firewalld_enabled"
+            selected="false"
+        />
+    <select
+            idref="xccdf_org.ssgproject.content_rule_service_systemd-journald_enabled"
+            selected="false"
+        />
+  </Profile>
+</Tailoring>

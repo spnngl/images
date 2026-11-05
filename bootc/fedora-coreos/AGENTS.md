@@ -1,0 +1,70 @@
+# fedora-coreos
+
+Fedora CoreOS bootc image for kubeadm nodes of Cluster API clusters
+(OpenStack VMs, OVHcloud dedicated servers), from
+`quay.io/fedora/fedora-coreos:<BASE_VERSION>`. Sources and the reason for
+each choice: [REFERENCES.md](REFERENCES.md).
+
+## Rules
+
+- **One stage, not the three of `bootc/AGENTS.md`**: kubeadm nodes only,
+  no k3s, no Docker. Tag `<BASE_VERSION>-v<KUBERNETES_VERSION>`; both
+  `ARG`s are in the Containerfile, and a new Kubernetes patch release is a
+  new tag (Cluster API's `spec.version` must match the image's kubeadm).
+- **Own `sysroot/`**, nothing from `bootc/fedora/sysroot/common/` (no
+  firewalld, sshd on 22, systemd-networkd). Files that Ignition or the user
+  may own stay in `/etc`; the rest is in `/usr`. SSH keys are only in
+  `/usr/lib/ssh/authorized_keys/`: sshd reads no other file.
+- **No host firewall, no iptables rules:** Cilium filters; the legacy
+  iptables modules can't load.
+- **systemd-networkd, not NetworkManager** (masked, kept for the initrd).
+- **One image for VMs and dedicated servers**, told apart by
+  `systemd-detect-virt`: a VM-only unit or file has
+  `ConditionVirtualization=vm` (or `Virtualization=vm`), a bare-metal-only
+  one `ConditionVirtualization=false`; a bare-metal script refuses to run
+  in a VM.
+- **W^X**: every writable mount is `noexec` (`wx-remount.service`). A
+  new exception is a `bind,exec` mount unit with its reason in a comment
+  and in REFERENCES.md; anything under `/etc` or `/var` runs through an
+  interpreter (`bash <file>`).
+- **Units are enabled by links in `/usr/lib/systemd/system`** (`wants` in
+  the Containerfile), never by `systemctl enable` or a preset: FCOS runs
+  `systemctl preset-all` at first boot, which drops the `/etc` links no
+  preset names.
+- **Nothing is pushed, signed or run in CI** (PLAN.md, out of scope). The
+  image lives as an OCI archive in the workbench.
+- **Renovate** proposes `BASE_VERSION`, `KUBERNETES_VERSION`, the Cilium
+  of `vm.sh` and `build.sh`'s `disk_images_commit` (`renovate.json5`),
+  never automerged: run the build check before merging.
+
+## Layout
+
+- `Containerfile`, `sysroot/`: the image.
+- `build.sh`: container image on the cluster's BuildKit, then disk images
+  (`qemu`, `openstack`, `metal`) in the workbench pod
+  (`workbench.yaml`, `workbench.sh`).
+- `vm.sh`, `test.sh`, `test/`, `test-greenboot.sh`: a
+  test VM in the workbench (an NVMe disk), and the checks run on it.
+- `ignition-converter/`: Go webhook that turns CABPK's Ignition spec 2.3
+  into 3.0, with its own [README.md](ignition-converter/README.md).
+
+## Build check
+
+`BUILD_KUBE_CONTEXT` is the kube context of the build cluster, which runs the BuildKit and the workbench.
+
+```sh
+export BUILD_KUBE_CONTEXT=<context>
+bootc/fedora-coreos/build.sh qemu,openstack,metal
+bootc/fedora-coreos/vm.sh up
+bootc/fedora-coreos/test.sh image     # packages, config, units, sshd, sysctls
+bootc/fedora-coreos/vm.sh cluster     # kubeadm init + Cilium
+bootc/fedora-coreos/test.sh cluster   # node Ready, pod runs scripts from emptyDir and configMap
+bootc/fedora-coreos/test.sh wx        # noexec everywhere but the exceptions
+bootc/fedora-coreos/test-greenboot.sh # good update kept, bad one rolled back
+bootc/fedora-coreos/ignition-converter/e2e.sh
+(cd bootc/fedora-coreos/ignition-converter && go vet ./... && go test ./...)
+bootc/fedora-coreos/vm.sh down
+bootc/fedora-coreos/workbench.sh down
+```
+
+Done when each command exits 0. Run `test.sh wx` again after a reboot.

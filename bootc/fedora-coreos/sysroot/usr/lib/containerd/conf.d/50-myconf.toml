@@ -1,0 +1,51 @@
+oom_score = -999
+
+[grpc]
+  max_recv_message_size = 16777216
+  max_send_message_size = 16777216
+
+[debug]
+  address = "/run/containerd/debug.sock"
+  level = "info"
+  format = "json"
+  uid = 0
+  gid = 0
+
+# Scraped by Prometheus
+[metrics]
+  address = "0.0.0.0:23542"
+  grpc_histogram = true
+
+[plugins]
+  [plugins.'io.containerd.cri.v1.images']
+    snapshotter = "overlayfs"
+    discard_unpacked_layers = false
+    image_pull_progress_timeout = "5m"
+
+    [plugins.'io.containerd.cri.v1.images'.registry]
+      config_path = "/etc/containerd/certs.d"
+
+  [plugins.'io.containerd.cri.v1.runtime']
+    max_container_log_line_size = 16384
+    enable_unprivileged_ports = false
+    enable_unprivileged_icmp = false
+    # SELinux is permissive on this image.
+    enable_selinux = false
+    tolerate_missing_hugetlb_controller = true
+    disable_hugetlb_controller = true
+
+    # The loopback plugin is built into containerd, so no CNI RPM is needed:
+    # Cilium installs its own plugin in /opt/cni/bin (the default bin_dirs).
+    [plugins.'io.containerd.cri.v1.runtime'.cni]
+      use_internal_loopback = true
+
+    [plugins.'io.containerd.cri.v1.runtime'.containerd]
+      [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes]
+        [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc]
+          runtime_type = "io.containerd.runc.v2"
+          # `ctr oci spec` with a higher NOFILE limit: generated at build time
+          # by the Containerfile.
+          base_runtime_spec = "/usr/lib/containerd/cri-base.json"
+
+          [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.runc.options]
+            SystemdCgroup = true

@@ -1,0 +1,1 @@
+rootless ALL=(ALL) NOPASSWD:ALL

@@ -1,0 +1,217 @@
+# syntax=docker.io/docker/dockerfile:1
+
+# Fedora CoreOS release, with the stable stream's tag form. Tag of this
+# image: <BASE_VERSION>-v<KUBERNETES_VERSION>.
+#
+# Available tags: https://quay.io/repository/fedora/fedora-coreos?tab=tags
+ARG BASE_VERSION="44.20261023.3.1"
+
+FROM quay.io/fedora/fedora-coreos:${BASE_VERSION} AS builder
+
+# Kubernetes patch release of kubelet, kubeadm and kubectl.
+ARG KUBERNETES_VERSION="1.35.10"
+ARG SOURCE_DATE_EPOCH=0
+ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
+
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV TZ=UTC
+
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+RUN <<EORUN
+# Kubernetes RPMs: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+# One repository per minor release. Removed below: the image is not
+# updated with dnf, a new Kubernetes patch is a new image.
+minor="${KUBERNETES_VERSION%.*}"
+cat > /etc/yum.repos.d/kubernetes.repo <<EOF
+[kubernetes]
+name=Kubernetes v${minor}
+baseurl=https://pkgs.k8s.io/core:/stable:/v${minor}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v${minor}/rpm/repodata/repomd.xml.key
+EOF
+
+# Fedora's names for what image-builder install. The base already has jq, curl,
+# mdadm, lvm2, cryptsetup, tpm2-tools, chrony, socat, iptables-nft and
+# - systemd-resolved. systemd-networkd manages the network.
+# - greenboot checks an update boots and rolls back when it doesn't.
+#
+# No weak dependencies, as FCOS itself is built.
+dnf -yq install --setopt=install_weak_deps=False \
+    "kubelet-${KUBERNETES_VERSION}" "kubeadm-${KUBERNETES_VERSION}" "kubectl-${KUBERNETES_VERSION}" \
+    cri-tools \
+    conntrack-tools sysstat iproute-tc rootlesskit etcd net-tools qemu-guest-agent greenboot \
+    greenboot-default-health-checks systemd-networkd openscap-scanner scap-security-guide
+
+rm -f /etc/yum.repos.d/kubernetes.repo
+
+# Updates come from Cluster API (a new machine) or bootc-operator, never from
+# the node itself. moby-engine and docker-cli: containerd is the runtime.
+# iptables-services: no host firewall, Cilium filters (FCOS has neither
+# firewalld nor ufw; test/image.sh checks).
+dnf -yq remove zincati moby-engine docker-cli iptables-services
+
+# NetworkManager's extras. NetworkManager itself stays installed but masked
+# (below): ignition, dracut-network, afterburn-dracut and kdump-utils
+# require it, and FCOS's initramfs runs it to fetch the Ignition config.
+# ModemManager isn't installed.
+dnf -yq remove nmstate NetworkManager-team NetworkManager-tui NetworkManager-cloud-setup
+
+# The base's /opt is /var/opt, and /var ships empty. kubernetes-cni (a kubelet
+# dependency) drops the CNI plugins there: Cilium installs its own at
+# runtime, and containerd's loopback is built in (use_internal_loopback).
+rm -rf /opt
+ln -s /var/opt /opt
+
+# chrony.conf has no include directory: replace its default pool with a
+# sources directory, filled by etc/chrony/sources.d/. Fail if the pool line
+# was not found.
+sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
+grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
+
+# /var ships empty.
+dnf -yq clean all
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /run/selinux-policy
+# State directories the packages ship: kubelet, etcd (kubeadm runs it as a
+# static pod) and sysstat's pcp-libs create theirs at runtime.
+rm -rf /var/lib/etcd /var/lib/kubelet /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated
+# moby-engine's group, left behind by its removal.
+if getent group docker >/dev/null; then groupdel docker; fi
+EORUN
+
+# After the packages, so that editing sysroot/ keeps their layer cached.
+COPY --link ./fedora-coreos/sysroot/ /
+
+RUN <<EORUN
+# COPY keeps a file's mode, and git only stores the executable bit.
+chmod 0440 /etc/sudoers.d/99-rootless
+visudo -cf /etc/sudoers.d/99-rootless
+chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount}
+
+# The RPMs ship no bash completion, which etc/profile.d/kubernetes.sh loads.
+for tool in kubectl kubeadm crictl; do
+    "${tool}" completion bash > "/usr/share/bash-completion/completions/${tool}"
+done
+chmod 0755 /usr/lib/greenboot/check/required.d/*.sh
+
+# SELinux permissive, containerd runs with enable_selinux = false. It still labels files and logs denials.
+# TODO add it back ?
+sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
+grep -qx 'SELINUX=permissive' /etc/selinux/config
+
+# To configure the system to notify users of last logon/access
+authselect select sssd
+sed -i -E --follow-symlinks "/\s*session\s+\[default=1\]\s+pam_lastlog2.so.*/ s/$/ showfailed/" /etc/pam.d/postlogin
+authselect check
+authselect apply-changes -b
+
+# kubelet tries to create it, and /usr is read-only at runtime.
+mkdir -p /usr/libexec/kubernetes/kubelet-plugins/volume/exec
+
+# containerd's base spec for containers, from `ctr oci spec`, with a higher
+# open-files limit (what capi-image-builder's cri-base.json does).
+ctr oci spec \
+    | jq '.process.rlimits = [{"type": "RLIMIT_NOFILE", "hard": 65535, "soft": 65535}]' \
+    > /usr/lib/containerd/cri-base.json
+
+# The sandbox image kubeadm of this release expects, so that kubelet and
+# containerd agree on it (kubeadm warns otherwise).
+pause="$(kubeadm config images list --kubernetes-version "v${KUBERNETES_VERSION}" | grep '/pause:')"
+cat > /usr/lib/containerd/conf.d/20-pause.toml <<EOF
+[plugins.'io.containerd.cri.v1.images'.pinned_images]
+  sandbox = '${pause}'
+EOF
+
+# Fail the build, not the node, if the merged containerd config misses what
+# we set (a mistyped plugin key is silently ignored).
+containerd --config /usr/lib/containerd/config.toml config dump > /tmp/containerd.toml
+grep -q "SystemdCgroup = true" /tmp/containerd.toml
+grep -q "sandbox = '${pause}'" /tmp/containerd.toml
+grep -q "use_internal_loopback = true" /tmp/containerd.toml
+grep -q "base_runtime_spec = '/usr/lib/containerd/cri-base.json'" /tmp/containerd.toml
+
+# Same for sshd: the first value wins, so check what it resolves to. UsePAM
+# must stay yes (etc/ssh/sshd_config.d/00-hardening.conf).
+ssh-keygen -q -t ed25519 -N '' -f /tmp/hostkey
+sshd -T -h /tmp/hostkey > /tmp/sshd.txt
+grep -qx 'passwordauthentication no' /tmp/sshd.txt
+grep -qx 'permitrootlogin no' /tmp/sshd.txt
+grep -qx 'usepam yes' /tmp/sshd.txt
+grep -qx 'kbdinteractiveauthentication no' /tmp/sshd.txt
+grep -qx 'authorizedkeysfile /usr/lib/ssh/authorized_keys/%u' /tmp/sshd.txt
+# What applies to rootless, Match blocks included (90-allow-proxyjump.conf).
+sshd -T -h /tmp/hostkey -C user=rootless,host=x,addr=192.0.2.1 > /tmp/sshd.txt
+grep -qx 'allowtcpforwarding local' /tmp/sshd.txt
+
+# Each node makes its own identity at first boot.
+test -z "$(find /etc/ssh -name 'ssh_host_*')"
+test ! -s /etc/machine-id
+
+# Units are enabled by links in /usr/lib, not by `systemctl enable` (/etc):
+# FCOS runs `systemctl preset-all` at first boot, which removes the /etc links
+# that no preset names. Each link is what the unit's [Install] section asks
+# for (greenboot's: usr/lib/systemd/system of greenboot-rs).
+wants() {
+    local dir="/usr/lib/systemd/system/$1"
+    shift
+    mkdir -p "${dir}"
+    for unit in "$@"; do
+        test -f "/usr/lib/systemd/system/${unit}"
+        ln -s "../${unit}" "${dir}/${unit}"
+    done
+}
+wants multi-user.target.wants containerd.service kubelet.service amd-hsmp.service \
+    openstack-hostname.service openstack-disk-tags.service greenboot-healthcheck.service \
+    systemd-networkd.service
+wants paths.target.wants etcd-network-tuning.path
+# The base enables systemd-network-generator.service, which networkd's [Install]
+# would add too.
+wants sysinit.target.wants wx-remount.service auditd.service sssd.service chronyd.service
+wants sockets.target.wants systemd-networkd.socket systemd-networkd-varlink.socket \
+    systemd-networkd-resolve-hook.socket
+wants network-online.target.wants systemd-networkd-wait-online.service
+ln -s systemd-networkd.service /usr/lib/systemd/system/dbus-org.freedesktop.network1.service
+wants local-fs.target.wants var-lib-kubelet.mount var-opt-cni-bin.mount
+wants greenboot-success.target.requires greenboot-healthcheck.service
+wants ostree-finalize-staged.service.requires greenboot-set-rollback-trigger.service
+
+# systemd-networkd, not NetworkManager: the base enables NetworkManager in
+# /etc, and masking keeps preset-all from enabling it again.
+systemctl disable NetworkManager.service NetworkManager-wait-online.service
+rm -rf /etc/systemd/system/NetworkManager.service.wants
+systemctl mask NetworkManager.service NetworkManager-wait-online.service \
+    NetworkManager-dispatcher.service nm-priv-helper.service
+
+# /opt must stay the base's symlink to /var/opt.
+test "$(readlink /opt)" = /var/opt
+
+rm -rf /tmp/*
+EORUN
+
+# Run OpenSCAP on the image, with a tailoring file that disables the rules that
+# don't apply to containers (mostly kernel & sysctl).
+RUN --mount=type=bind,rw,source=fedora-coreos/oscap,target=/tmp/oscap \
+    oscap xccdf eval \
+    --profile xccdf_local_profile_standard_container \
+    --tailoring-file /tmp/oscap/tailoring.xml \
+    --results /tmp/results.xml \
+    --report /tmp/report.html \
+    /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml || true
+
+# Keep this as the last instruction, on its own.
+# hadolint ignore=DL3059
+RUN bootc container lint
+
+# Dummy stage to export the OpenSCAP results with:
+#
+# ```bash
+# docker build -f bootc/fedora-coreos/Containerfile bootc/ -t coucou:latest --target export --output output
+# ```
+#
+# Don't forget to add `--results /tmp/results.xml --report /tmp/report.html`
+# to openscap xccdf eval to generate the files.
+FROM scratch AS export
+COPY --from=builder /tmp/results.xml /
+COPY --from=builder /tmp/report.html /

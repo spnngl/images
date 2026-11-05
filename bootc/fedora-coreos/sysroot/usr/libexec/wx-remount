@@ -1,0 +1,27 @@
+#!/bin/bash
+# Remount the writable filesystems nosuid,nodev,noexec: files that anything
+# can write (Ignition, a pod, an attacker) can't be executed directly. See
+# usr/lib/systemd/system/wx-remount.service.
+set -euo pipefail
+
+status=0
+# /sysroot and /sysroot/ostree/deploy/*/var reach /var's files under another
+# path, and each is a mount with its own flags. /etc and /boot/efi aren't
+# always mounts.
+shopt -s nullglob
+for mount in /var /etc /sysroot /sysroot/ostree/deploy/*/var /boot /boot/efi /tmp /dev/shm /run; do
+    # A directory that isn't a mount point of its own would make this remount
+    # change its parent's options.
+    findmnt --noheadings --mountpoint "${mount}" >/dev/null || continue
+    # bind: only this mount point's flags change. Without it, /sysroot (xfs, ro)
+    # fails with "mount point is busy": the remount reaches the superblock.
+    # A bind remount sets every per-mount flag it is given and clears the
+    # others: keep `ro` on /sysroot and /boot.
+    opts=nosuid,nodev,noexec
+    vfs=$(findmnt --noheadings --first-only --output VFS-OPTIONS --mountpoint "${mount}")
+    if [[ ,${vfs}, == *,ro,* ]]; then
+        opts+=,ro
+    fi
+    mount -o "remount,bind,${opts}" "${mount}" || status=1
+done
+exit "${status}"

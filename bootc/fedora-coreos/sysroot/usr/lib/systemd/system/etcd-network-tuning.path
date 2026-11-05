@@ -1,0 +1,11 @@
+# A control-plane node is one that runs etcd: kubeadm writes its static pod
+# manifest during `kubeadm init` or a control-plane join, after boot. At
+# later boots, the file is already there.
+[Unit]
+Description=Tune etcd traffic on control-plane nodes
+
+[Path]
+PathExists=/etc/kubernetes/manifests/etcd.yaml
+
+[Install]
+WantedBy=paths.target

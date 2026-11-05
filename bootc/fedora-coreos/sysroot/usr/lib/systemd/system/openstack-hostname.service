@@ -1,0 +1,27 @@
+# The OpenStack cloud controller manager finds the instance by node name, so
+# the hostname must be the instance's. Afterburn's own
+# afterburn-hostname.service skips OpenStack; afterburn.service writes
+# AFTERBURN_OPENSTACK_HOSTNAME to /run/metadata/afterburn.
+[Unit]
+Description=Set the hostname from the OpenStack instance name
+Documentation=https://coreos.github.io/afterburn/platforms/
+ConditionVirtualization=vm
+ConditionKernelCommandLine=ignition.platform.id=openstack
+Wants=network-online.target
+After=network-online.target
+# The hostname must be final when the node registers.
+Before=kubeadm.service kubelet.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+# One shell, not ExecStartPre and EnvironmentFile: systemd reads environment
+# files before ExecStartPre too, when this one doesn't exist yet, and an
+# empty name would reset the hostname instead of failing (`:?`).
+ExecStart=/bin/bash -c 'set -euo pipefail; \
+    /usr/bin/afterburn --cmdline --attributes=/run/openstack-hostname.env; \
+    . /run/openstack-hostname.env; \
+    exec /usr/bin/hostnamectl hostname "$${AFTERBURN_OPENSTACK_HOSTNAME:?}"'
+
+[Install]
+WantedBy=multi-user.target

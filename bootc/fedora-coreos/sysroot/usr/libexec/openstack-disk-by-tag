@@ -1,0 +1,12 @@
+#!/bin/bash
+# Print OS_TAG=<tag> for the disk whose serial is $ID_SERIAL_SHORT, from
+# the volume tags in /run/openstack/meta_data.json. A udev IMPORT{program}
+# calls it (usr/lib/udev/rules.d/99-openstack-by-tag.rules); it prints nothing
+# for an untagged disk, and when the file isn't there yet.
+set -euo pipefail
+
+meta=/run/openstack/meta_data.json
+[[ -r "${meta}" ]] || exit 0
+
+jq -r --arg id "${ID_SERIAL_SHORT:-}" \
+    '.devices[]? | select(.serial == $id) | .tags[0]? // empty | "OS_TAG=\(.)"' "${meta}"

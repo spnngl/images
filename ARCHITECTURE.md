@@ -7,7 +7,9 @@ unsigned, to Docker Hub, `docker.io/loladelannoy/<name>:<BASE_VERSION>`:
 - **bootc images** (`bootc/`): bootable operating systems. A host boots
   from one and updates by pulling a newer one (`bootc upgrade`). Built
   with podman; `bootc/build.sh` also turns one into a qcow2 disk image
-  for the first install, with image-builder.
+  for the first install, with image-builder. `bootc/fedora-coreos/` is the
+  exception: one Fedora CoreOS image for kubeadm nodes, built on a
+  cluster (`bootc/fedora-coreos/AGENTS.md`), not yet in CI.
 - **Application images** (`containers/`): upstream apps the hosts run,
   shell-less (busybox excepted: a shell is its purpose; git, built on
   it: its hooks and aliases need one; buildkit, built on git: it runs

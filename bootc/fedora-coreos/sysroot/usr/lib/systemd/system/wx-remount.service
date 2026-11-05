@@ -1,0 +1,21 @@
+# W^X: nothing that is writable at runtime may be executed (units run their
+# scripts from /usr, or through an interpreter: `bash <file>`; noexec doesn't
+# stop an interpreter from reading a script, it is defense in depth). The
+# exceptions are bind mounts with exec: var-lib-kubelet.mount and
+# var-opt-cni-bin.mount.
+#
+# After local-fs.target, not before it: /boot and /boot/efi are mounted by
+# then, and a mount that isn't there yet is skipped.
+[Unit]
+Description=Remount the writable filesystems noexec
+DefaultDependencies=no
+After=local-fs.target
+Before=sysinit.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/wx-remount
+
+[Install]
+WantedBy=sysinit.target

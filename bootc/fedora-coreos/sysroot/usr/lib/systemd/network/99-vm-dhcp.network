@@ -1,0 +1,24 @@
+# VMs: DHCP on every physical NIC, the last match
+# (99-), so a .network of Ignition's (/etc/systemd/network) wins. Bare metal
+# gets its network from Ignition only (bonds): a server's ports aren't all
+# plugged, and DHCP on the wrong one gives a wrong default route.
+[Match]
+Virtualization=vm
+Type=ether
+# Physical (virtio) NICs only: no veth, netkit, vxlan or bond.
+Kind=!*
+
+[Link]
+RequiredForOnline=routable
+
+[Network]
+DHCP=ipv4
+# IPv6 is off (usr/lib/sysctl.d/995-ipv6.conf).
+LinkLocalAddressing=no
+IPv6AcceptRA=no
+
+[DHCPv4]
+# Neutron's DHCP server knows the port by its MAC.
+ClientIdentifier=mac
+# OpenStack's overlay networks announce a smaller MTU (1450 on VXLAN).
+UseMTU=yes

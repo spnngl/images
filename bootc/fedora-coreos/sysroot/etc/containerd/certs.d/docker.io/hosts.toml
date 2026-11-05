@@ -1,0 +1,16 @@
+# Docker Hub's pull limits: pull docker.io images from public mirrors first,
+# in order, then from Docker Hub. containerd tries the next host when one
+# fails or doesn't have the image.
+# - mirror.gcr.io: Google's cache of Docker Hub, any repository it has.
+# - public.ecr.aws/docker: AWS' copy of the Docker official images
+#   (library/*) only, under its own path (override_path).
+# In /etc, not /usr: a node's mirror (Spegel) writes this directory.
+# Docs: https://github.com/containerd/containerd/blob/main/docs/hosts.md
+server = "https://registry-1.docker.io"
+
+[host."https://mirror.gcr.io"]
+  capabilities = ["pull", "resolve"]
+
+[host."https://public.ecr.aws/v2/docker"]
+  capabilities = ["pull", "resolve"]
+  override_path = true

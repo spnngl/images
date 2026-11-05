@@ -2,7 +2,8 @@
 
 Bootable OS images, one per `bootc/<name>/`, built with podman by
 `bootc/build.sh` and `.github/workflows/build-bootc.yml`. Every
-Containerfile has three stages:
+Containerfile has three stages (`fedora-coreos` has one and its own build
+and test scripts: [fedora-coreos/AGENTS.md](fedora-coreos/AGENTS.md)):
 
 - `base`: the host system, not an image on its own;
 - `kubeenv` (`FROM base`): k3s, no Docker. Tag

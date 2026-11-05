@@ -1,0 +1,15 @@
+# amd_hsmp exposes the AMD EPYC power and throttling telemetry: socket power,
+# power limit and PROCHOT status. Nothing else gives it: amd_energy was
+# removed upstream, and powercap/RAPL doesn't exist on Zen.
+[Unit]
+Description=Load amd_hsmp for AMD EPYC power and throttling telemetry
+ConditionVirtualization=false
+
+[Service]
+Type=oneshot
+ExecCondition=/usr/bin/grep -qm1 AuthenticAMD /proc/cpuinfo
+RemainAfterExit=yes
+ExecStart=/usr/sbin/modprobe amd_hsmp
+
+[Install]
+WantedBy=multi-user.target

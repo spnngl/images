@@ -1,0 +1,16 @@
+# node-local-dns' dummy interface: cluster names (svc.cluster.local) resolve
+# through it, from the host too.
+#
+# KeepConfiguration: the pod owns the interface's address, networkd must not
+# remove it.
+[Match]
+Name=nodelocaldns
+
+[Link]
+RequiredForOnline=no
+
+[Network]
+DNS=169.254.25.10
+Domains=~svc.cluster.local
+LinkLocalAddressing=no
+KeepConfiguration=yes
