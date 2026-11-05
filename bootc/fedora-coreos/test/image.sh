@@ -187,7 +187,7 @@ net.core.bpf_jit_limit 1000000000
 net.ipv4.neigh.default.gc_thresh1 1024
 net.ipv4.neigh.default.gc_thresh2 28672
 net.ipv4.neigh.default.gc_thresh3 32768
-vm.max_map_count 262144
+vm.max_map_count 1048576
 net.ipv4.tcp_keepalive_time 60
 kernel.softlockup_panic 0
 kernel.panic 10

@@ -35,7 +35,8 @@ EOF
 
 # Fedora's names for what image-builder install. The base already has jq, curl,
 # mdadm, lvm2, cryptsetup, tpm2-tools, chrony, socat, iptables-nft and
-# - systemd-resolved. systemd-networkd manages the network.
+# systemd-resolved.
+# - systemd-networkd manages the network.
 # - greenboot checks an update boots and rolls back when it doesn't.
 # - openscap-scanner and scap-security-guide check the image (scan stage,
 #   below) and the nodes (openscap.timer); audispd-plugins holds audit's
@@ -125,9 +126,12 @@ sed -i 's/^SELINUX=.*/SELINUX=permissive/' /etc/selinux/config
 grep -qx 'SELINUX=permissive' /etc/selinux/config
 
 # No login with an empty password. The base's authselect profile stays,
-# `local`: SSSD has no provider for local users.
+# `local`: SSSD has no provider for local users. /var ships empty, as the
+# base's: authselect checks its files without the checksum it writes there.
 authselect enable-feature without-nullok
 test -z "$(grep -l nullok /etc/pam.d/system-auth /etc/pam.d/password-auth)"
+rm -rf /var/lib/authselect
+authselect check
 
 # CIS's umask, 027, where no drop-in can set it: login.defs (useradd, PAM),
 # and bashrc's fallback for a shell started with umask 0 (etc/profile.d/umask.sh
@@ -218,6 +222,10 @@ systemctl disable NetworkManager.service NetworkManager-wait-online.service
 rm -rf /etc/systemd/system/NetworkManager.service.wants
 systemctl mask NetworkManager.service NetworkManager-wait-online.service \
     NetworkManager-dispatcher.service nm-priv-helper.service
+
+# It would report each node to Fedora's count of systems; masked, as
+# preset-all enables a disabled unit again.
+systemctl mask rpm-ostree-countme.timer
 
 # /opt must stay the base's symlink to /var/opt.
 test "$(readlink /opt)" = /var/opt
