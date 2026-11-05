@@ -73,11 +73,13 @@
   `sourceMappingURL` in the bundle; they serve devtools only and were
   29 MB, 15% of the image. Upstream's `main` skips them with
   `SABLE_FOSS=1`; the deletion covers both.
-- **`pnpm install --ignore-scripts`:** the builds `allowBuilds`
-  permits are for the desktop app or the CLIs of other jobs (electron,
-  `@sentry/cli`, workerd); esbuild and lightningcss ship their binaries
-  in platform packages. `prepare` runs `svelte-kit sync`, which `vite
-  build` runs itself, and installs git hooks. The build and the test
+- **`pnpm install --frozen-lockfile --ignore-scripts` in both build
+  stages:** `build-wasm.mjs` imports `proper-lockfile`, a root workspace
+  dependency, before the frontend stage installs packages. The builds'
+  `allowBuilds` permits are for the desktop app or the CLIs of other jobs
+  (electron, `@sentry/cli`, workerd); esbuild and lightningcss ship their
+  binaries in platform packages. `prepare` runs `svelte-kit sync`, which
+  `vite build` runs itself, and installs git hooks. The build and the test
   show nothing needs them.
 - **DeepFilterNet downloaded by the build:** `vite build` fetches two
   assets and checks their sha256 (`fetch-deepfilternet.mjs`): upstream

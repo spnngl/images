@@ -12,7 +12,7 @@ target "sable-next" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=SableClient/sable-next extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "2.2.2", checksum = "aeb34033930370729b293df37773ff0cda827c13" },
+      { version = "2.3.1", checksum = "e901dc9cc92302bff75aaf15db905beefbe9c5c7" },
     ]
     sws = [
       # renovate: datasource=github-tags depName=static-web-server/static-web-server extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
