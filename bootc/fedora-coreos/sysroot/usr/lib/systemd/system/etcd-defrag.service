@@ -1,0 +1,13 @@
+# Run by etcd-defrag.timer. A control-plane node is one that runs etcd:
+# kubeadm writes its static pod manifest; elsewhere the service is skipped.
+# etcd frees deleted keys' space only for reuse: a defrag gives it back
+# to the disk and keeps the database under its quota.
+[Unit]
+Description=Defragment the node's etcd member
+ConditionPathExists=/etc/kubernetes/manifests/etcd.yaml
+After=containerd.service kubelet.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/etcd-defrag
+StateDirectory=etcd-defrag

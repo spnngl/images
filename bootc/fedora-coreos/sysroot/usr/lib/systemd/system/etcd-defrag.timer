@@ -1,0 +1,14 @@
+# Daily, at a random time in the first 6 hours, fixed per node
+# (FixedRandomDelay): a member freezes while it defragments, so the
+# control-plane nodes take turns. Not Persistent: a node catching up at boot
+# would defragment while its member resyncs, and the next day's run is soon.
+[Unit]
+Description=Daily etcd defragmentation on control-plane nodes
+
+[Timer]
+OnCalendar=daily
+RandomizedDelaySec=6h
+FixedRandomDelay=true
+
+[Install]
+WantedBy=timers.target

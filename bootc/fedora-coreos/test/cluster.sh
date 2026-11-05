@@ -66,6 +66,11 @@ check "etcd traffic gets the first band" bash -c '
         tc qdisc show dev "${n}" | grep -q "^qdisc prio 1: root" || { echo "${n}: no prio"; exit 1; }
         tc filter show dev "${n}" | grep -q "match 094c0000/ffff0000" || { echo "${n}: no 2380 filter"; exit 1; }
     done'
+# A new cluster has less than 100 MB to free: skipped_small, past the health
+# check and the status read.
+check "etcd-defrag runs on the member" bash -c '
+    sudo systemctl start etcd-defrag.service &&
+    sudo grep -qE "^etcd_defrag_result\{result=\"(defragmented|skipped_small)\"\} 1$" /var/lib/etcd-defrag/etcd-defrag.prom'
 # Cilium's devices, netkit or veth.
 check "networkd leaves Cilium's devices alone" bash -c '
     out=$(networkctl list --no-legend | awk "\$2 ~ /^(lxc|cilium_|veth)/ {print \$2, \$5}")

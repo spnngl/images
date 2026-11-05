@@ -1,0 +1,99 @@
+#!/bin/bash
+# Defragment this control-plane node's etcd member when it frees 100 MB or
+# more, then clear an out-of-space alarm the defrag may have resolved. See
+# usr/lib/systemd/system/etcd-defrag.service.
+#
+# etcdctl is the one in kubeadm's etcd container (`crictl exec`), at the
+# server's version, with kubeadm's healthcheck client certificate.
+#
+# Output, in STATE_DIRECTORY (systemd's StateDirectory=, /var/lib/etcd-defrag):
+#   etcd-defrag.prom  the last run, for node-exporter's textfile collector (see
+#                     usr/libexec/openscap-scan)
+set -euo pipefail
+
+cd "${STATE_DIRECTORY}"
+result=failed
+size_before=""
+in_use_before=""
+size_after=""
+# On every exit: a failure is a result too.
+write_metrics() {
+    {
+        echo "# HELP etcd_defrag_result Result of the last run: 1 for the one it had."
+        echo "# TYPE etcd_defrag_result gauge"
+        for r in defragmented skipped_small skipped_unhealthy failed; do
+            echo "etcd_defrag_result{result=\"${r}\"} $([[ ${r} == "${result}" ]] && echo 1 || echo 0)"
+        done
+        echo "# HELP etcd_defrag_db_size_bytes Size of the member's database, before and after the last run."
+        echo "# TYPE etcd_defrag_db_size_bytes gauge"
+        [[ -z ${size_before} ]] || echo "etcd_defrag_db_size_bytes{when=\"before\"} ${size_before}"
+        [[ -z ${size_after} ]] || echo "etcd_defrag_db_size_bytes{when=\"after\"} ${size_after}"
+        echo "# HELP etcd_defrag_db_size_in_use_bytes Part of the database in use, before the last run."
+        echo "# TYPE etcd_defrag_db_size_in_use_bytes gauge"
+        [[ -z ${in_use_before} ]] || echo "etcd_defrag_db_size_in_use_bytes ${in_use_before}"
+        echo "# HELP etcd_defrag_last_run_timestamp_seconds End of the last run."
+        echo "# TYPE etcd_defrag_last_run_timestamp_seconds gauge"
+        echo "etcd_defrag_last_run_timestamp_seconds $(date +%s)"
+    } >etcd-defrag.prom.tmp
+    # Written whole, then renamed: the collector never reads half a file.
+    mv etcd-defrag.prom.tmp etcd-defrag.prom
+}
+trap write_metrics EXIT
+
+id="$(crictl ps --quiet --name '^etcd$')"
+if [[ -z ${id} ]]; then
+    echo "etcd isn't running, though its manifest is there" >&2
+    exit 1
+fi
+pki=/etc/kubernetes/pki/etcd
+etcdctl() {
+    crictl exec "${id}" etcdctl --endpoints=https://127.0.0.1:2379 \
+        --cacert="${pki}/ca.crt" --cert="${pki}/healthcheck-client.crt" \
+        --key="${pki}/healthcheck-client.key" "$@"
+}
+
+# A member blocks while it defragments: with another one down, the cluster
+# would lose quorum. `endpoint health` exits 1 on any alarm too: a NOSPACE
+# one, which a defrag fixes, still counts as healthy here. An empty list (no
+# member list) fails jq -e.
+health="$(etcdctl endpoint health --cluster --write-out=json || true)"
+if ! jq -e 'all(.[]; .health or (.error | test("^Active Alarm\\(s\\): (NOSPACE )+$")))' <<<"${health}" >/dev/null; then
+    echo "a member is unhealthy, not defragmenting: ${health}" >&2
+    result=skipped_unhealthy
+    exit 0
+fi
+
+status="$(etcdctl endpoint status --write-out=json)"
+size_before="$(jq '.[0].Status.dbSize' <<<"${status}")"
+in_use_before="$(jq '.[0].Status.dbSizeInUse // 0' <<<"${status}")"
+if ((size_before - in_use_before < 100 * 1000 * 1000)); then
+    echo "only $(((size_before - in_use_before) / 1000 / 1000)) MB to free, not defragmenting"
+    result=skipped_small
+    exit 0
+fi
+
+# The leader blocked, the followers would elect another one: hand it to a
+# started voting member first (member list columns: ID, status, name, peer
+# and client URLs, is learner). A single member keeps it.
+if jq -e '.[0].Status.leader == .[0].Status.header.member_id' <<<"${status}" >/dev/null; then
+    me="$(etcdctl member list --hex --write-out=json | jq -r .header.member_id)"
+    follower="$(etcdctl member list |
+        awk -F ', ' -v me="${me}" '$1 != me && $2 == "started" && $6 == "false" { print $1; exit }')"
+    if [[ -n ${follower} ]]; then
+        etcdctl move-leader "${follower}"
+    fi
+fi
+
+# etcdctl's default timeout, 5s, is too short to defragment a database of a
+# few GB.
+etcdctl defrag --command-timeout=5m
+size_after="$(etcdctl endpoint status --write-out=json | jq '.[0].Status.dbSize')"
+
+# `alarm disarm` clears every alarm: only when they are all NOSPACE. A
+# CORRUPT alarm stays for a person. Still over the quota, the member raises
+# NOSPACE again at its next write.
+alarms="$(etcdctl alarm list)"
+if [[ -n ${alarms} ]] && ! grep -qv 'alarm:NOSPACE' <<<"${alarms}"; then
+    etcdctl alarm disarm
+fi
+result=defragmented
