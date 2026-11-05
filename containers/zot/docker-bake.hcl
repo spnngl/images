@@ -9,7 +9,7 @@ target "zot" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=project-zot/zot extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "2.1.22", checksum = "6bbc7e56db2b7a64eee589324efe5813245e3a28" },
+      { version = "2.1.23", checksum = "d7915e82e6693255338ef7fa9bb15300c82db020" },
     ]
     # The web UI: the tag ZUI_VERSION names in the Makefile of zot's tag,
     # which the build checks. Its tags have no order (commit-<hash>):
