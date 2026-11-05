@@ -1,5 +1,4 @@
-# Same shape as kubernetes-sigs/image-builder's containerd role: a small
-# config.toml that imports drop-ins. The image's settings are in
+# A small config.toml that imports drop-ins. The image's settings are in
 # conf.d/50-myconf.toml and the generated conf.d/20-pause.toml; a node's
 # own go in /etc/containerd/conf.d.
 version = 3
