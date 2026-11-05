@@ -9,7 +9,7 @@ ARG BASE_VERSION="44.20261023.3.1"
 FROM quay.io/fedora/fedora-coreos:${BASE_VERSION} AS builder
 
 # Kubernetes patch release of kubelet, kubeadm and kubectl.
-ARG KUBERNETES_VERSION="1.35.10"
+ARG KUBERNETES_VERSION="1.36.6"
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 
