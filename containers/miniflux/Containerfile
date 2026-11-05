@@ -61,8 +61,9 @@ sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://
 echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
 mkdir -p /etc/postgresql-common/createcluster.d
 echo 'create_main_cluster = false' > /etc/postgresql-common/createcluster.d/no-main.conf
-apt-get update
-apt-get install -y --no-install-recommends postgresql
+# Snapshot's CDN can return transient 503/504s during parallel image builds.
+apt-get -o Acquire::Retries=5 update
+apt-get -o Acquire::Retries=5 install -y --no-install-recommends postgresql
 rm -rf /var/lib/apt/lists/*
 groupadd -g 65532 build
 useradd -l -u 65532 -g 65532 -d /tmp -M -s /usr/sbin/nologin build
