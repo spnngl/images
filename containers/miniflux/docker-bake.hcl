@@ -10,7 +10,7 @@ target "miniflux" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=miniflux/v2 extractVersion=^(?<version>\d+\.\d+\.\d+)$
-      { version = "2.3.4", checksum = "238c5614e584ebc87894e7d9f10bc91373a0b2c2" },
+      { version = "2.3.5", checksum = "faecfa2fac61a91f4f69550bb1afd506c4b51749" },
     ]
   }
   args = merge(apt_args(debian), {
