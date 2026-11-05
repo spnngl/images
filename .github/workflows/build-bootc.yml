@@ -95,7 +95,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # x86-64 levels: fedora-bootc:44 and centos-bootc:stream10 only have
+        # x86-64 levels: fedora-bootc and centos-bootc:stream10 only have
         # v3 images. almalinux-bootc:10 has v3 and v2 images, but the docker-ce
         # repository only has v3 binaries. almalinux:9 (EOL 2032) gives v2
         # binaries without issue.
@@ -115,10 +115,10 @@ jobs:
         # The push job reuses this list (YAML anchor).
         image: &images
           - name: fedora
-            version: "44"
+            version: "45"
             target: dockerenv
           - name: fedora
-            version: "44"
+            version: "45"
             target: kubeenv
             # Renovate updates both in one replacement (renovate.json5):
             # keep them on consecutive lines, in this order.
