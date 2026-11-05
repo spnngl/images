@@ -26,6 +26,16 @@
 - **The matrix is the list of images** (`name`, `version`, and for a
   stage `target`, tag `suffix`, `k3s`), `version` passed as
   `--build-arg BASE_VERSION`; the `push` job reuses it by YAML anchor.
+  An image without `version` pins its own and names its tag
+  (`bootc/<name>/versions.sh`): fedora-coreos, whose Fedora CoreOS
+  release has no major-only tag upstream.
+- **fedora-coreos with BuildKit** (`builder: buildkit`), loaded into
+  podman for the push: podman's `/run/.containerenv` turns its OpenSCAP
+  scan's machine rules off (`bootc/fedora-coreos/REFERENCES.md`). Its
+  amd64 job also builds the scan reports (artifact
+  `fedora-coreos_reports`), failing on a failed rule or a fixable
+  Critical, and on `main` the `disk-image` job releases its OpenStack
+  qcow2.
 - **`build.sh`'s flags** (`--format=docker`, context `bootc/`), plus an
   `org.opencontainers.image.source` label linking the package to the
   repository, and `--platform` the runner's own. Rootless podman.
@@ -158,6 +168,10 @@ data, and their sources differ.
 - **Pull requests, bootc:** not scanned. The steps are commented out in
   `build-bootc.yml`: the almalinux:9 amd64 runners shut down mid-scan,
   most likely out of disk or memory. Pushed images are scanned daily.
+  fedora-coreos is the exception: its own grype scan fails every build
+  (pull request, push, weekly) on a fixable Critical, as
+  `bootc/fedora-coreos/build.sh` does; an image the build can't fix is
+  ignored at its exact version (`bootc/fedora-coreos/REFERENCES.md`).
 - **Pull requests, applications:** each build job scans its image (OCI
   layout) and fails on a Critical vulnerability with a fix that the pushed image of
   the same tag and platform lacks. The rest is reported: without a fix,

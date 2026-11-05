@@ -124,7 +124,7 @@
         },
         {
             "customType": "regex",
-            "description": "Kubernetes release of bootc/fedora-coreos: the Containerfile's ARG KUBERNETES_VERSION. Its pkgs.k8s.io repository (v<minor>), its RPMs, its pause image and the image's tag (<BASE_VERSION>-v<KUBERNETES_VERSION>) all follow from it.",
+            "description": "Kubernetes release of bootc/fedora-coreos: the Containerfile's ARG KUBERNETES_VERSION. Its pkgs.k8s.io repository (v<minor>), its RPMs, its pause image and the image's tag (<major>-v<minor>, versions.sh) all follow from it.",
             "managerFilePatterns": ["/^bootc/fedora-coreos/Containerfile$/"],
             "matchStrings": ["ARG KUBERNETES_VERSION=\"(?<currentValue>[^\"]+)\""],
             "depNameTemplate": "kubernetes",
@@ -143,8 +143,8 @@
         },
         {
             "customType": "regex",
-            "description": "custom-coreos-disk-images, which bootc/fedora-coreos/build.sh runs: pinned to a commit of its main branch (no release).",
-            "managerFilePatterns": ["/^bootc/fedora-coreos/build\\.sh$/"],
+            "description": "custom-coreos-disk-images, which bootc/fedora-coreos/disk-images.sh runs: pinned to a commit of its main branch (no release).",
+            "managerFilePatterns": ["/^bootc/fedora-coreos/disk-images\\.sh$/"],
             "matchStrings": ["disk_images_commit=\"(?<currentDigest>[0-9a-f]{40})\""],
             "depNameTemplate": "coreos/custom-coreos-disk-images",
             "packageNameTemplate": "https://github.com/coreos/custom-coreos-disk-images",
@@ -452,12 +452,19 @@
             ]
         },
         {
-            "description": "bootc/fedora-coreos isn't built by CI (bootc/fedora-coreos/AGENTS.md): every update is tested by hand. Never automerged.",
+            "description": "bootc/fedora-coreos: CI builds and scans it, its VM tests run by hand (bootc/fedora-coreos/AGENTS.md). Not automerged, but for the rule below.",
             "matchFileNames": ["bootc/fedora-coreos/**"],
             "automerge": false,
             "prBodyNotes": [
-                "Not built by CI. Before merging, run the build check of [`bootc/fedora-coreos/AGENTS.md`](https://github.com/spnngl/images/blob/main/bootc/fedora-coreos/AGENTS.md#build-check). A new Fedora CoreOS release or Kubernetes version is a new image tag: VMs get new machines through Cluster API, dedicated servers move with `bootc switch`."
+                "CI builds and scans it; its VM tests don't run there. Before merging by hand, run the build check of [`bootc/fedora-coreos/AGENTS.md`](https://github.com/spnngl/images/blob/main/bootc/fedora-coreos/AGENTS.md#build-check). A Fedora CoreOS release or Kubernetes patch keeps the image's tag (`<major>-v<minor>`): nodes take it with `bootc upgrade`. A new major or Kubernetes minor is a new tag: VMs get new machines through Cluster API, dedicated servers move with `bootc switch`."
             ]
+        },
+        {
+            "description": "Fedora CoreOS releases of the same major (BASE_VERSION <major>.<date>.3.<n>: docker versioning makes the date the minor): automerged once every check is green, build-bootc's build and scans included; the tag stays, so nodes take them with `bootc upgrade`. Renovate merges, not GitHub's auto-merge (platformAutomerge): that waits for the required checks only, and build-bootc has none. A new major changes the tag: by hand.",
+            "matchDepNames": ["quay.io/fedora/fedora-coreos"],
+            "matchUpdateTypes": ["minor", "patch"],
+            "automerge": true,
+            "platformAutomerge": false
         },
         {
             "description": "AlmaLinux 9 is kept for x86-64-v2 hosts until its end of life (build-bootc.yml): never moved to 10.",
