@@ -110,7 +110,9 @@
     <select idref="xccdf_org.ssgproject.content_rule_sysctl_fs_suid_dumpable" selected="false"/>
 
     <!-- rpm 6 names a key by its full fingerprint (gpg-pubkey-36f612dc...), and
-         the check looks for rpm 4's short ids. Fedora's keys are installed. -->
+         the check looks for rpm 4's short ids, and for Fedora 37 to 40's keys.
+         Fedora's keys are installed. Fixed upstream by
+         https://github.com/ComplianceAsCode/content/pull/15304 -->
     <select idref="xccdf_org.ssgproject.content_rule_ensure_fedora_gpgkey_installed" selected="false"/>
 
     <!-- The node routes its pods' traffic. rp_filter: the kernel applies the higher
@@ -130,30 +132,10 @@
     <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_all_forwarding" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_default_forwarding" selected="false"/>
 
-    <!-- Not decided yet: each needs checking against Kubernetes, Cilium and the
-         workloads. Kernel and network sysctls, idle shell timeout, CIS's crypto
-         policy, removing dnsmasq and rsync, shipping the journal off the node. -->
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_dmesg_restrict" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_kptr_restrict" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_yama_ptrace_scope" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_redirects" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_accept_redirects" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_source_route" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_accept_source_route" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_log_martians" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_log_martians" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_secure_redirects" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_secure_redirects" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_send_redirects" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_send_redirects" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_icmp_echo_ignore_broadcasts" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_icmp_ignore_bogus_error_responses" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_tcp_syncookies" selected="false"/>
+    <!-- Not decided yet: idle shell timeout, CIS's crypto policy, shipping the
+         journal off the node. -->
     <select idref="xccdf_org.ssgproject.content_rule_accounts_tmout" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_configure_custom_crypto_policy_cis" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_package_dnsmasq_removed" selected="false"/>
-    <select idref="xccdf_org.ssgproject.content_rule_package_rsync_removed" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_package_systemd-journal-remote_installed" selected="false"/>
   </Profile>
 
@@ -172,5 +154,26 @@
     <select idref="xccdf_org.ssgproject.content_rule_mount_option_dev_shm_nodev" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_mount_option_dev_shm_noexec" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_mount_option_dev_shm_nosuid" selected="false"/>
+    <!-- Sysctls: each rule also reads the running kernel, in a build the build
+         host's. The nodes check them. -->
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_fs_protected_hardlinks" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_fs_protected_symlinks" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_dmesg_restrict" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_kptr_restrict" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_randomize_va_space" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_kernel_yama_ptrace_scope" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_redirects" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_accept_redirects" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_accept_source_route" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_accept_source_route" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_log_martians" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_log_martians" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_secure_redirects" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_secure_redirects" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_all_send_redirects" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_conf_default_send_redirects" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_icmp_echo_ignore_broadcasts" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_icmp_ignore_bogus_error_responses" selected="false"/>
+    <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv4_tcp_syncookies" selected="false"/>
   </Profile>
 </Tailoring>

@@ -13,7 +13,7 @@ for p in kubelet kubeadm kubectl cri-tools containerd runc conntrack-tools \
 done
 for p in zincati moby-engine docker-cli firewalld ufw iptables-legacy iptables-services \
     nmstate NetworkManager-team NetworkManager-tui NetworkManager-cloud-setup ModemManager \
-    etcd; do
+    etcd dnsmasq rsync; do
     check "package ${p} is absent" bash -c "! rpm -q ${p}"
 done
 # iptables commands use nf_tables; the legacy x_tables tables can't load.
@@ -196,7 +196,12 @@ net.bridge.bridge-nf-call-ip6tables 1
 net.ipv4.ip_forward 1
 vm.overcommit_memory 1
 kernel.panic_on_oops 1
+kernel.yama.ptrace_scope 1
+kernel.dmesg_restrict 1
+net.ipv4.conf.all.accept_redirects 0
+net.ipv4.conf.all.log_martians 1
 EOS
+check "no link sends ICMP redirects" bash -c "! sudo sysctl -a 2>/dev/null | grep -E '^net\.ipv4\.conf\.[^.]+\.send_redirects = 1'"
 # The softnet budget is for large machines with a Mellanox NIC: the test VM
 # isn't one, the unit is condition-skipped there.
 check "sysctl-mlx5-large is wanted by multi-user.target" bash -c "systemctl show -P WantedBy sysctl-mlx5-large.service | grep -qw multi-user.target"

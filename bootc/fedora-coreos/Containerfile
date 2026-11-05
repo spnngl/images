@@ -71,6 +71,14 @@ test ! -e /usr/share/scap-security-guide
 # firewalld nor ufw; test/image.sh checks).
 dnf -yq remove zincati moby-engine docker-cli iptables-services
 
+# CIS wants them gone: no node serves DNS or DHCP, nor copies with rsync.
+# rpm -e, not dnf: it fails if another package requires them.
+rpm -e dnsmasq rsync
+
+# This file sets kernel.yama.ptrace_scope to 0, against 990-cis.conf, and
+# CIS reads every sysctl.d file. Its package stays: elfutils-libs requires it.
+rm /usr/lib/sysctl.d/10-default-yama-scope.conf
+
 # NetworkManager's extras. NetworkManager itself stays installed but masked
 # (below): ignition, dracut-network, afterburn-dracut and kdump-utils
 # require it, and FCOS's initramfs runs it to fetch the Ignition config.
