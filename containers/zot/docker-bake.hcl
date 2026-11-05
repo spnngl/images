@@ -16,7 +16,7 @@ target "zot" {
     # Renovate only follows this one's commit (containers/zot/REFERENCES.md).
     zui = [
       # renovate: datasource=git-refs depName=project-zot/zui packageName=https://github.com/project-zot/zui versioning=git
-      { version = "commit-8e8457d", checksum = "8e8457d78748c314188fb624bfb46d2ffc744f1a" },
+      { version = "commit-ce3819c", checksum = "ce3819cdad951940adc095870cdd16314af579a5" },
     ]
   }
   args = merge(containerfile_args(debian), {
