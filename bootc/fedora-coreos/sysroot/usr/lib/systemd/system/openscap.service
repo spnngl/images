@@ -1,6 +1,11 @@
 # Run by openscap.timer. Idle priorities: the node's pods come first.
 # MemoryHigh: oscap peaks at about 320 MB; above the limit, the kernel
 # reclaims the scan's memory, not the pods'.
+# InaccessiblePaths: the file rules walk every local mount. /sysroot shows
+# /var a second time, and the ostree repo; containerd's snapshots and the
+# pods' volumes are the containers' files (image owners unknown to the
+# host, kubelet's 0666 termination-log). Hidden, the rules check the host.
+# "-": the path may not exist.
 [Unit]
 Description=OpenSCAP scan of the node
 
@@ -12,3 +17,4 @@ Nice=19
 CPUSchedulingPolicy=idle
 IOSchedulingClass=idle
 MemoryHigh=512M
+InaccessiblePaths=-/sysroot -/var/lib/containerd -/var/lib/kubelet/pods

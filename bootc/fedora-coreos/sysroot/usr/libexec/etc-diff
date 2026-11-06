@@ -45,8 +45,6 @@ const EXPECTED = [
     '/etc/.ignition-result.json'
     '/etc/systemd/system-preset'
     '/etc/systemd/system-preset/20-ignition.preset'
-    '/etc/systemd/system/afterburn-sshkeys.target.requires'
-    '/etc/systemd/system/afterburn-sshkeys.target.requires/afterburn-sshkeys@core.service'
     '/etc/hosts'
     '/etc/kubeadm.sh'
     '/etc/kubeadm.yml'

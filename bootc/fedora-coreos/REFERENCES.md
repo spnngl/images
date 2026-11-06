@@ -118,8 +118,7 @@ Read each at the version this repository pins.
   the build check.
 - **Ubuntu-isms not ported:** `rp_filter` stays Fedora's (loose, 2; Cilium
   needs loose), `prips` has no Fedora package and no user, no
-  `etcd-client` (see No `etcd` package, under Vulnerabilities). FCOS' `core` user exists but can't log in
-  (`AllowUsers rootless`). Bare-metal kernel arguments come from Ignition
+  `etcd-client` (see No `etcd` package, under Vulnerabilities). Bare-metal kernel arguments come from Ignition
   (Later).
 - **`/opt` is a symlink to `var/opt`** (already in the base): nothing in
   `/opt` comes from the image.
@@ -146,6 +145,21 @@ Read each at the version this repository pins.
   image. Keys that Ignition, Afterburn or an OpenStack keypair write (to
   `~/.ssh/authorized_keys.d`) are ignored. The test VM adds its key with a
   drop-in of its own (`vm.sh`).
+- **No `core` user:** FCOS creates it in the initramfs, from Ignition's
+  base config (`00-core.ign`, dracut module `ignition-conf` of
+  `fedora-coreos-config`'s `overlay.d`), not from the image's files, and
+  `ignition-conf-fcos` enables `afterburn-sshkeys@core`. The Containerfile
+  rebuilds the initramfs without both modules, with the base's dracut
+  arguments (`usr/lib/dracut/build-parameter.txt`): `rootless` is the only
+  login, and CIS's checks of home files had `core`'s, from `/etc/skel`, to
+  fail on. Nodes created before keep it.
+- **SSH host keys `root:ssh_keys 0600`**
+  (`sshd-keygen@.service.d/50-ssh-keys-group.conf`): Fedora's
+  `sshd-keygen` writes them `root:root`, scap-security-guide wants group
+  `ssh_keys` on Fedora. At 0600 the group reads nothing; the drop-in only
+  keeps `file_groupownership_sshd_private_key` checked until upstream
+  accepts `root` (https://github.com/ComplianceAsCode/content/pull/15310).
+  Keys made before stay `root:root`.
 - **sshd `00-hardening.conf`:** sshd keeps the first value of a keyword, so
   `00-` beats Fedora's drop-ins. `UsePAM yes` stays: with a locked password
   (`!`), `UsePAM no` would reject every login. The jump-host rule
@@ -251,8 +265,9 @@ Read each at the version this repository pins.
 - **CIS's easy fixes are in the image:** sshd (`00-hardening.conf`,
   drop-ins 0600), sudo `use_pty`, umask 027, login banners in
   `/etc/issue{,.net}`, journald, `atm` and `can` modules off, kernel and
-  IPv4 sysctls (`usr/lib/sysctl.d/990-cis.conf`), no `dnsmasq` nor `rsync`
-  (`rpm -e` fails if a package requires them). umask has
+  IPv4 sysctls (`usr/lib/sysctl.d/990-cis.conf`), no `dnsmasq`, `rsync`
+  nor `rpcbind` (`rpm -e` fails if a package requires them; `rpcbind`'s
+  dependants are NFSv3's, NFSv4 needs none of them). umask has
   no drop-in: `login.defs` and `/etc/bashrc` are edited in place.
   `/etc/systemd/journald.conf` replaces the base's empty one, not a
   drop-in, as the `ForwardToSyslog` check reads only it.
@@ -287,6 +302,14 @@ Read each at the version this repository pins.
   HTML report: nobody opens one on a node, the metrics name the rules.
   `MemoryHigh=` above oscap's peak (about 320 MB): past it, the kernel
   reclaims the scan's memory rather than the pods'.
+- **The scan doesn't see `/sysroot`, containerd's storage nor the pods'
+  volumes** (`InaccessiblePaths=` of `openscap.service`): the file rules
+  (world-writable, unowned) walk every local mount, `/sysroot` included,
+  which shows `/var` again and the ostree repo. On a node they failed on
+  the containers' files only: image owners unknown to the host, kubelet's
+  0666 `termination-log`, `emptyDir` folders. Hidden behind an empty tmpfs,
+  they are skipped and the rules keep checking the host's own files; the
+  scan also gets faster.
 - **One series per selected rule** (`openscap_rule`, about 280 per node),
   with its title, severity, CIS section and result: an alert names the
   failed rule.
@@ -317,7 +340,9 @@ Read each at the version this repository pins.
   https://github.com/ComplianceAsCode/content/pull/15303.
 - **Upstream fixes:** when a scap-security-guide release carries
   https://github.com/ComplianceAsCode/content/pull/15304 (Fedora keys,
-  rpm 6), `ensure_fedora_gpgkey_installed` goes back on. `display_login_attempts`
+  rpm 6), `ensure_fedora_gpgkey_installed` goes back on; with
+  https://github.com/ComplianceAsCode/content/pull/15310,
+  `sshd-keygen@.service.d/50-ssh-keys-group.conf` goes. `display_login_attempts`
   (`standard`, not CIS) can't pass on Fedora 43 and later:
   https://github.com/ComplianceAsCode/content/issues/15305.
 - **authselect profile `local`, the base's, not `sssd`:** SSSD 2.11

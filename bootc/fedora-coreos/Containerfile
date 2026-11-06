@@ -76,6 +76,9 @@ dnf -yq remove zincati moby-engine docker-cli iptables-services toolbox
 # CIS wants them gone: no node serves DNS or DHCP, nor copies with rsync.
 # rpm -e, not dnf: it fails if another package requires them.
 rpm -e dnsmasq rsync
+# CIS wants rpcbind off. Only NFSv3 mounts need it, not NFSv4: its
+# dependants go with it, mount.nfs stays (nfs-common-utils).
+rpm -e rpcbind nfsv3-client-utils nfs-client-utils
 
 # This file sets kernel.yama.ptrace_scope to 0, against 990-cis.conf, and
 # CIS reads every sysctl.d file. Its package stays: elfutils-libs requires it.
@@ -98,6 +101,15 @@ ln -s /var/opt /opt
 # was not found.
 sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
 grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
+
+# No core user: FCOS's initramfs creates it with Ignition (00-core.ign of
+# dracut module ignition-conf), and enables afterburn-sshkeys@core
+# (ignition-conf-fcos, also NetworkManager-cloud-setup on AWS, Azure and
+# GCP, removed above). rootless is the only login. The arguments are the
+# base's (usr/lib/dracut/build-parameter.txt).
+kver="$(ls /usr/lib/modules)"
+dracut --force --reproducible --no-hostonly --omit 'ignition-conf ignition-conf-fcos' \
+    --tmpdir /tmp --kver "${kver}" "/usr/lib/modules/${kver}/initramfs.img"
 
 # /var ships empty.
 dnf -yq clean all
