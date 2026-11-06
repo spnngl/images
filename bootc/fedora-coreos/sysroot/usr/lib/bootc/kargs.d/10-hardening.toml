@@ -1,0 +1,26 @@
+# Memory hardening and kernel lockdown. bootc adds these on upgrade;
+# disk-images.sh gives them to new disks, which osbuild makes without
+# reading this directory.
+# https://bootc.dev/bootc/building/kernel-arguments.html
+# https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html
+#
+# init_on_alloc=1, slab_nomerge, randomize_kstack_offset=on: already
+# Fedora's kernel defaults (CONFIG_INIT_ON_ALLOC_DEFAULT_ON,
+# CONFIG_SLAB_MERGE_DEFAULT unset, CONFIG_RANDOMIZE_KSTACK_OFFSET_DEFAULT),
+# stated so a change of its config doesn't undo them.
+# init_on_free=1: freed memory is zeroed, so no data outlives its owner;
+# costs a few percent of CPU on allocation-heavy work.
+# page_alloc.shuffle=1: randomizes the page allocator's free lists
+# (CONFIG_SHUFFLE_PAGE_ALLOCATOR is built in, but off without it).
+# lockdown=integrity: root can't change the running kernel (/dev/mem,
+# unsigned modules or kexec, module parameters, BPF writes to user memory).
+# Not confidentiality, which also stops kernel memory reads, kprobes and
+# tracefs: Tetragon and Falco need them (REFERENCES.md).
+kargs = [
+    "init_on_alloc=1",
+    "init_on_free=1",
+    "slab_nomerge",
+    "page_alloc.shuffle=1",
+    "randomize_kstack_offset=on",
+    "lockdown=integrity",
+]
