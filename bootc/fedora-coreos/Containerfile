@@ -245,6 +245,10 @@ systemctl mask NetworkManager.service NetworkManager-wait-online.service \
 # preset-all enables a disabled unit again.
 systemctl mask rpm-ostree-countme.timer
 
+# Not used
+systemctl disable systemd-homed.service
+systemctl mask systemd-homed.service
+
 # /opt must stay the base's symlink to /var/opt.
 test "$(readlink /opt)" = /var/opt
 
