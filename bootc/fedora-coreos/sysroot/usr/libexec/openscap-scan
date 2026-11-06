@@ -5,9 +5,10 @@
 #
 # Output, in /var/lib/openscap:
 #   results.xml    the scan; no HTML report, which nobody opens on a node
-#   openscap.prom  each selected rule with its result, for node-exporter's
-#                  textfile collector: mount /var/lib/openscap into its pod,
-#                  and give that path to --collector.textfile.directory
+#   openscap.prom  each selected rule with its result, and the kernel's audit
+#                  state, for node-exporter's textfile collector: mount
+#                  /var/lib/openscap into its pod, and give that path to
+#                  --collector.textfile.directory
 #
 # Nushell of Fedora's package (0.99): no syntax of a later release.
 
@@ -44,8 +45,32 @@ def rules []: record -> list<record> {
 
 def main [] {
     cd $DIR
+    let audit = audit-metrics
     scan
-    metrics (open --raw results.xml | from xml) | save-metrics openscap.prom
+    metrics (open --raw results.xml | from xml) | append $audit | save-metrics openscap.prom
+}
+
+# What the scan can't see: the scan reads the audit rules' files, not what the
+# kernel loaded nor whether it drops events.
+def audit-metrics []: nothing -> list<string> {
+    let status = ^auditctl -s | lines | parse '{key} {value}'
+        | transpose --header-row --as-record
+    # -a and -w lines: augenrules' file, then the kernel's.
+    let rule = '^-[aw] '
+    let written = open --raw /etc/audit/audit.rules | lines | where $it =~ $rule | length
+    let loaded = ^auditctl -l | lines | where $it =~ $rule | length
+    [
+        ...([{labels: {}, value: $status.enabled}]
+            | metric audit_enabled 'Kernel audit: 0 off, 1 on, 2 on and its rules locked until reboot.')
+        ...([{labels: {}, value: $status.lost}]
+            | metric audit_lost_events 'Audit events the kernel dropped since boot, its backlog full.')
+        ...([{labels: {}, value: $status.backlog_limit}]
+            | metric audit_backlog_limit 'Audit events the kernel holds for auditd.')
+        ...([{labels: {}, value: $loaded}]
+            | metric audit_rules 'Audit rules the kernel has.')
+        ...([{labels: {}, value: ($written - $loaded)}]
+            | metric audit_rules_rejected 'Audit rules of /etc/audit/audit.rules the kernel lacks: rejected at boot, they stay out until the next one (-c, -e 2).')
+    ]
 }
 
 # Exit 2: rules failed, the results are written. oscap's warnings go to the
