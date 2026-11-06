@@ -40,7 +40,7 @@ each choice: [REFERENCES.md](REFERENCES.md).
   releases the OpenStack qcow2 (`disk-images.sh`) when a file of this
   folder changed, keeping the newest 3 releases.
 - **OpenSCAP** checks the image at build and the nodes against
-  scap-security-guide's `cis_server_l1` profile, tailored in
+  scap-security-guide's `cis` profile (CIS level 2), tailored in
   `sysroot/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
   image doesn't follow is turned off there, with its reason beside it;
   the ones still to decide are grouped last.

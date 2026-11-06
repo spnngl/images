@@ -29,6 +29,14 @@ check "kernel arguments of kargs.d, once each" bash -c '
         [[ $(tr " " "\n" </proc/cmdline | grep -cxF -- "${a}") == 1 ]] || exit 1
     done'
 check "kernel lockdown is integrity" grep -qF '[integrity]' /sys/kernel/security/lockdown
+# modprobe.d/hardening.conf, a CIS level 2 module.
+check "module squashfs can't load" bash -c '! sudo modprobe squashfs 2>/dev/null && ! lsmod | grep -q ^squashfs'
+# etc/audit/rules.d: loaded and locked (-e 2), with the image's setuid
+# programs, its backlog (kargs.d/20-audit.toml, 10-base.rules).
+check "audit rules are loaded and locked" bash -c '
+    s=$(sudo auditctl -s) &&
+        grep -qx "enabled 2" <<<"${s}" && grep -qx "backlog_limit 8192" <<<"${s}" &&
+        sudo auditctl -l | grep -q "path=/usr/bin/sudo .* -F key=privileged"'
 
 # The rootless user (goss: user, visudo-usable).
 check "user rootless" bash -c '
@@ -59,7 +67,7 @@ sshd_config=$(
 for line in "passwordauthentication no" "permitrootlogin no" "usepam yes" \
     "kbdinteractiveauthentication no" "authenticationmethods publickey" \
     "allowusers rootless" "maxauthtries 3" "allowagentforwarding no" \
-    "allowtcpforwarding local" "gatewayports no"; do
+    "allowtcpforwarding local" "gatewayports no" "gssapiauthentication no"; do
     check "sshd: ${line}" bash -c "grep -qxF '${line}' <<<'${sshd_config}'"
 done
 # The image's value; vm.sh adds the test key's directory before it, through

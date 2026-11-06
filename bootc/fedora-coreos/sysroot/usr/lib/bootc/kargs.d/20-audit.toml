@@ -1,0 +1,5 @@
+# CIS 6.3.1.2 and 6.3.1.3: the kernel audits from boot, before auditd starts,
+# and holds up to 8192 events until it does (the default, 64, drops them).
+# etc/audit/rules.d/10-base.rules sets the same limit for afterwards.
+# https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html
+kargs = ["audit=1", "audit_backlog_limit=8192"]
