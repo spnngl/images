@@ -9,3 +9,8 @@
 -b 8192
 ## A rule this kernel rejects doesn't stop the next ones (CIS).
 -c
+## No syscall auditing for a process started without a login uid: services,
+## kubelet, containerd and the pods. Once a rule is loaded, the kernel tracks
+## every syscall of every process it audits: about +60 ns a call, +200 ns one
+## with a path (REFERENCES.md). Sessions, and what they run, stay audited.
+-a task,never -F auid=unset

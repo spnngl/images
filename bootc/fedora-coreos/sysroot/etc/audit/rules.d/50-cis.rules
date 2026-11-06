@@ -2,9 +2,12 @@
 ## its users do. The rules have the form scap-security-guide's checks and fixes
 ## use (usr/share/xml/scap/fedora-coreos/tailoring.xml); the keys (-k) are CIS'.
 ##
-## A syscall rule with `auid>=1000 -F auid!=unset` records a person's session
-## only: services, kubelet and the containers have no login uid, so they add
-## no events. A watch (-w) records every writer.
+## Who is recorded: a person's session has a login uid; services, kubelet and
+## the containers don't (auid unset), and 10-base.rules' `-a task,never`
+## leaves them out of every rule below, watches included.
+## - `-F auid>=1000 -F auid!=unset`: users' sessions, most syscall rules.
+## - 6.3.3.2's `-F auid!=unset`, the clock and kernel modules (6.3.3.4,
+##   6.3.3.29 to 6.3.3.31) and watches (-w): any session, root's included.
 ## Syscalls x86_64 has and aarch64 lacks: 51-cis-x86_64.rules.
 
 ## 6.3.3.1 sudoers.

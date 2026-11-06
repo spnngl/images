@@ -37,6 +37,10 @@ check "audit rules are loaded and locked" bash -c '
     s=$(sudo auditctl -s) &&
         grep -qx "enabled 2" <<<"${s}" && grep -qx "backlog_limit 8192" <<<"${s}" &&
         sudo auditctl -l | grep -q "path=/usr/bin/sudo .* -F key=privileged"'
+# -c loads past a rule the kernel rejects, and -e 2 keeps it out until a
+# reboot: every rule of augenrules' file must be in the kernel.
+check "audit rules: the kernel has all of them" bash -c '
+    [[ $(sudo grep -cE "^-[aw] " /etc/audit/audit.rules) == $(sudo auditctl -l | grep -cE "^-[aw] ") ]]'
 
 # The rootless user (goss: user, visudo-usable).
 check "user rootless" bash -c '
@@ -132,7 +136,8 @@ check "openscap.timer is wanted by timers.target" bash -c "systemctl show -P Wan
 check "openscap.service scans the node, no rule fails" bash -c '
     sudo systemctl start openscap.service &&
     ! sudo grep -E "<result>(fail|error)</result>" /var/lib/openscap/results.xml &&
-    sudo grep -q "^openscap_rule{rule=" /var/lib/openscap/openscap.prom'
+    sudo grep -q "^openscap_rule{rule=" /var/lib/openscap/openscap.prom &&
+    sudo grep -qx "audit_rules_rejected 0" /var/lib/openscap/openscap.prom'
 check "etc-diff.timer is wanted by timers.target" bash -c "systemctl show -P WantedBy etc-diff.timer | grep -qw timers.target"
 check "etc-diff.service lists /etc's drift" bash -c '
     sudo systemctl start etc-diff.service &&

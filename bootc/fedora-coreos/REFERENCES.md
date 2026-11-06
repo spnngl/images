@@ -316,6 +316,11 @@ Read each at the version this repository pins.
 - **One series per selected rule** (`openscap_rule`, about 280 per node),
   with its title, severity, CIS section and result: an alert names the
   failed rule.
+- **The kernel's audit state, with the scan** (`audit_*` of
+  `openscap.prom`, from `auditctl -s` and `-l`): the scan reads the rules'
+  files only. `audit_lost_events` counts the events dropped since boot;
+  `audit_rules_rejected`, the rules of `/etc/audit/audit.rules` the kernel
+  refused, which `-c` loads past and `-e 2` keeps out until a reboot.
 - **Nushell** (Fedora's package) writes the metrics: XCCDF is XML, which
   bash and jq can't read. Fedora's release is 0.99, older than the current
   one: the scripts use no later syntax. `usr/share/nushell/prometheus.nu`
@@ -363,8 +368,16 @@ Read each at the version this repository pins.
 - **Audit rules of CIS 6.3.3** (`etc/audit/rules.d/`), written from
   scap-security-guide's remediations, its field order kept so its checks
   read them. Fedora's `audit.rules` goes: its `-a task,never` turns syscall
-  auditing off. Syscall rules record users' actions only (`auid>=1000`),
-  not the kubelet's nor containerd's: a node stays quiet. x86_64-only
+  auditing off. The rules record sessions only, which have a login uid:
+  most with `auid>=1000`; the clock, kernel modules, programs run as
+  another user and the watches, any session. `-a task,never -F
+  auid=unset` leaves out services, kubelet, containerd and the pods,
+  so CIS' rules that name no user miss their events too (chronyd's clock
+  adjustments, a daemon's write to `/etc/hosts`): with a rule loaded,
+  the kernel tracks every syscall of each process it audits, measured at
+  about +60 ns a call and +200 ns one with a path (aarch64, kernel 7.0;
+  the number of rules hardly matters). Tetragon and Falco watch the
+  pods. x86_64-only
   syscalls are in a file of their own, deleted on other architectures.
   `52-privileged.rules` is written in the build from the image's setuid
   and setgid programs, all in `/usr`: the check wants exactly those.
