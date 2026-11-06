@@ -240,6 +240,10 @@ check "no link sends ICMP redirects" bash -c "! sudo sysctl -a 2>/dev/null | gre
 # isn't one, the unit is condition-skipped there.
 check "sysctl-mlx5-large is wanted by multi-user.target" bash -c "systemctl show -P WantedBy sysctl-mlx5-large.service | grep -qw multi-user.target"
 check "sysctl-mlx5-large skips the test VM" bash -c '[[ $(systemctl show -P ConditionResult sysctl-mlx5-large.service) == no ]]'
+# The dedicated servers' sysctls: the test VM keeps the kernel default.
+check "sysctl-metal is wanted by multi-user.target" bash -c "systemctl show -P WantedBy sysctl-metal.service | grep -qw multi-user.target"
+check "sysctl-metal skips the test VM" bash -c '[[ $(systemctl show -P ConditionResult sysctl-metal.service) == no ]]'
+check "sysctl net.core.rmem_default" bash -c '[[ $(sudo sysctl -n net.core.rmem_default) == 212992 ]]'
 for m in overlay br_netfilter; do
     check "module ${m} is loaded" bash -c "lsmod | grep -q ^${m}"
 done

@@ -187,6 +187,11 @@ Read each at the version this repository pins.
   capped at 50 MB/s). Left out: cloud-init default user, AppArmor, IPv6
   forwarding (IPv6 is off in `995-ipv6.conf`). bash completions of kubectl,
   kubeadm and crictl are generated at build: the RPMs ship none.
+- **4 MB default socket receive buffer on dedicated servers**
+  (`sysctl-metal.service`, `net.core.rmem_default`): the Cilium agent's
+  netlink sockets keep the default, which a burst of events on a server with
+  hundreds of interfaces overflows (ENOBUFS). VMs have few interfaces and
+  keep the kernel default.
 - **etcd network tuning on control planes only** (`etcd-network-tuning.path`,
   on kubeadm's etcd manifest): image-builder's udev rule runs it on every
   NIC of every node, where it replaces a worker's multi-queue qdisc with one
@@ -232,7 +237,8 @@ Read each at the version this repository pins.
     and nexthops).
 - **VM or dedicated server, by `systemd-detect-virt`:**
   VM-only: `qemu-guest-agent`, the QEMU read-ahead rule, the OpenStack
-  units, `99-vm-dhcp.network`. Bare-metal only: `amd-hsmp.service`.
+  units, `99-vm-dhcp.network`. Bare-metal only: `amd-hsmp.service`,
+  `sysctl-metal.service`.
 - **Cilium ≥ 1.20 cluster-wide before a node of this image joins:** older
   releases fail on kernel 7.x's BPF verifier (see `vm.sh cluster`).
 - **OpenStack disk tags and hostname:** the previous images' udev helper
