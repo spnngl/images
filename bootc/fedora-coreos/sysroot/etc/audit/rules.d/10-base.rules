@@ -1,0 +1,11 @@
+## augenrules loads rules.d's files in name order, as one: 10- first, 99- last.
+## Fedora's own file, audit.rules, turned syscall auditing off
+## (`-a task,never`); the Containerfile deletes it.
+
+## Start from no rules.
+-D
+## Room for 8192 events while auditd writes, as audit_backlog_limit
+## (usr/lib/bootc/kargs.d/20-audit.toml) gives before it starts.
+-b 8192
+## A rule this kernel rejects doesn't stop the next ones (CIS).
+-c

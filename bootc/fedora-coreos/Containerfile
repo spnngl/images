@@ -142,6 +142,10 @@ chmod 0750 /etc/sudoers.d
 chmod 0700 /etc/ssh/sshd_config.d
 # The base's drop-ins too: CIS wants them 0600.
 chmod 0600 /etc/ssh/sshd_config.d/*.conf
+# 00-hardening.conf's `GSSAPIAuthentication no` wins, but OpenSCAP wants every
+# line to say so: Fedora's `yes` goes. Fail if it was not found.
+grep -qx 'GSSAPIAuthentication yes' /etc/ssh/sshd_config.d/50-redhat.conf
+sed -i '/^GSSAPIAuthentication yes$/d' /etc/ssh/sshd_config.d/50-redhat.conf
 chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
 chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount,openscap-scan,etc-diff,grype-scan,etcd-defrag}
@@ -177,6 +181,22 @@ grep -q '&& umask 027$' /etc/bashrc
 sed -i 's/^active = no$/active = yes/' /etc/audit/plugins.d/syslog.conf
 grep -qx 'active = yes' /etc/audit/plugins.d/syslog.conf
 
+# Audit rules: etc/audit/rules.d/. Fedora's audit.rules turns syscall
+# auditing off (-a task,never). 51-cis-x86_64.rules names syscalls only
+# x86_64 has.
+rm /etc/audit/rules.d/audit.rules
+if [[ "$(uname -m)" != x86_64 ]]; then rm /etc/audit/rules.d/51-cis-x86_64.rules; fi
+# CIS 6.3.3.10: each setuid or setgid program, all in /usr (the image's),
+# its own rule; the check wants exactly those.
+find /usr -xdev -type f -perm /6000 | sort | while read -r f; do
+    for a in b32 b64; do
+        echo "-a always,exit -F arch=${a} -F path=${f} -F perm=x -F auid>=1000 -F auid!=unset -k privileged"
+    done
+done > /etc/audit/rules.d/52-privileged.rules
+test -s /etc/audit/rules.d/52-privileged.rules
+chmod 0750 /etc/audit/rules.d
+chmod 0640 /etc/audit/rules.d/*.rules
+
 # kubelet tries to create it, and /usr is read-only at runtime.
 mkdir -p /usr/libexec/kubernetes/kubelet-plugins/volume/exec
 
@@ -211,6 +231,7 @@ grep -qx 'permitrootlogin no' /tmp/sshd.txt
 grep -qx 'usepam yes' /tmp/sshd.txt
 grep -qx 'kbdinteractiveauthentication no' /tmp/sshd.txt
 grep -qx 'authorizedkeysfile /usr/lib/ssh/authorized_keys/%u' /tmp/sshd.txt
+grep -qx 'gssapiauthentication no' /tmp/sshd.txt
 # What applies to rootless, Match blocks included (90-allow-proxyjump.conf).
 sshd -T -h /tmp/hostkey -C user=rootless,host=x,addr=192.0.2.1 > /tmp/sshd.txt
 grep -qx 'allowtcpforwarding local' /tmp/sshd.txt
@@ -282,6 +303,11 @@ RUN --mount=type=cache,target=/var/cache/grype \
 # OpenSCAP, profile `build` of the tailoring (sysroot/usr/share/xml/scap/):
 # what a build can check. Exit 2: rules failed, the report is written.
 # BuildKit only: podman's /run/.containerenv turns the machine rules off.
+# /run/ostree-booted, as on a node, makes scap-security-guide see a bootc
+# system: OpenSCAP does not find its other sign, the /ostree symlink, so it
+# would count the setuid files of /sysroot/ostree/repo as programs
+# (audit_rules_privileged_commands).
+touch /run/ostree-booted
 mkdir -p /reports/openscap /reports/grype
 oscap xccdf eval --profile xccdf_local_profile_build \
     --tailoring-file /usr/share/xml/scap/fedora-coreos/tailoring.xml \

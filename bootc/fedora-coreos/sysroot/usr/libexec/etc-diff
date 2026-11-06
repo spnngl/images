@@ -31,6 +31,8 @@ const EXPECTED = [
     '/etc/locale.conf'
     '/etc/vconsole.conf'
     '/etc/audit/audit.rules'
+    # augenrules keeps the rules it replaced, after an image changed them.
+    '/etc/audit/audit.rules.prev'
     '/etc/issue.d/*'
     '/etc/motd.d/boot-status'
     '/etc/ssh/ssh_host_*'

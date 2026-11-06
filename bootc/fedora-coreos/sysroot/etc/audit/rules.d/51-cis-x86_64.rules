@@ -1,0 +1,24 @@
+## 50-cis.rules' rules for the syscalls x86_64 has and aarch64 lacks (older
+## forms of the *at ones; create_module and query_module are gone from the
+## kernel, CIS still names them). The Containerfile deletes this file on
+## other architectures: auditctl refuses a syscall it doesn't know.
+
+## 6.3.3.11
+-a always,exit -F arch=b32 -S creat -S open -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+-a always,exit -F arch=b64 -S creat -S open -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+-a always,exit -F arch=b32 -S creat -S open -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
+-a always,exit -F arch=b64 -S creat -S open -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
+
+## 6.3.3.18
+-a always,exit -F arch=b32 -S chmod -F auid>=1000 -F auid!=unset -k perm_mod
+-a always,exit -F arch=b64 -S chmod -F auid>=1000 -F auid!=unset -k perm_mod
+-a always,exit -F arch=b32 -S chown -S lchown -F auid>=1000 -F auid!=unset -k perm_mod
+-a always,exit -F arch=b64 -S chown -S lchown -F auid>=1000 -F auid!=unset -k perm_mod
+
+## 6.3.3.22
+-a always,exit -F arch=b32 -S rename -S unlink -F auid>=1000 -F auid!=unset -k delete
+-a always,exit -F arch=b64 -S rename -S unlink -F auid>=1000 -F auid!=unset -k delete
+
+## 6.3.3.31
+-a always,exit -F arch=b32 -S create_module -S query_module -k kernel_modules
+-a always,exit -F arch=b64 -S create_module -S query_module -k kernel_modules

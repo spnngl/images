@@ -1,0 +1,3 @@
+## Last: no rule changes until the next boot (CIS 6.3.3.33). An image update
+## reboots, and brings its rules.
+-e 2
