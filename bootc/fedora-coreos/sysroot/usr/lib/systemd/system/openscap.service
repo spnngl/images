@@ -1,6 +1,8 @@
 # Run by openscap.timer. Idle priorities: the node's pods come first.
+# MemoryHigh: oscap peaks at about 320 MB; above the limit, the kernel
+# reclaims the scan's memory, not the pods'.
 [Unit]
-Description=OpenSCAP scan of the node and /etc drift
+Description=OpenSCAP scan of the node
 
 [Service]
 Type=oneshot
@@ -9,3 +11,4 @@ StateDirectory=openscap
 Nice=19
 CPUSchedulingPolicy=idle
 IOSchedulingClass=idle
+MemoryHigh=512M

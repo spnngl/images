@@ -254,12 +254,33 @@ Read each at the version this repository pins.
   `oscap` exits 2 when a rule fails, which the `scan` stage accepts so
   that the report is exported; any other error fails the stage.
 - **Nodes scan daily** (`openscap.timer`, `usr/libexec/openscap-scan`):
-  profile `node`, results and counts for node-exporter's textfile collector
+  profile `node`, results and metrics for node-exporter's textfile collector
   in `/var/lib/openscap`. A systemd timer, not a Kubernetes job: the
-  image's own scanner, content and tailoring, nothing to keep in step.
-- **`/etc` drift, from the same timer** (`ostree admin config-diff`):
-  `/usr` is the image's and read-only, `/etc` is what changes on a node.
-  It stands in for AIDE (`aide_build_database` off).
+  image's own scanner, content and tailoring, nothing to keep in step. No
+  HTML report: nobody opens one on a node, the metrics name the rules.
+  `MemoryHigh=` above oscap's peak (about 320 MB): past it, the kernel
+  reclaims the scan's memory rather than the pods'.
+- **One series per selected rule** (`openscap_rule`, about 280 per node),
+  with its title, severity, CIS section and result: an alert names the
+  failed rule.
+- **Nushell** (Fedora's package) writes the metrics: XCCDF is XML, which
+  bash and jq can't read. Fedora's release is 0.99, older than the current
+  one: the scripts use no later syntax. `usr/share/nushell/prometheus.nu`
+  holds the text format, for both scripts.
+- **`/etc` drift, hourly** (`etc-diff.timer`, `usr/libexec/etc-diff`,
+  `ostree admin config-diff`): `/usr` is the image's and read-only, `/etc`
+  is what changes on a node. It stands in for AIDE (`aide_build_database`
+  off). Apart from the scan: it takes a second, so it runs more often, and
+  a failed scan doesn't stop it.
+- **A series per path of `/etc` changed**, with its metadata and
+  modification time: drift is tied to a file and a moment. Label
+  `expected`: whether the node writes the path on purpose (first boot,
+  Ignition, Cluster API's bootstrap, kubeadm, Cilium, Cinder CSI), from a
+  list in the script. Most of a node's changed paths are such, so only
+  `expected="false"` is worth an alert; a path the node now writes on
+  purpose joins the list. The list names files, not folders, where one
+  more file would run: a new static pod or systemd unit is unexpected. A
+  directory has no size nor modification time: they follow its entries.
 - **`oscap xccdf eval`, not upstream's `oscap-im`:** `oscap-im` remediates
   the image during the build; here every fix is a Containerfile line.
   scap-security-guide spots a bootc image being built by `/ostree` being a

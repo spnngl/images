@@ -1,0 +1,168 @@
+#!/usr/bin/nu --no-config-file
+# List what /etc changed from the image, with `ostree admin config-diff`: /usr
+# is the image's, read-only, but /etc drifts. It stands in for AIDE
+# (usr/share/xml/scap/fedora-coreos/tailoring.xml). See
+# usr/lib/systemd/system/etc-diff.service.
+#
+# Output, in /var/lib/etc-diff:
+#   etc-diff.txt   config-diff's: M(odified), A(dded), D(eleted), paths
+#                  relative to /etc
+#   etc-diff.prom  each path with its metadata, for node-exporter's textfile
+#                  collector: mount /var/lib/etc-diff into its pod, and give
+#                  that path to --collector.textfile.directory
+#
+# Nushell of Fedora's package (0.99): no syntax of a later release.
+
+use /usr/share/nushell/prometheus.nu [metric save-metrics]
+
+const DIR = '/var/lib/etc-diff'
+
+# Paths the node writes on purpose, labelled expected="true": an unexpected
+# path is one nothing the node runs was meant to write. Their metadata is
+# reported all the same. A trailing * matches every path starting with what
+# precedes it: never where something else could hide, such as a static pod in
+# /etc/kubernetes/manifests or a unit in /etc/systemd/system.
+const EXPECTED = [
+    # systemd and the base, on first boot or after an update.
+    '/etc/.updated'
+    '/etc/.rpm-ostree-shadow-mode-fixed2.stamp'
+    '/etc/machine-id'
+    '/etc/hostname'
+    '/etc/locale.conf'
+    '/etc/vconsole.conf'
+    '/etc/audit/audit.rules'
+    '/etc/issue.d/*'
+    '/etc/motd.d/boot-status'
+    '/etc/ssh/ssh_host_*'
+    # Users and groups, created on boot, with their backups (passwd-).
+    '/etc/passwd*'
+    '/etc/shadow*'
+    '/etc/group*'
+    '/etc/gshadow*'
+    '/etc/subuid*'
+    '/etc/subgid*'
+    # Ignition, with Cluster API's bootstrap config.
+    '/etc/.ignition-result.json'
+    '/etc/systemd/system-preset'
+    '/etc/systemd/system-preset/20-ignition.preset'
+    '/etc/systemd/system/afterburn-sshkeys.target.requires'
+    '/etc/systemd/system/afterburn-sshkeys.target.requires/afterburn-sshkeys@core.service'
+    '/etc/hosts'
+    '/etc/kubeadm.sh'
+    '/etc/kubeadm.yml'
+    '/etc/systemd/system/kubeadm.service'
+    '/etc/systemd/system/multi-user.target.wants/kubeadm.service'
+    # The kubeadm-capi-cluster chart's files: the kubelet's config, the API
+    # server's admission, audit and encryption configs, the scheduler's, and
+    # Azure's cloud config.
+    '/etc/kubernetes/kubelet'
+    '/etc/kubernetes/kubelet/config.yaml'
+    '/etc/kubernetes/admission-controls'
+    '/etc/kubernetes/admission-controls/*'
+    '/etc/kubernetes/audit-policy'
+    '/etc/kubernetes/audit-policy/*'
+    '/etc/kubernetes/encryption'
+    '/etc/kubernetes/encryption/*'
+    '/etc/kubernetes/kubescheduler-config.yaml'
+    '/etc/kubernetes/azure.json'
+    # kubeadm: its kubeconfigs, certificates, and the control plane's static
+    # pods.
+    '/etc/kubernetes/admin.conf'
+    '/etc/kubernetes/super-admin.conf'
+    '/etc/kubernetes/controller-manager.conf'
+    '/etc/kubernetes/scheduler.conf'
+    '/etc/kubernetes/kubelet.conf'
+    '/etc/kubernetes/bootstrap-kubelet.conf'
+    '/etc/kubernetes/pki'
+    '/etc/kubernetes/pki/*'
+    '/etc/kubernetes/manifests/etcd.yaml'
+    '/etc/kubernetes/manifests/kube-apiserver.yaml'
+    '/etc/kubernetes/manifests/kube-controller-manager.yaml'
+    '/etc/kubernetes/manifests/kube-scheduler.yaml'
+    # The kubelet's graceful shutdown.
+    '/etc/systemd/logind.conf.d'
+    '/etc/systemd/logind.conf.d/99-kubelet.conf'
+    # Cilium: its CNI config and sysctl override.
+    '/etc/cni'
+    '/etc/cni/net.d'
+    '/etc/cni/net.d/05-cilium.conflist'
+    '/etc/sysctl.d/99-zzz-override_cilium.conf'
+    # OpenStack's Cinder CSI plugin mounts it, created if missing.
+    '/etc/cacert'
+]
+
+def main [] {
+    cd $DIR
+    let diff = ^ostree admin config-diff | complete
+    if $diff.exit_code != 0 {
+        error make {msg: $"ostree admin config-diff exited ($diff.exit_code): ($diff.stderr)"}
+    }
+    $diff.stdout | save --force etc-diff.txt
+    let paths = $diff.stdout | lines
+        | parse --regex '^(?<change>[MAD]) {4}(?<path>.+)$'
+        | each {|p| stat $'/etc/($p.path)' $p.change }
+    metrics $paths | save-metrics etc-diff.prom
+}
+
+# Whether the node writes a path on purpose: EXPECTED.
+def expected [path: string]: nothing -> bool {
+    $EXPECTED | any {|e|
+        if ($e | str ends-with '*') {
+            $path | str starts-with ($e | str trim --right --char '*')
+        } else {
+            $path == $e
+        }
+    }
+}
+
+# A path with its metadata: none for a deleted one, or one gone since
+# config-diff listed it. A directory's size says nothing, and its modification
+# time follows its entries': it has neither.
+def stat [path: string, change: string]: nothing -> record {
+    let file = {path: $path, change: $change, expected: (expected $path)}
+    let stat = if $change == D { null } else {
+        try { ls --long --directory $path | first } catch { null }
+    }
+    if $stat == null {
+        return ($file | merge {type: '', mode: '', user: '', group: '', target: '', size: null, modified: null})
+    }
+    let dir = $stat.type == dir
+    $file | merge {
+        type: $stat.type
+        mode: $stat.mode
+        user: $stat.user
+        group: $stat.group
+        target: ($stat.target? | default '')
+        size: (if $dir { null } else { $stat.size | into int })
+        modified: (if $dir { null } else { $stat.modified | format date '%s' | into int })
+    }
+}
+
+def metrics [paths: list]: nothing -> list<string> {
+    let timed = $paths | where modified != null
+    [
+        ...($paths | each {|p|
+            {labels: ($p | select path change expected type mode user group target), value: 1}
+        } | metric etc_diff_file 'Path of /etc changed from the image: its change, whether the node writes it on purpose, its type, mode, owner and symlink target. Value: 1.')
+        ...($timed | each {|p| {labels: {path: $p.path}, value: $p.modified} }
+            | metric etc_diff_file_modified_timestamp_seconds 'Last modification of a file of /etc changed from the image.')
+        ...($paths | where size != null | each {|p| {labels: {path: $p.path}, value: $p.size} }
+            | metric etc_diff_file_size_bytes 'Size of a file of /etc changed from the image.')
+        ...([M A D] | each {|change|
+            [true false] | each {|expected|
+                {
+                    labels: {change: $change, expected: $expected}
+                    value: ($paths | where change == $change and expected == $expected | length)
+                }
+            }
+        } | flatten | metric etc_diff_changes 'Paths of /etc changed from the image, by change and whether the node writes them on purpose.')
+        ...([true false] | each {|expected|
+            let modified = $timed | where expected == $expected | get modified
+            if ($modified | is-empty) { [] } else {
+                [{labels: {expected: $expected}, value: ($modified | math max)}]
+            }
+        } | flatten | metric etc_diff_last_change_timestamp_seconds 'Newest modification of the files of /etc changed from the image, by whether the node writes them on purpose.')
+        ...([{labels: {}, value: (date now | format date '%s')}]
+            | metric etc_diff_last_run_timestamp_seconds 'Last listing of /etc changed from the image.')
+    ]
+}

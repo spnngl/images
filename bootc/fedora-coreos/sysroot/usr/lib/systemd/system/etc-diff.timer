@@ -1,0 +1,12 @@
+# Hourly, at a random time in the first 10 minutes, so that the nodes don't
+# all run at once. Persistent: a node that was off then runs when it boots.
+[Unit]
+Description=Hourly listing of what /etc changed from the image
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target
