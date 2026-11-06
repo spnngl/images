@@ -8,10 +8,10 @@
 # Packages (goss: package).
 for p in kubelet kubeadm kubectl cri-tools containerd runc conntrack-tools \
     socat sysstat iproute-tc rootlesskit net-tools qemu-guest-agent \
-    systemd-udev systemd-networkd openssh-clients grype nushell; do
+    systemd-udev systemd-networkd openssh-clients grype nushell bootc rpm-ostree podman; do
     check "package ${p}" rpm -q "${p}"
 done
-for p in zincati moby-engine docker-cli firewalld ufw iptables-legacy iptables-services \
+for p in zincati moby-engine docker-cli toolbox firewalld ufw iptables-legacy iptables-services \
     nmstate NetworkManager-team NetworkManager-tui NetworkManager-cloud-setup ModemManager \
     etcd dnsmasq rsync; do
     check "package ${p} is absent" bash -c "! rpm -q ${p}"
