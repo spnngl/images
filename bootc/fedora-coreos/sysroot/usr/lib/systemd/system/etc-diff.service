@@ -1,0 +1,9 @@
+# Run by etc-diff.timer, apart from the OpenSCAP scan (openscap.timer): it
+# takes a second, so it runs hourly, and a failed scan doesn't stop it.
+[Unit]
+Description=List what /etc changed from the image
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/etc-diff
+StateDirectory=etc-diff

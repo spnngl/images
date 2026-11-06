@@ -8,7 +8,7 @@
 # Packages (goss: package).
 for p in kubelet kubeadm kubectl cri-tools containerd runc conntrack-tools \
     socat sysstat iproute-tc rootlesskit net-tools qemu-guest-agent \
-    systemd-udev systemd-networkd openssh-clients grype; do
+    systemd-udev systemd-networkd openssh-clients grype nushell; do
     check "package ${p}" rpm -q "${p}"
 done
 for p in zincati moby-engine docker-cli firewalld ufw iptables-legacy iptables-services \
@@ -111,7 +111,11 @@ check "openscap.timer is wanted by timers.target" bash -c "systemctl show -P Wan
 check "openscap.service scans the node, no rule fails" bash -c '
     sudo systemctl start openscap.service &&
     ! sudo grep -E "<result>(fail|error)</result>" /var/lib/openscap/results.xml &&
-    sudo test -s /var/lib/openscap/openscap.prom'
+    sudo grep -q "^openscap_rule{rule=" /var/lib/openscap/openscap.prom'
+check "etc-diff.timer is wanted by timers.target" bash -c "systemctl show -P WantedBy etc-diff.timer | grep -qw timers.target"
+check "etc-diff.service lists /etc's drift" bash -c '
+    sudo systemctl start etc-diff.service &&
+    sudo grep -q "^etc_diff_file{path=\"/etc/machine-id\",change=\"A\",expected=\"true\"" /var/lib/etc-diff/etc-diff.prom'
 check "grype.timer is wanted by timers.target" bash -c "systemctl show -P WantedBy grype.timer | grep -qw timers.target"
 check "grype.service scans the node" bash -c '
     sudo systemctl start grype.service &&

@@ -1,46 +1,114 @@
-#!/bin/bash
+#!/usr/bin/nu --no-config-file
 # Scan the node with the image's OpenSCAP content, profile `node` of
-# usr/share/xml/scap/fedora-coreos/tailoring.xml, and list what /etc changed
-# from the image: /usr is the image's, read-only, but /etc drifts. See
+# usr/share/xml/scap/fedora-coreos/tailoring.xml. See
 # usr/lib/systemd/system/openscap.service.
 #
 # Output, in /var/lib/openscap:
-#   results.xml, report.html  the scan
-#   etc-diff.txt              `ostree admin config-diff`: M(odified), A(dded),
-#                             D(eleted), paths relative to /etc
-#   openscap.prom             counts of both, for node-exporter's textfile
-#                             collector: mount /var/lib/openscap into its
-#                             pod, and give that path to
-#                             --collector.textfile.directory
-set -euo pipefail
+#   results.xml    the scan; no HTML report, which nobody opens on a node
+#   openscap.prom  each selected rule with its result, for node-exporter's
+#                  textfile collector: mount /var/lib/openscap into its pod,
+#                  and give that path to --collector.textfile.directory
+#
+# Nushell of Fedora's package (0.99): no syntax of a later release.
 
-dir=/var/lib/openscap
-cd "${dir}"
+use /usr/share/nushell/prometheus.nu [metric save-metrics]
 
-# Exit 2: rules failed, the results are written.
-status=0
-oscap xccdf eval --profile xccdf_local_profile_node \
-    --tailoring-file /usr/share/xml/scap/fedora-coreos/tailoring.xml \
-    --results results.xml --report report.html \
-    /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml >/dev/null || status=$?
-[[ ${status} == 0 || ${status} == 2 ]] || exit "${status}"
+const DIR = '/var/lib/openscap'
+# The rules' id prefix, left out of the `rule` label.
+const RULE_PREFIX = 'xccdf_org.ssgproject.content_rule_'
+# A rule's reference to its section of the CIS benchmark. Those to
+# cisecurity.org/controls/ are CIS Controls, another numbering.
+const CIS_HREF = 'https://workbench.cisecurity.org/'
+# XCCDF's results; a rule out of the profile is `notselected`.
+const RESULTS = [pass fail error unknown notapplicable notchecked informational fixed]
 
-ostree admin config-diff >etc-diff.txt
+# Helpers first: Nushell 0.99 fails ("Variable not found") on a recursive
+# command (`text`, `rules`) defined after a command that calls it.
 
-# Written whole, then renamed: the collector never reads half a file.
-{
-    echo "# HELP openscap_rules Rules of the last scan, by result."
-    echo "# TYPE openscap_rules gauge"
-    for result in pass fail error unknown notapplicable notchecked; do
-        echo "openscap_rules{result=\"${result}\"} $(grep -c "<result>${result}</result>" results.xml || true)"
-    done
-    echo "# HELP openscap_etc_changes Files of /etc changed from the image, by change."
-    echo "# TYPE openscap_etc_changes gauge"
-    for change in M A D; do
-        echo "openscap_etc_changes{change=\"${change}\"} $(grep -c "^${change} " etc-diff.txt || true)"
-    done
-    echo "# HELP openscap_last_scan_timestamp_seconds End of the last scan."
-    echo "# TYPE openscap_last_scan_timestamp_seconds gauge"
-    echo "openscap_last_scan_timestamp_seconds $(date +%s)"
-} >openscap.prom.tmp
-mv openscap.prom.tmp openscap.prom
+# Child elements of an XML element, by tag.
+def children [tag: string]: record -> list<record> {
+    $in.content | where tag == $tag
+}
+
+# Text of an XML element, its children's included.
+def text []: record -> string {
+    $in.content | each {|c| if $c.tag == null { $c.content } else { $c | text } } | str join
+}
+
+# Rules of an XCCDF benchmark, in its groups at any depth.
+def rules []: record -> list<record> {
+    $in.content | where tag in [Group Rule] | reduce --fold [] {|e, acc|
+        if $e.tag == Rule { $acc | append $e } else { $acc | append ($e | rules) }
+    }
+}
+
+def main [] {
+    cd $DIR
+    scan
+    metrics (open --raw results.xml | from xml) | save-metrics openscap.prom
+}
+
+# Exit 2: rules failed, the results are written. oscap's warnings go to the
+# journal.
+def scan [] {
+    let oscap = (^oscap xccdf eval --profile xccdf_local_profile_node
+        --tailoring-file /usr/share/xml/scap/fedora-coreos/tailoring.xml
+        --results results.xml
+        /usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml | complete)
+    if $oscap.exit_code not-in [0 2] {
+        error make {msg: $"oscap exited ($oscap.exit_code): ($oscap.stderr)"}
+    }
+    let warnings = $oscap.stderr | str trim
+    if $warnings != '' { print --stderr $warnings }
+}
+
+# Each selected rule with its result, the counts by result, the score, and
+# the scan's end.
+def metrics [xml: record]: nothing -> list<string> {
+    let test = $xml | children TestResult | first
+    let info = $xml | rules | each {|r|
+        {
+            id: $r.attributes.id
+            # A title may span lines in the XML.
+            title: ($r | children title | first | text | str replace --all --regex '\s+' ' ' | str trim)
+            cis: ($r | children reference
+                | where {|ref| $ref.attributes.href | str starts-with $CIS_HREF }
+                | each {|ref| $ref | text } | str join ' ')
+        }
+    }
+    let results = $test | children rule-result
+        | each {|r|
+            {
+                id: $r.attributes.idref
+                severity: $r.attributes.severity
+                result: ($r | children result | first | text)
+            }
+        }
+        | where result != notselected
+        | join --left $info id
+    let score = $test | children score
+        | where {|s| $s.attributes.system == 'urn:xccdf:scoring:default' }
+        | first | text | into float
+    let end = $test.attributes | get end-time | into datetime | format date '%s'
+    [
+        ...($results | each {|r|
+            {
+                labels: {
+                    rule: ($r.id | str replace $RULE_PREFIX '')
+                    title: $r.title
+                    severity: $r.severity
+                    cis: $r.cis
+                    result: $r.result
+                }
+                value: 1
+            }
+        } | metric openscap_rule 'Rule of the last scan: its result, severity and section of the CIS benchmark. Value: 1.')
+        ...($RESULTS | each {|result|
+            {labels: {result: $result}, value: ($results | where result == $result | length)}
+        } | metric openscap_rules 'Rules of the last scan, by result.')
+        ...([{labels: {}, value: $score}]
+            | metric openscap_score 'Score of the last scan, out of 100: XCCDF default scoring, weighted by group.')
+        ...([{labels: {}, value: $end}]
+            | metric openscap_last_scan_timestamp_seconds 'End of the last scan.')
+    ]
+}

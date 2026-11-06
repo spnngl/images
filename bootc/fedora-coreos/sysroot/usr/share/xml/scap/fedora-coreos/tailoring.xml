@@ -48,7 +48,7 @@
     <set-value idref="xccdf_org.ssgproject.content_value_var_auditd_admin_space_left_action">suspend</set-value>
 
     <!-- /usr is the image's, mounted read-only: an update replaces it whole.
-         What drifts, /etc, openscap-scan lists. -->
+         What drifts, /etc, usr/libexec/etc-diff lists. -->
     <select idref="xccdf_org.ssgproject.content_rule_package_aide_installed" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_aide_build_database" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_aide_check_audit_tools" selected="false"/>

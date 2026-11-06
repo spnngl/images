@@ -46,7 +46,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
   the ones still to decide are grouped last.
   `check-reports.sh` fails `build.sh` and CI on a failed rule, after
   exporting the report. The
-  nodes scan daily (`openscap.timer`, results in `/var/lib/openscap`).
+  nodes scan daily (`openscap.timer`, results in `/var/lib/openscap`), and
+  list `/etc`'s drift hourly (`etc-diff.timer`, `/var/lib/etc-diff`); the
+  paths the node writes on purpose are in `usr/libexec/etc-diff`.
 - **grype** lists the CVEs of `/usr` and `/etc`, at build and daily on
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;

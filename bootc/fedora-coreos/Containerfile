@@ -40,7 +40,8 @@ EOF
 # - greenboot checks an update boots and rolls back when it doesn't.
 # - openscap-scanner and scap-security-guide check the image (scan stage,
 #   below) and the nodes (openscap.timer); audispd-plugins holds audit's
-#   syslog plugin.
+#   syslog plugin; nushell runs usr/libexec/openscap-scan and
+#   usr/libexec/etc-diff, which write their results as metrics.
 # - grype lists the CVEs of the image (scan stage, below) and of the nodes
 #   (grype.timer).
 #
@@ -59,7 +60,7 @@ dnf -yq install --setopt=install_weak_deps=False \
     cri-tools \
     conntrack-tools sysstat iproute-tc rootlesskit net-tools qemu-guest-agent greenboot \
     greenboot-default-health-checks systemd-networkd openscap-scanner scap-security-guide \
-    audispd-plugins grype
+    audispd-plugins grype nushell
 
 rm -f /etc/yum.repos.d/kubernetes.repo /etc/rpm/macros.ssg
 test "$(ls "${ssg}")" = ssg-fedora-ds.xml
@@ -130,7 +131,7 @@ chmod 0700 /etc/ssh/sshd_config.d
 chmod 0600 /etc/ssh/sshd_config.d/*.conf
 chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
-chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount,openscap-scan,grype-scan,etcd-defrag}
+chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount,openscap-scan,etc-diff,grype-scan,etcd-defrag}
 
 # The RPMs ship no bash completion, which etc/profile.d/kubernetes.sh loads.
 for tool in kubectl kubeadm crictl; do
@@ -222,7 +223,7 @@ wants multi-user.target.wants containerd.service kubelet.service amd-hsmp.servic
     openstack-hostname.service openstack-disk-tags.service greenboot-healthcheck.service \
     systemd-networkd.service sysctl-mlx5-large.service
 wants paths.target.wants etcd-network-tuning.path
-wants timers.target.wants openscap.timer grype.timer etcd-defrag.timer
+wants timers.target.wants openscap.timer etc-diff.timer grype.timer etcd-defrag.timer
 # The base enables systemd-network-generator.service, which networkd's [Install]
 # would add too.
 wants sysinit.target.wants wx-remount.service auditd.service chronyd.service
