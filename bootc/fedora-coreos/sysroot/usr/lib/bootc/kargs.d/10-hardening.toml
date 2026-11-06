@@ -1,6 +1,5 @@
-# Memory hardening and kernel lockdown. bootc adds these on upgrade;
-# disk-images.sh gives them to new disks, which osbuild makes without
-# reading this directory.
+# Memory hardening and kernel lockdown. bootc adds these on upgrade, and to
+# new disks when osbuild deploys the image (REFERENCES.md).
 # https://bootc.dev/bootc/building/kernel-arguments.html
 # https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html
 #

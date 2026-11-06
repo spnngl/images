@@ -33,7 +33,7 @@ Read each at the version this repository pins.
   `internal/controller/rollout.go`)
 - OpenSCAP: `github.com/OpenSCAP/openscap` (`utils/oscap-im`,
   `src/OVAL/probes/oval_fts.c`) and its content, scap-security-guide:
-  `github.com/ComplianceAsCode/content` (`products/fedora/profiles/cis_server_l1.profile`,
+  `github.com/ComplianceAsCode/content` (`products/fedora/profiles/cis.profile`,
   `controls/cis_fedora.yml`, each rule's `rule.yml` and `oval/`), at the
   versions of the base's
   packages
@@ -254,9 +254,12 @@ Read each at the version this repository pins.
 
 ### OpenSCAP
 
-- **scap-security-guide's `cis_server_l1` profile, tailored**
+- **scap-security-guide's `cis` profile, tailored**
   (`usr/share/xml/scap/fedora-coreos/tailoring.xml`, each rule's reason
-  beside it): CIS Fedora Server level 1, a benchmark auditors know.
+  beside it): CIS Fedora Server level 2, a benchmark auditors know. Level
+  2 adds audit rules and a few sshd and kernel settings. Its rules the nodes can't follow are turned off with their reason
+  (overlayfs and IP forwarding for Kubernetes, SELinux permissive, no
+  passwords), rather than staying at level 1.
   `standard`'s rules that CIS lacks and the image follows (crypto policy,
   auditd retention, root logins) stay selected. Profile `node` for the
   nodes; `build` also turns off what only a booted node shows: rules
@@ -313,6 +316,11 @@ Read each at the version this repository pins.
 - **One series per selected rule** (`openscap_rule`, about 280 per node),
   with its title, severity, CIS section and result: an alert names the
   failed rule.
+- **The kernel's audit state, with the scan** (`audit_*` of
+  `openscap.prom`, from `auditctl -s` and `-l`): the scan reads the rules'
+  files only. `audit_lost_events` counts the events dropped since boot;
+  `audit_rules_rejected`, the rules of `/etc/audit/audit.rules` the kernel
+  refused, which `-c` loads past and `-e 2` keeps out until a reboot.
 - **Nushell** (Fedora's package) writes the metrics: XCCDF is XML, which
   bash and jq can't read. Fedora's release is 0.99, older than the current
   one: the scripts use no later syntax. `usr/share/nushell/prometheus.nu`
@@ -334,9 +342,11 @@ Read each at the version this repository pins.
 - **`oscap xccdf eval`, not upstream's `oscap-im`:** `oscap-im` remediates
   the image during the build; here every fix is a Containerfile line.
   scap-security-guide spots a bootc image being built by `/ostree` being a
-  symlink, but OpenSCAP's file probe follows symlinks: the build is
-  scanned as a plain system (`oscap-im` uses the SCE engine instead). No
-  rule of `node` depends on it. Fixed upstream by
+  symlink, but OpenSCAP's file probe follows symlinks: the build would be
+  scanned as a plain system (`oscap-im` uses the SCE engine instead). The
+  `scan` stage creates `/run/ostree-booted`, the other sign, which a node
+  has: `audit_rules_privileged_commands` would otherwise count the setuid
+  files of `/sysroot/ostree/repo`. Fixed upstream by
   https://github.com/ComplianceAsCode/content/pull/15303.
 - **Upstream fixes:** when a scap-security-guide release carries
   https://github.com/ComplianceAsCode/content/pull/15304 (Fedora keys,
@@ -355,6 +365,38 @@ Read each at the version this repository pins.
 - **Audit syslog plugin** (`audispd-plugins`, `active = yes`): audit events
   reach the journal. Its `/var/spool/audit` is removed, as `/var` ships
   empty.
+- **Audit rules of CIS 6.3.3** (`etc/audit/rules.d/`), written from
+  scap-security-guide's remediations, its field order kept so its checks
+  read them. Fedora's `audit.rules` goes: its `-a task,never` turns syscall
+  auditing off. The rules record sessions only, which have a login uid:
+  most with `auid>=1000`; the clock, kernel modules, programs run as
+  another user and the watches, any session. `-a task,never -F
+  auid=unset` leaves out services, kubelet, containerd and the pods,
+  so CIS' rules that name no user miss their events too (chronyd's clock
+  adjustments, a daemon's write to `/etc/hosts`): with a rule loaded,
+  the kernel tracks every syscall of each process it audits, measured at
+  about +60 ns a call and +200 ns one with a path (aarch64, kernel 7.0;
+  the number of rules hardly matters). Tetragon and Falco watch the
+  pods. x86_64-only
+  syscalls are in a file of their own, deleted on other architectures.
+  `52-privileged.rules` is written in the build from the image's setuid
+  and setgid programs, all in `/usr`: the check wants exactly those.
+  `-e 2` last: rules change only with a reboot, so a new image.
+- **`audit=1 audit_backlog_limit=8192`** (`kargs.d/20-audit.toml`): the
+  kernel audits from boot, and holds events until auditd starts.
+- **auditd suspends and rotates** (tailoring's values): a full disk or a
+  write error stops logging instead of halting the node or dropping it to
+  single-user mode, and logs rotate instead of filling `/var`. CIS level
+  2 wants the opposite; a node going down with its disk is worse here,
+  and the events also reach the journal.
+- **sshd: no GSSAPI, forwarding for rootless only.** Fedora's
+  `50-redhat.conf` line `GSSAPIAuthentication yes` is deleted: the check
+  fails on any line saying `yes`, though `00-hardening.conf`'s comes
+  first. `sshd_disable_forwarding` is off: `ssh -J` through a node needs
+  rootless's `DisableForwarding no`.
+- **SquashFS blocked** (`modprobe.d/hardening.conf`): the node's
+  filesystems are XFS and ext4, composefs is EROFS. overlayfs stays:
+  containerd's snapshotter.
 
 ### Vulnerabilities (grype)
 

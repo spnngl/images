@@ -1,0 +1,100 @@
+## CIS Fedora level 2, 6.3.3: what changes the node's configuration, and what
+## its users do. The rules have the form scap-security-guide's checks and fixes
+## use (usr/share/xml/scap/fedora-coreos/tailoring.xml); the keys (-k) are CIS'.
+##
+## Who is recorded: a person's session has a login uid; services, kubelet and
+## the containers don't (auid unset), and 10-base.rules' `-a task,never`
+## leaves them out of every rule below, watches included.
+## - `-F auid>=1000 -F auid!=unset`: users' sessions, most syscall rules.
+## - 6.3.3.2's `-F auid!=unset`, the clock and kernel modules (6.3.3.4,
+##   6.3.3.29 to 6.3.3.31) and watches (-w): any session, root's included.
+## Syscalls x86_64 has and aarch64 lacks: 51-cis-x86_64.rules.
+
+## 6.3.3.1 sudoers.
+-w /etc/sudoers -p wa -k scope
+-w /etc/sudoers.d/ -p wa -k scope
+
+## 6.3.3.2 Programs run as another user (sudo, setuid).
+-a always,exit -F arch=b32 -S execve -C euid!=uid -F auid!=unset -k user_emulation
+-a always,exit -F arch=b64 -S execve -C euid!=uid -F auid!=unset -k user_emulation
+
+## 6.3.3.4 The clock.
+-a always,exit -F arch=b32 -S adjtimex -S settimeofday -S stime -k time-change
+-a always,exit -F arch=b64 -S adjtimex -S settimeofday -k time-change
+-a always,exit -F arch=b32 -S clock_settime -F a0=0x0 -k time-change
+-a always,exit -F arch=b64 -S clock_settime -F a0=0x0 -k time-change
+-w /etc/localtime -p wa -k time-change
+
+## 6.3.3.5 to 6.3.3.9 The network's identity and configuration.
+-a always,exit -F arch=b32 -S setdomainname -S sethostname -F auid>=1000 -F auid!=unset -k system-locale
+-a always,exit -F arch=b64 -S setdomainname -S sethostname -F auid>=1000 -F auid!=unset -k system-locale
+-w /etc/issue -p wa -k system-locale
+-w /etc/issue.net -p wa -k system-locale
+-w /etc/hosts -p wa -k system-locale
+-w /etc/hostname -p wa -k system-locale
+-w /etc/sysconfig/network -p wa -k system-locale
+-w /etc/NetworkManager -p wa -k system-locale
+-w /etc/NetworkManager/system-connections/ -p wa -k system-locale
+
+## 6.3.3.10 Setuid and setgid programs: 52-privileged.rules, which the
+## Containerfile writes from the image's.
+
+## 6.3.3.11 Files a user was refused.
+-a always,exit -F arch=b32 -S ftruncate -S openat -S truncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+-a always,exit -F arch=b64 -S ftruncate -S openat -S truncate -F exit=-EACCES -F auid>=1000 -F auid!=unset -k access
+-a always,exit -F arch=b32 -S ftruncate -S openat -S truncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
+-a always,exit -F arch=b64 -S ftruncate -S openat -S truncate -F exit=-EPERM -F auid>=1000 -F auid!=unset -k access
+
+## 6.3.3.12 to 6.3.3.17 Users, groups and how they log in.
+-w /etc/group -p wa -k identity
+-w /etc/passwd -p wa -k identity
+-w /etc/gshadow -p wa -k identity
+-w /etc/shadow -p wa -k identity
+-w /etc/security/opasswd -p wa -k identity
+-w /etc/nsswitch.conf -p wa -k identity
+-w /etc/pam.conf -p wa -k identity
+-w /etc/pam.d/ -p wa -k identity
+
+## 6.3.3.18 Permissions, owners and extended attributes.
+-a always,exit -F arch=b32 -S fchmod -S fchmodat -S fchmodat2 -F auid>=1000 -F auid!=unset -k perm_mod
+-a always,exit -F arch=b64 -S fchmod -S fchmodat -S fchmodat2 -F auid>=1000 -F auid!=unset -k perm_mod
+-a always,exit -F arch=b32 -S fchown -S fchownat -F auid>=1000 -F auid!=unset -k perm_mod
+-a always,exit -F arch=b64 -S fchown -S fchownat -F auid>=1000 -F auid!=unset -k perm_mod
+-a always,exit -F arch=b32 -S fremovexattr -S fsetxattr -S lremovexattr -S lsetxattr -S removexattr -S setxattr -F auid>=1000 -F auid!=unset -k perm_mod
+-a always,exit -F arch=b64 -S fremovexattr -S fsetxattr -S lremovexattr -S lsetxattr -S removexattr -S setxattr -F auid>=1000 -F auid!=unset -k perm_mod
+
+## 6.3.3.19 Mounts.
+-a always,exit -F arch=b32 -S mount -F auid>=1000 -F auid!=unset -k mounts
+-a always,exit -F arch=b64 -S mount -F auid>=1000 -F auid!=unset -k mounts
+
+## 6.3.3.20 and 6.3.3.21 Sessions and logins.
+-w /var/run/utmp -p wa -k session
+-w /var/log/wtmp -p wa -k session
+-w /var/log/btmp -p wa -k session
+-w /var/log/lastlog -p wa -k logins
+-w /var/run/faillock -p wa -k logins
+
+## 6.3.3.22 Deletions and renames.
+-a always,exit -F arch=b32 -S renameat -S renameat2 -S unlinkat -F auid>=1000 -F auid!=unset -k delete
+-a always,exit -F arch=b64 -S renameat -S renameat2 -S unlinkat -F auid>=1000 -F auid!=unset -k delete
+
+## 6.3.3.23 SELinux's policy.
+-w /etc/selinux/ -p wa -k MAC-policy
+-w /usr/share/selinux/ -p wa -k MAC-policy
+-w /var/lib/selinux/ -p wa -k MAC-policy
+
+## 6.3.3.24 to 6.3.3.28 Labels, ACLs, accounts and modules changed by hand.
+-a always,exit -F arch=b32 -F path=/usr/bin/chcon -F perm=x -F auid>=1000 -F auid!=unset -k perm_chng
+-a always,exit -F arch=b64 -F path=/usr/bin/chcon -F perm=x -F auid>=1000 -F auid!=unset -k perm_chng
+-a always,exit -F arch=b32 -F path=/usr/bin/setfacl -F perm=x -F auid>=1000 -F auid!=unset -k perm_chng
+-a always,exit -F arch=b64 -F path=/usr/bin/setfacl -F perm=x -F auid>=1000 -F auid!=unset -k perm_chng
+-a always,exit -F arch=b32 -F path=/usr/bin/chacl -F perm=x -F auid>=1000 -F auid!=unset -k perm_chng
+-a always,exit -F arch=b64 -F path=/usr/bin/chacl -F perm=x -F auid>=1000 -F auid!=unset -k perm_chng
+-a always,exit -F arch=b32 -F path=/usr/sbin/usermod -F perm=x -F auid>=1000 -F auid!=unset -k usermod
+-a always,exit -F arch=b64 -F path=/usr/sbin/usermod -F perm=x -F auid>=1000 -F auid!=unset -k usermod
+-a always,exit -F arch=b32 -F path=/usr/bin/kmod -F perm=x -F auid>=1000 -F auid!=unset -k kernel_modules
+-a always,exit -F arch=b64 -F path=/usr/bin/kmod -F perm=x -F auid>=1000 -F auid!=unset -k kernel_modules
+
+## 6.3.3.29 to 6.3.3.31 Kernel modules loaded or removed, by anyone.
+-a always,exit -F arch=b32 -S delete_module -S finit_module -S init_module -k kernel_modules
+-a always,exit -F arch=b64 -S delete_module -S finit_module -S init_module -k kernel_modules
