@@ -66,10 +66,10 @@ test "$(ls "${ssg}")" = ssg-fedora-ds.xml
 test ! -e /usr/share/scap-security-guide
 
 # Updates come from Cluster API (a new machine) or bootc-operator, never from
-# the node itself. moby-engine and docker-cli: containerd is the runtime.
+# the node itself. moby-engine, docker-cli, podman: containerd is the runtime.
 # iptables-services: no host firewall, Cilium filters (FCOS has neither
 # firewalld nor ufw; test/image.sh checks).
-dnf -yq remove zincati moby-engine docker-cli iptables-services
+dnf -yq remove zincati moby-engine docker-cli iptables-services podman
 
 # CIS wants them gone: no node serves DNS or DHCP, nor copies with rsync.
 # rpm -e, not dnf: it fails if another package requires them.
