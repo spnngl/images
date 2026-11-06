@@ -13,7 +13,7 @@ for p in kubelet kubeadm kubectl cri-tools containerd runc conntrack-tools \
 done
 for p in zincati moby-engine docker-cli toolbox firewalld ufw iptables-legacy iptables-services \
     nmstate NetworkManager-team NetworkManager-tui NetworkManager-cloud-setup ModemManager \
-    etcd dnsmasq rsync; do
+    etcd dnsmasq rsync rpcbind nfsv3-client-utils; do
     check "package ${p} is absent" bash -c "! rpm -q ${p}"
 done
 # iptables commands use nf_tables; the legacy x_tables tables can't load.
@@ -40,6 +40,13 @@ check "rootless sudoers" bash -c '
     sudo visudo -cf /etc/sudoers.d/99-rootless'
 check "rootless home" bash -c '[[ $(stat -c %U:%a /var/home/rootless) == rootless:700 ]]'
 check "rootless keys" bash -c '[[ $(grep -c ^ssh-ed25519 /usr/lib/ssh/authorized_keys/rootless) == 8 ]]'
+# The initramfs no longer creates FCOS' core user (Containerfile, dracut).
+check "no user core" bash -c '! getent passwd core && test ! -e /var/home/core'
+# sshd-keygen@.service.d/50-ssh-keys-group.conf
+check "SSH host keys are root:ssh_keys 0600" bash -c '
+    for k in /etc/ssh/ssh_host_*_key; do
+        [[ $(sudo stat -c %U:%G:%a "${k}") == root:ssh_keys:600 ]] || exit 1
+    done'
 
 # sshd (goss: sshd-effective-config; the pubkey login is how this script
 # got in). A throwaway host key: `sshd -T` refuses to run without one. -C:
