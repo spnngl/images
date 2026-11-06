@@ -40,6 +40,11 @@ ignore:
   - vulnerability: CVE-2026-78663
     reason: x/net of podman, ignition and grype; next FCOS release or Fedora update
     package: {name: golang.org/x/net, version: v0.57.0}
+  - vulnerability: CVE-2026-111497
+    reason: >-
+      brotli of grype (0.117.0-2.fc44, Fedora's latest): a crafted stream exhausts the scanner's
+      memory; next Fedora update
+    package: {name: github.com/andybalholm/brotli, version: v1.2.0}
   - vulnerability: FEDORA-2026-0609e13c0d
     reason: fixed in ca-certificates 2026.2.92_v9.0.319-2.fc44; next FCOS release
     package: {name: ca-certificates, version: 2026.2.92_v9.0.319-1.fc44}
