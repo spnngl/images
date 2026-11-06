@@ -8,7 +8,16 @@ Read each at the version this repository pins.
   `github.com/coreos/fedora-coreos-config` (`manifests/`, `overlay.d/`,
   `manifest-lock.<arch>.json`: what the base ships)
 - Disk images: `github.com/coreos/custom-coreos-disk-images`
-  (`README.md`, `custom-coreos-disk-images.sh`)
+  (`README.md`, `custom-coreos-disk-images.sh`,
+  `cosa-imports/coreos.osbuild.x86_64.mpp.yaml`), the osbuild stage it
+  deploys with: `github.com/osbuild/osbuild`
+  (`stages/org.osbuild.ostree.deploy.container`), and how ostree reads
+  its kernel arguments: `github.com/ostreedev/ostree`
+  (`src/libostree/ostree-kernel-args.c`)
+- Kernel arguments: bootc's `crates/lib/src/bootc_kargs.rs` (kargs.d on
+  upgrade); <https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html>,
+  `Documentation/admin-guide/LSM/` (lockdown: `security/lockdown/`), and
+  the base kernel's `/usr/lib/modules/<version>/config` for its defaults
 - Kubernetes packages: `https://pkgs.k8s.io/core:/stable:/v<minor>/rpm/`
   (kubelet, kubeadm, kubectl, cri-tools, kubernetes-cni)
 - Node settings being ported from the previous node images (Ubuntu, called
@@ -81,6 +90,24 @@ Read each at the version this repository pins.
   (`ip_tables`, `ip6_tables`, `arp_tables`, `ebtables`) can't load
   (`modprobe.d/blacklist.conf`, `install … /bin/false`), so no tool can add
   rules that `nft list ruleset` doesn't show.
+- **Hardening kernel arguments in `usr/lib/bootc/kargs.d/`:** how an
+  image sets its command line; bootc has no `kargs` command, and applies
+  the files' changes on upgrade. Some are already the kernel's defaults (each file says which),
+  stated so a config change of Fedora's doesn't undo them.
+  **`lockdown=integrity`, not `confidentiality`:** confidentiality also
+  blocks kprobes, tracefs, perf and BPF reads of kernel memory, which
+  Tetragon and Falco need. Tried on a sandbox control plane, Cilium 1.20
+  kept working under confidentiality, but systemd's `RestrictFileSystems=`
+  BPF program and systemd-nsresourced's user namespaces stopped; integrity
+  blocks none of these (`include/linux/security.h`, `enum
+  lockdown_reason`). `init_on_free=1` costs a few percent of CPU on
+  allocation-heavy work.
+- **Disk images get kargs.d too** (`disk-images.sh`): osbuild's
+  `org.osbuild.ostree.deploy.container` ignores it, and `bootc upgrade`
+  only applies what changed between the booted image's kargs.d and the new
+  one's, so a disk made without them would never get them. The script
+  reads them from the archive's layers by bootc's rules, without bootc:
+  nested podman can't store the image in the privileged container.
 - **SELinux permissive** (`/etc/selinux/config`): containerd runs with
   `enable_selinux = false`, as in `capi-image-builder`; kept from those
   nodes, against FCOS' advice (`docs/selinux.adoc`: enforcing, or a per-domain
@@ -343,8 +370,8 @@ Read each at the version this repository pins.
   (`disk-images.sh`, `disk_images_commit`):** greenboot boot counting needs
   the bootupd static GRUB configs that only this installer writes. It sets
   `mitigations=auto,nosmt` by default; `disk-images.sh` passes
-  `--extra-kargs mitigations=auto`, because `nosmt` turns off half the CPUs
-  of a node. It installs from `ostree-image-signed:`, so the disk's
+  `--extra-kargs "mitigations=auto <kargs.d's>"`, because `nosmt` turns off
+  half the CPUs of a node. ostree splits the string on spaces. It installs from `ostree-image-signed:`, so the disk's
   origin checks CI's signature from the first boot.
 - **qcow2 compressed after osbuild** (`qemu-img convert -c`): the
   OpenStack pipeline writes it uncompressed, and a GitHub release asset

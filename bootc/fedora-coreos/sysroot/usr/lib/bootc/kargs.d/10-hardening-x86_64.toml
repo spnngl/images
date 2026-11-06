@@ -1,0 +1,6 @@
+# No vsyscall page (Fedora's kernel maps it execute-only,
+# CONFIG_LEGACY_VSYSCALL_XONLY): its fixed address helps exploits. Only
+# binaries from before glibc 2.14 (2011) call it. x86_64 only: aarch64 has
+# no vsyscall page.
+kargs = ["vsyscall=none"]
+match-architectures = ["x86_64"]

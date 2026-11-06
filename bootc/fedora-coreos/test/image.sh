@@ -23,6 +23,12 @@ check "iptables is iptables-nft" bash -c 'iptables --version | grep -q nf_tables
 for m in ip_tables ip6_tables arp_tables ebtables; do
     check "module ${m} can't load" bash -c "! sudo modprobe ${m} 2>/dev/null && ! lsmod | grep -q ^${m}"
 done
+# usr/lib/bootc/kargs.d reached the disk (disk-images.sh), and took effect.
+check "kernel arguments of kargs.d" bash -c '
+    for a in $(sudo bootc container inspect --json | jq -r ".kargs[]"); do
+        grep -qwF -- "${a}" /proc/cmdline || exit 1
+    done'
+check "kernel lockdown is integrity" grep -qF '[integrity]' /sys/kernel/security/lockdown
 
 # The rootless user (goss: user, visudo-usable).
 check "user rootless" bash -c '
