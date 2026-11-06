@@ -255,7 +255,7 @@ wants() {
 }
 wants multi-user.target.wants containerd.service kubelet.service amd-hsmp.service \
     openstack-hostname.service openstack-disk-tags.service greenboot-healthcheck.service \
-    systemd-networkd.service sysctl-mlx5-large.service
+    systemd-networkd.service sysctl-mlx5-large.service sysctl-metal.service
 wants paths.target.wants etcd-network-tuning.path
 wants timers.target.wants openscap.timer etc-diff.timer grype.timer etcd-defrag.timer
 # The base enables systemd-network-generator.service, which networkd's [Install]
