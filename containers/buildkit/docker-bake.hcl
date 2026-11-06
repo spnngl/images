@@ -16,7 +16,7 @@ target "buildkit" {
   matrix = {
     base = [
       # renovate: datasource=github-tags depName=moby/buildkit extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "0.34.1", checksum = "f5b59a1f2fb25a0cb7072c398cab9aed7835da4e" },
+      { version = "0.34.2", checksum = "8c579433824224dc64a158cf8734495b6e2b186a" },
     ]
     runc = [
       # renovate: datasource=github-tags depName=opencontainers/runc extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
