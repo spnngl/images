@@ -27,19 +27,19 @@ target "kubectl" {
         # renovate: datasource=github-tags depName=kubectl-1.35 packageName=kubernetes/kubernetes versioning=semver extractVersion=^v(?<version>1\.35\.\d+)$ depType=automerge
         version = "1.35.10", checksum = "ae6fece6fea92ecfcccd13af7d5f2ea8cb9b33fe"
         # renovate: datasource=docker depName=golang-1.26 packageName=docker.io/library/golang extractVersion=^(?<version>1\.26\.\d+-trixie)$ depType=automerge
-        golang = { tag = "1.26.10-trixie", digest = "sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4" }
+        golang = { tag = "1.26.10-trixie", digest = "sha256:fd9a91f0ece5664556f4851d06dce5e5b505a71166dffd385a03ba9d200b6983" }
       },
       {
         # renovate: datasource=github-tags depName=kubectl-1.36 packageName=kubernetes/kubernetes versioning=semver extractVersion=^v(?<version>1\.36\.\d+)$ depType=automerge
         version = "1.36.6", checksum = "1b2171b110bb2a2542e1322035c6583ec86eb976"
         # renovate: datasource=docker depName=golang-1.26 packageName=docker.io/library/golang extractVersion=^(?<version>1\.26\.\d+-trixie)$ depType=automerge
-        golang = { tag = "1.26.10-trixie", digest = "sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4" }
+        golang = { tag = "1.26.10-trixie", digest = "sha256:fd9a91f0ece5664556f4851d06dce5e5b505a71166dffd385a03ba9d200b6983" }
       },
       {
         # renovate: datasource=github-tags depName=kubectl-1.37 packageName=kubernetes/kubernetes versioning=semver extractVersion=^v(?<version>1\.37\.\d+)$ depType=automerge
         version = "1.37.2", checksum = "c50e5395f1ae2d4a2c05f28fdcc38c0916cc1a32"
         # renovate: datasource=docker depName=golang-1.26 packageName=docker.io/library/golang extractVersion=^(?<version>1\.26\.\d+-trixie)$ depType=automerge
-        golang = { tag = "1.26.10-trixie", digest = "sha256:909771fef53e3dcb0950255f0c9a8b4728c3b841e61509c7b29b098de7ee02d4" }
+        golang = { tag = "1.26.10-trixie", digest = "sha256:fd9a91f0ece5664556f4851d06dce5e5b505a71166dffd385a03ba9d200b6983" }
       },
     ]
   }

@@ -28,7 +28,7 @@
 FROM ghcr.io/spnngl/images/datalists:latest@sha256:643c5eabef2f894a39a99d8c66ac2eda15e1830838819539df55b26f9501357e AS lists
 
 # Debian trixie: its ca-certificates is the CA bundle copied below.
-FROM docker.io/library/golang:1.27-trixie@sha256:fbb7ae40b62ff8afe31662df570d39b4f5052ac32b90dae8e60d7657a20a74f4 AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM

@@ -22,7 +22,7 @@
 
 # Debian trixie, the release distroless' cc-debian13 is built from: the
 # OpenSSL linked here is the final image's.
-FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS build
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
@@ -209,7 +209,7 @@ wait "${server}"
 rm -r /tmp/data /tmp/replica /tmp/version /tmp/sections /tmp/symbols /tmp/smoke-test.crt /tmp/smoke-test.key
 EORUN
 
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1
 ARG BASE_VERSION
 
 # source: links the ghcr.io package to this repository.
