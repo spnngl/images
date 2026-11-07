@@ -36,11 +36,11 @@ ADD --link \
 
 # Node for the web UI, which the crate's build.rs builds with npm:
 # upstream's major (its Dockerfile, .github/workflows/build.yaml).
-FROM docker.io/library/node:24.22-trixie-slim@sha256:43b9ba1142b8dcf33fa8f922ca1be85714adc444e0586c7cf7726daaeabc1bea AS node
+FROM docker.io/library/node:24.22-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS node
 
 # Debian trixie: its musl-tools build the C libraries, its ca-certificates
 # is the CA bundle copied below.
-FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+FROM docker.io/library/rust:1.99-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS build
 
 ARG BASE_VERSION
 ARG DEBIAN_CODENAME

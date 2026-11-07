@@ -39,11 +39,11 @@ ADD --link \
 
 # The final image's base, by digest, which Renovate moves. Read by the
 # closure stage too: the packages it holds are the ones not to copy again.
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:3ee00291cf386ec52a552e6a858d555debd74776eb4bfa53fa3df2cd6677515e AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1 AS runtime
 
 # Debian trixie, with Rust's own image: the packages below come from its
 # snapshot.
-FROM docker.io/library/rust:1.99-trixie@sha256:931c2c0531a8b143e044f0f3914dfe802f15bb3d1955f0b657e9359327ac2ffc AS build
+FROM docker.io/library/rust:1.99-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS build
 
 ARG BASE_VERSION
 ARG DEBIAN_CODENAME
@@ -126,7 +126,7 @@ EORUN
 
 # Debian trixie, the release distroless' cc-debian13 is built from: the
 # libraries copied here are the ones the final image's base has.
-FROM docker.io/library/debian:trixie-slim@sha256:62bd423aeee912639ca8ee681c2b762cb3e25137e0a92b20be455898a9f034ad AS closure
+FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS closure
 
 ARG DEBIAN_CODENAME
 ARG DEBIAN_SNAPSHOT_VERSION
@@ -235,8 +235,8 @@ CMD ["--help"]
 FROM image AS smoke
 ARG BASE_VERSION
 ENV CARGO_HOME=/tmp/cargo
-COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:1cc558b1f5eb0f08cdbb0dc2b38c434877bc4c106ba357520a4c1d2505061afb /bin/busybox /bin/ash
-COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:1cc558b1f5eb0f08cdbb0dc2b38c434877bc4c106ba357520a4c1d2505061afb /bin/busybox /bin/grep
+COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:00f0156847588a3dd60bedaa6e443167b018be650d3af798d5879b9f3b1770a5 /bin/busybox /bin/ash
+COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:00f0156847588a3dd60bedaa6e443167b018be650d3af798d5879b9f3b1770a5 /bin/busybox /bin/grep
 COPY --link --chown=65532:65532 smoke-test/ /tmp/smoke/
 SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
 
