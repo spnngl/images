@@ -23,7 +23,7 @@
 # The lists, the image's last layer, and the smoke tests' ACLs. Its
 # digest, which Renovate moves, sets the lists an image ships
 # (containers/haproxy/AGENTS.md, Updates).
-FROM ghcr.io/spnngl/images/datalists:latest@sha256:94f05977dfc0d08b6c739f759692d3fb4acf07741ea3ad34cc2808501808c748 AS lists
+FROM ghcr.io/spnngl/images/datalists:latest@sha256:6841566506d3a452ceaf7cecd1e000499e28340c24df7a6771b00196e26150e7 AS lists
 
 # Debian trixie, the release distroless' cc-debian13 is built from: the
 # libraries linked here are the ones the final image has.
