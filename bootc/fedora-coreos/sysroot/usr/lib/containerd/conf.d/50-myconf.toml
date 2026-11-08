@@ -31,6 +31,7 @@ oom_score = -999
     enable_unprivileged_icmp = false
     # SELinux is permissive on this image.
     enable_selinux = false
+    disable_apparmor = true
     tolerate_missing_hugetlb_controller = true
     disable_hugetlb_controller = true
 
