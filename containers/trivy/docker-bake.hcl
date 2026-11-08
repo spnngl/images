@@ -8,7 +8,7 @@ target "trivy" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=aquasecurity/trivy extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "0.76.1", checksum = "e713f67f7d54decdcd9b3132c9751833dcced698" },
+      { version = "0.76.2", checksum = "3f6334d223b52188324af3b9923b4249cd206652" },
     ]
   }
   args = merge(containerfile_args(debian), {
