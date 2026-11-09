@@ -509,6 +509,26 @@ Read each at the version this repository pins.
   this folder's key, so a stale copy fails there.
   `.dockerignore`, not `.containerignore`: BuildKit reads only the
   former, buildah both.
+- **goss checks the image's files at build** (`test/build.yaml`, stage
+  `goss`, report `goss/build.tap` of `reports`): what holds without
+  booting (packages, files, unit links and drop-ins, `sshd -T`, the
+  merged containerd config). CI runs it on every build, through
+  `--target reports`; `check-reports.sh` fails on a `not ok`, or on a
+  report with no check (goss couldn't read the suite). `test/image.sh`
+  keeps what needs the booted node.
+- **goss from Fedora's package** (`goss-bin` stage, `dnf install`): no
+  pin to update, it follows `BASE_VERSION` like cri-tools ("Versions not
+  pinned"), and the image's glibc runs it (it is dynamically linked). The
+  `goss` stage mounts its binary alone, so the checks see the shipped
+  tree, rpmdb included, and grype never scans goss. `--network=none`: the
+  checks read the image only.
+- **A Containerfile `grep` only guards the `sed` above it** (it fails
+  when the edit matched nothing); the checks of a result are in
+  `test/build.yaml`, one place per fact.
+- **Unit facts as files at build:** a unit enabled by a link is checked
+  as that link (`systemctl is-enabled` calls it `disabled`), a masked one
+  as its `/etc` link to `/dev/null`, a condition or slice as its line in
+  the unit or drop-in. `systemctl show` needs a running systemd.
 - **VM tests by hand:** they need KVM and a cluster's workbench.
 - **Renovate** (`renovate.json5`): `BASE_VERSION` through
   the dockerfile manager; `KUBERNETES_VERSION` (GitHub releases of
