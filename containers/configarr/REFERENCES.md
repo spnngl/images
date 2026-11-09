@@ -4,7 +4,7 @@
 
 - Upstream: `github.com/raydak-labs/configarr` at tag `v<BASE_VERSION>`
   (`Dockerfile`, `esbuild.ts`, `src/env.ts`, `src/index.ts`,
-  `src/util.ts`); docs <https://configarr.de>
+  `src/util.ts`, `package.json`); docs <https://configarr.de>
 - Node.js: the `docker.io/library/node` image
   (`github.com/nodejs/docker-node`)
 - Dalec: `github.com/project-dalec/dalec`, docs
@@ -29,7 +29,9 @@
   `nodemod` generator: it runs `npm install`, which ignores
   `pnpm-lock.yaml`. pnpm through the image's corepack, at the version of
   `docker-bake.hcl`, checked against npm's signing keys (as
-  `containers/silo-server`).
+  `containers/silo-server`). Corepack enforces `package.json`'s
+  `packageManager`, so set that field to the Bake-pinned version before
+  invoking it; upstream's field can otherwise lag the image's minor update.
 - **`CONFIGARR_VERSION` at build time:** `esbuild.ts` writes it into the
   bundle; unset, configarr logs `dev`.
 - **`dumb-init` as PID 1, as upstream:** node as PID 1 installs no
