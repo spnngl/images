@@ -452,17 +452,31 @@
             ]
         },
         {
-            "description": "bootc/fedora-coreos: CI builds and scans it, its VM tests run by hand (bootc/fedora-coreos/AGENTS.md). Not automerged, but for the rule below.",
+            "description": "bootc/fedora-coreos: CI builds and scans it, and its vm-test job runs the VM tests (bootc/fedora-coreos/AGENTS.md, Build check). Not automerged, but for the rules below.",
             "matchFileNames": ["bootc/fedora-coreos/**"],
             "automerge": false,
             "prBodyNotes": [
-                "CI builds and scans it; its VM tests don't run there. Before merging by hand, run the build check of [`bootc/fedora-coreos/AGENTS.md`](https://github.com/spnngl/images/blob/main/bootc/fedora-coreos/AGENTS.md#build-check). A Fedora CoreOS release or Kubernetes patch keeps the image's tag (`<major>-v<minor>`): nodes take it with `bootc upgrade`. A new major or Kubernetes minor is a new tag: VMs get new machines through Cluster API, dedicated servers move with `bootc switch`."
+                "CI builds and scans it, and its `vm-test` job runs the build check of [`bootc/fedora-coreos/AGENTS.md`](https://github.com/spnngl/images/blob/main/bootc/fedora-coreos/AGENTS.md#build-check) on the image. A Fedora CoreOS release or Kubernetes patch keeps the image's tag (`<major>-v<minor>`): nodes take it with `bootc upgrade`. A new major or Kubernetes minor is a new tag: VMs get new machines through Cluster API, dedicated servers move with `bootc switch`."
             ]
         },
         {
             "description": "Fedora CoreOS releases of the same major (BASE_VERSION <major>.<date>.3.<n>: docker versioning makes the date the minor): automerged once every check is green, build-bootc's build and scans included; the tag stays, so nodes take them with `bootc upgrade`. Renovate merges, not GitHub's auto-merge (platformAutomerge): that waits for the required checks only, and build-bootc has none. A new major changes the tag: by hand.",
             "matchDepNames": ["quay.io/fedora/fedora-coreos"],
             "matchUpdateTypes": ["minor", "patch"],
+            "automerge": true,
+            "platformAutomerge": false
+        },
+        {
+            "description": "Kubernetes patch releases of bootc/fedora-coreos: automerged as the rule above, once every check is green, the vm-test job's included; the tag stays. A minor release is a new tag: by hand.",
+            "matchDepNames": ["kubernetes"],
+            "matchUpdateTypes": ["patch"],
+            "automerge": true,
+            "platformAutomerge": false
+        },
+        {
+            "description": "What only the vm-test job of bootc/fedora-coreos runs, automerged as the rules above: the test cluster's Cilium chart (vm.sh cluster; a major release by hand), and custom-coreos-disk-images (the qemu disk image the job boots; the disk-image job's OpenStack one runs no test).",
+            "matchDepNames": ["cilium", "coreos/custom-coreos-disk-images"],
+            "matchUpdateTypes": ["minor", "patch", "digest"],
             "automerge": true,
             "platformAutomerge": false
         },

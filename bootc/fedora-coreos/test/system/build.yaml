@@ -75,6 +75,14 @@ command:
   no dangling unit link:
     exec: test -z "$(find /usr/lib/systemd/system -xtype l)"
     exit-status: 0
+  # bootc unpacks the image's /var at the first deployment only: what a
+  # layer leaves there never reaches an upgraded node (tmpfiles.d makes
+  # it). The base's entries, and nothing else.
+  /var holds the base's entries only:
+    exec: find /var -mindepth 1 | LC_ALL=C sort | paste -sd ' '
+    exit-status: 0
+    stdout:
+      - /^/var/cache /var/lib /var/lib/systemd /var/log /var/run /var/spool /var/tmp$/
   # The scans read Fedora's data stream alone (Containerfile, macros.ssg).
   scap-security-guide, Fedora's data stream alone:
     exec: test "$(ls /usr/share/xml/scap/ssg/content)" = ssg-fedora-ds.xml

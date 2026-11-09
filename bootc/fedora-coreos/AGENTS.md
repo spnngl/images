@@ -71,8 +71,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
   `sed` before it.
 - **Renovate** proposes `BASE_VERSION`, `KUBERNETES_VERSION`, the Cilium
   of `vm.sh` and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
-  automerged only for a `BASE_VERSION` of the same major, once CI is
-  green; run the build check before merging any other.
+  automerged once every check is green (`vm-test` runs the build check)
+  but for a new `BASE_VERSION` major, a Kubernetes minor (both new tags)
+  or a Cilium major: review those by hand.
 
 ## Layout
 
@@ -106,6 +107,9 @@ bootc/fedora-coreos/test.sh node      # kernel, users, live sshd, units' state, 
 bootc/fedora-coreos/vm.sh cluster     # kubeadm init + Cilium
 bootc/fedora-coreos/test.sh cluster   # node Ready, pod runs scripts from emptyDir and configMap
 bootc/fedora-coreos/test.sh wx        # noexec everywhere but the exceptions
+bootc/fedora-coreos/vm.sh reboot
+bootc/fedora-coreos/test.sh wx        # again, after a boot with a cluster
+bootc/fedora-coreos/test.sh cluster   # the cluster comes back
 bootc/fedora-coreos/test-greenboot.sh # good update kept, bad one rolled back
 bootc/fedora-coreos/vm.sh down
 bootc/fedora-coreos/workbench.sh down
