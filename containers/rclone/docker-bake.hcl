@@ -10,7 +10,7 @@ target "rclone" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=rclone/rclone extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "1.75.2", checksum = "be8d6044eacb843b74d335db0c5fbe09222031fe" },
+      { version = "1.76.0", checksum = "e982ff36668f5130d94b4f70409babb3d964df42" },
     ]
   }
   args = {
