@@ -583,7 +583,14 @@ Read each at the version this repository pins.
   image ships no test tool. One check at a time (`--max-concurrent 1`):
   some change state (links, test keys), then restore it. A state goss's
   resources can't read (`masked`, a condition skip, a live `sshd`) is a
-  `command`.
+  `command`. `cluster` retries the whole suite for 4 minutes
+  (`--retry-timeout`): after a boot, the API then Cilium come up after
+  sshd, the node still shows `Ready` from before the boot, and goss runs
+  checks in no set order, so a first check can't wait for the others.
+- **`/var` holds the base's entries only** (`test/system/build.yaml`):
+  bootc unpacks the image's `/var` at the first deployment only, so what
+  a layer leaves there never reaches an upgraded node; `tmpfiles.d`
+  makes it.
 - **The test VM's sshd drop-in is `0600`** (`vm.sh`):
   OpenSCAP's `file_permissions_sshd_drop_in_config` fails on `0644`, and
   `test.sh node` fails on any failed rule.
@@ -592,15 +599,19 @@ Read each at the version this repository pins.
   `kubernetes/kubernetes`, one PR per patch and per minor release: kubeadm
   upgrades one minor at a time), Cilium (its Helm
   repository) and `disk_images_commit` (weekly, no release upstream)
-  through custom managers. Each PR waits for a review, its `vm-test`
-  job's result included, but one:
-- **A Fedora CoreOS release of the same major is automerged** once every
-  check is green, the build and scans of `build-bootc.yml` included: the
-  tag stays, a stable release has passed Fedora's own tests, and greenboot
-  rolls back a node that fails to come up. Renovate merges it itself
-  (`platformAutomerge: false`): GitHub's auto-merge waits for the required
-  checks only, and `build-bootc.yml` has none. A new major changes the
-  tag: reviewed by hand, as Kubernetes, Cilium and `disk_images_commit`.
+  through custom managers.
+- **Automerged once every check is green**, the build, scans and
+  `vm-test` of `build-bootc.yml` included: a Fedora CoreOS release of the
+  same major and a Kubernetes patch release (the tag stays, nodes take
+  them with `bootc upgrade`, and greenboot rolls back a node that fails to
+  come up), Cilium's minor and patch releases and `disk_images_commit`
+  (only `vm-test` runs them: `vm.sh cluster`, the qemu disk image it
+  boots). Renovate merges them itself (`platformAutomerge: false`):
+  GitHub's auto-merge waits for the required checks only, and
+  `build-bootc.yml` has none.
+- **By hand:** a new major of the base, a Kubernetes minor (both new
+  tags: hosts move with `bootc switch` or new machines) and a Cilium
+  major.
 
 ### Bootstrap
 

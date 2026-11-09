@@ -33,9 +33,13 @@ chmod 0755 "${tmp}/goss"
 # Runs as root on the VM, the suite's files on stdin. W^X makes every
 # writable mount noexec: goss runs from a tmpfs of its own, exec, that
 # goes away with the run. One check at a time: some change state, then
-# restore it.
+# restore it. cluster retries the whole suite for 4 minutes: after a
+# boot, the API, then Cilium, come up after sshd, while the node still
+# shows Ready from before it (goss runs checks in no set order).
 # shellcheck disable=SC2016 # Expanded on the VM.
 run='set -euo pipefail
+retry=()
+if [[ $1 == cluster ]]; then retry=(--retry-timeout 240s --sleep 10s); fi
 d=/run/goss
 if mountpoint -q "${d}"; then umount "${d}"; fi
 mkdir -p "${d}"
@@ -44,7 +48,7 @@ trap "cd / && umount ${d}" EXIT
 tar -x --no-same-owner -C "${d}"
 cd "${d}"
 KUBECONFIG=/etc/kubernetes/admin.conf ./goss --gossfile "$1.yaml" validate \
-    --max-concurrent 1 --format documentation --no-color'
+    "${retry[@]}" --max-concurrent 1 --format documentation --no-color'
 
 # ustar, no macOS metadata: GNU tar on the VM reads it without warnings.
 COPYFILE_DISABLE=1 tar --format ustar -C "${tmp}" -cf - . |

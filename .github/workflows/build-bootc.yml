@@ -305,14 +305,10 @@ jobs:
         with:
           name: fedora-coreos_${{ env.IMAGE_TAG }}_amd64
           path: ${{ runner.temp }}/image
-      # osbuild keeps a raw disk and two trees of the image, and the VM's
-      # disk grows with the cluster's images: room from the runner's
-      # preinstalled SDKs, unused here. bwrap-userns-restrict: as the
-      # disk-image job.
-      - run: |-
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
-          sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
-          df -h /
+      # bwrap-userns-restrict: as the disk-image job. No disk clean-up, as
+      # the disk-image job's: the runner's 145 GB disk is enough (df at the
+      # end of the job).
+      - run: sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
       # The qemu disk image, as build.sh makes it: in the workbench, from
       # the OCI archive, which test-greenboot.sh also reads there.
       - run: |-
@@ -328,11 +324,15 @@ jobs:
       - run: bootc/fedora-coreos/test.sh wx
       - run: bootc/fedora-coreos/vm.sh cluster
       - run: bootc/fedora-coreos/test.sh cluster
-      # W^X's remounts again, after a boot of a node with a cluster.
+      # W^X's remounts again, after a boot of a node with a cluster, and
+      # the cluster back.
       - run: |-
           bootc/fedora-coreos/vm.sh reboot
           bootc/fedora-coreos/test.sh wx
+          bootc/fedora-coreos/test.sh cluster
       - run: bootc/fedora-coreos/test-greenboot.sh
+      - if: always()
+        run: df -h /
       # The serial console: boot and Ignition errors, the reboots.
       - if: failure()
         run: bootc/fedora-coreos/vm.sh log | tail -n 300
