@@ -204,8 +204,9 @@ jobs:
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" ${VERSION:+--build-arg "BASE_VERSION=${VERSION}"} ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
       # The scans first, as bootc/fedora-coreos/build.sh: a failed OpenSCAP
-      # rule or a fixable Critical vulnerability stops here. amd64 only: the
-      # nodes are x86_64. The reports are kept either way.
+      # rule, a fixable Critical vulnerability or a failed goss check
+      # (test/*/build.yaml) stops here. amd64 only: the nodes are x86_64.
+      # The reports are kept either way.
       - id: reports
         if: matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64'
         run: |-
