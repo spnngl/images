@@ -196,12 +196,18 @@ for link in lxctest0 cilium_test vethtest0; do
         [[ \${state} == unmanaged ]] || { echo \"\${state}\"; exit 1; }"
 done
 # node-local-dns' dummy link, as the pod creates it: networkd keeps the pod's
-# address and points resolved at it for cluster names.
+# address and points resolved at it for cluster names. On a cluster node, the
+# pod's own link is checked, and left in place: deleting it would cut the
+# node's cluster DNS.
 check "nodelocaldns: DNS for svc.cluster.local, address kept" bash -c '
-    sudo ip link add nodelocaldns type dummy && sudo ip addr add 169.254.25.10/32 dev nodelocaldns &&
-    sudo ip link set nodelocaldns up || exit 1
-    sleep 3; s=$(resolvectl status nodelocaldns); a=$(ip -4 -o addr show dev nodelocaldns)
-    sudo ip link del nodelocaldns
+    made=false
+    if ! ip link show nodelocaldns >/dev/null 2>&1; then
+        sudo ip link add nodelocaldns type dummy && sudo ip addr add 169.254.25.10/32 dev nodelocaldns &&
+            sudo ip link set nodelocaldns up && made=true || exit 1
+        sleep 3
+    fi
+    s=$(resolvectl status nodelocaldns); a=$(ip -4 -o addr show dev nodelocaldns)
+    if ${made}; then sudo ip link del nodelocaldns; fi
     grep -q "DNS Servers: 169.254.25.10" <<<"${s}" && grep -q "DNS Domain: ~svc.cluster.local" <<<"${s}" &&
         grep -q 169.254.25.10 <<<"${a}" || { echo "${s}"; echo "${a}"; exit 1; }'
 # The live sources, not the file: on qemu, chronyd runs with FCOS' platform
