@@ -1,0 +1,30 @@
+# The vm layer's files (sysroot/vm/): VM-only units, skipped on bare
+# metal by what systemd-detect-virt says.
+
+file:
+  /usr/lib/systemd/system/multi-user.target.wants/openstack-hostname.service: {exists: true, filetype: symlink, linked-to: ../openstack-hostname.service}
+  /usr/lib/systemd/system/multi-user.target.wants/openstack-disk-tags.service: {exists: true, filetype: symlink, linked-to: ../openstack-disk-tags.service}
+  /usr/lib/systemd/system/openstack-hostname.service:
+    exists: true
+    contents: ["/^ConditionVirtualization=vm$/"]
+  /usr/lib/systemd/system/openstack-disk-tags.service:
+    exists: true
+    contents: ["/^ConditionVirtualization=vm$/"]
+  /usr/lib/systemd/system/qemu-guest-agent.service.d/20-vm.conf:
+    exists: true
+    contents: ["/^ConditionVirtualization=vm$/"]
+
+command:
+  # The udev rules, and the scripts they call.
+  udev rule 60-qemu-disk-readahead is valid:
+    exec: udevadm verify /usr/lib/udev/rules.d/60-qemu-disk-readahead.rules
+    exit-status: 0
+  udev rule 99-openstack-by-tag is valid:
+    exec: udevadm verify /usr/lib/udev/rules.d/99-openstack-by-tag.rules
+    exit-status: 0
+  disk-by-tag helper prints nothing without OpenStack metadata:
+    exec: test -z "$(ID_SERIAL_SHORT=x /usr/libexec/openstack-disk-by-tag)"
+    exit-status: 0
+  scripts parse:
+    exec: bash -n /usr/libexec/openstack-fetch-metadata && bash -n /usr/libexec/openstack-disk-by-tag
+    exit-status: 0

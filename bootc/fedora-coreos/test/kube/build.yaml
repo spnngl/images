@@ -1,0 +1,86 @@
+# The kube layer's files (sysroot/kube/, the Containerfile's kube stage).
+
+package:
+  kubelet: {installed: true}
+  kubeadm: {installed: true}
+  kubectl: {installed: true}
+  cri-tools: {installed: true}
+  containerd: {installed: true}
+  runc: {installed: true}
+  conntrack-tools: {installed: true}
+  socat: {installed: true}
+  iproute-tc: {installed: true}
+  etcd: {installed: false}
+
+file:
+  # The base's /opt is the symlink to /var/opt: /var ships empty.
+  /opt: {exists: true, filetype: symlink, linked-to: /var/opt}
+  # The RPMs ship no bash completion; etc/profile.d/kubernetes.sh loads it.
+  /usr/share/bash-completion/completions/kubectl: {exists: true, filetype: file, size: {gt: 0}}
+  /usr/share/bash-completion/completions/kubeadm: {exists: true, filetype: file, size: {gt: 0}}
+  /usr/share/bash-completion/completions/crictl: {exists: true, filetype: file, size: {gt: 0}}
+  # kubelet tries to create it, and /usr is read-only at runtime.
+  /usr/libexec/kubernetes/kubelet-plugins/volume/exec: {exists: true, filetype: directory}
+
+  # Units are enabled by links in /usr/lib (Containerfile): `systemctl
+  # is-enabled` would call them disabled.
+  /usr/lib/systemd/system/multi-user.target.wants/containerd.service: {exists: true, filetype: symlink, linked-to: ../containerd.service}
+  /usr/lib/systemd/system/multi-user.target.wants/kubelet.service: {exists: true, filetype: symlink, linked-to: ../kubelet.service}
+  /usr/lib/systemd/system/paths.target.wants/etcd-network-tuning.path: {exists: true, filetype: symlink, linked-to: ../etcd-network-tuning.path}
+  /usr/lib/systemd/system/timers.target.wants/etcd-defrag.timer: {exists: true, filetype: symlink, linked-to: ../etcd-defrag.timer}
+  /usr/lib/systemd/system/local-fs.target.wants/var-lib-kubelet.mount: {exists: true, filetype: symlink, linked-to: ../var-lib-kubelet.mount}
+  /usr/lib/systemd/system/local-fs.target.wants/var-opt-cni-bin.mount: {exists: true, filetype: symlink, linked-to: ../var-opt-cni-bin.mount}
+  /usr/lib/systemd/system/etcd-defrag.service:
+    exists: true
+    contents: ["/^ConditionPathExists=/etc/kubernetes/manifests/etcd.yaml$/"]
+  /usr/lib/systemd/system/containerd.service.d/10-slice.conf:
+    exists: true
+    contents: ["/^Slice=kube.slice$/"]
+  /usr/lib/systemd/system/kubelet.service.d/00-slice.conf:
+    exists: true
+    contents: ["/^Slice=kube.slice$/"]
+  /usr/lib/systemd/system/containerd.service.d/20-config.conf:
+    exists: true
+    contents: ["/^ExecStart=/usr/bin/containerd --config /usr/lib/containerd/config.toml$/"]
+
+command:
+  # containerd ignores a mistyped plugin key: check the merged config.
+  containerd, merged config:
+    exec: containerd --config /usr/lib/containerd/config.toml config dump
+    exit-status: 0
+    timeout: 60000
+    stdout:
+      - SystemdCgroup = true
+      - base_runtime_spec = '/usr/lib/containerd/cri-base.json'
+      - use_internal_loopback = true
+      - /opt/cni/bin
+      - max_container_log_line_size = 16384
+      - enable_selinux = false
+  # The sandbox image kubeadm of this release expects, so that kubelet and
+  # containerd agree on it.
+  containerd, pause image is kubeadm's:
+    exec: |
+      want=$(kubeadm config images list --kubernetes-version "v$(rpm -q --qf '%{VERSION}' kubeadm)" | grep /pause:) &&
+        containerd --config /usr/lib/containerd/config.toml config dump | grep -qF "sandbox = '${want}'"
+    exit-status: 0
+    timeout: 60000
+  # `ctr oci spec` with a higher open-files limit.
+  containerd, cri-base.json:
+    exec: |
+      ctr oci spec | jq -S 'del(.ociVersion, .process.rlimits)' > /tmp/cri-default.json &&
+        jq -S 'del(.ociVersion, .process.rlimits)' /usr/lib/containerd/cri-base.json | diff /tmp/cri-default.json - &&
+        jq -e '.process.rlimits == [{type: "RLIMIT_NOFILE", hard: 65535, soft: 65535}]' /usr/lib/containerd/cri-base.json
+    exit-status: 0
+    timeout: 60000
+  # Cilium's routes, rules and nexthops (capi-image-builder's goss).
+  networkd leaves foreign routes, rules and nexthops:
+    exec: systemd-analyze cat-config systemd/networkd.conf
+    exit-status: 0
+    stdout: [/^ManageForeignRoutes=no$/, /^ManageForeignRoutingPolicyRules=no$/, /^ManageForeignNextHops=no$/]
+  etcd-network-tuning.sh parses:
+    exec: bash -n /usr/libexec/etcd-network-tuning.sh
+    exit-status: 0
+  # etcd-network-tuning's.
+  tc:
+    exec: command -v tc
+    exit-status: 0

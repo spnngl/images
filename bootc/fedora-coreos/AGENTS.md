@@ -7,14 +7,21 @@ each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- **One image stage, not the three of `bootc/AGENTS.md`**: kubeadm nodes
-  only, no k3s, no Docker. The stages after it scan it (OpenSCAP, grype)
-  and check its files (goss, `test/build.yaml`); it is the default
-  target. Tag `<major>-v<minor>` of `BASE_VERSION` and
+- **One image, not the three of `bootc/AGENTS.md`**: kubeadm nodes
+  only, no k3s, no Docker. Its stages are its layers, each `FROM` the one
+  before: `system`, `kube` (Kubernetes' packages and files, so that a
+  Kubernetes release rebuilds it alone), `image` (the `vm` and `metal`
+  files, then what reads the whole tree). The stages after `image` scan
+  it (OpenSCAP, grype) and check its files (goss, `test/build.yaml`);
+  `image` is the default target. Tag `<major>-v<minor>` of `BASE_VERSION` and
   `KUBERNETES_VERSION`, the Containerfile's `ARG`s, written by
   `versions.sh` for `build.sh` and CI: a patch release keeps the tag.
 - **Own build context, this folder** (`.dockerignore`), and own
-  `sysroot/` (no firewalld, sshd on 22, systemd-networkd). The signature
+  `sysroot/` (no firewalld, sshd on 22, systemd-networkd), one folder
+  per layer: `sysroot/<layer>/` holds the layer's files at their path in
+  the image. A file goes in `vm` or `metal` if only that platform uses
+  it, else in `kube` if only Kubernetes does, else in `system`. A path
+  like `usr/libexec/etc-diff` below is in one of them. The signature
   files (public key, `registries.d`) and `policy.jq` are copies of
   `bootc/fedora/`'s: a key rotation updates both. Files that Ignition or the user
   may own stay in `/etc`; the rest is in `/usr`. SSH keys are only in
@@ -31,10 +38,10 @@ each choice: [REFERENCES.md](REFERENCES.md).
   new exception is a `bind,exec` mount unit with its reason in a comment
   and in REFERENCES.md; anything under `/etc` or `/var` runs through an
   interpreter (`bash <file>`).
-- **Units are enabled by links in `/usr/lib/systemd/system`** (`wants` in
-  the Containerfile), never by `systemctl enable` or a preset: FCOS runs
-  `systemctl preset-all` at first boot, which drops the `/etc` links no
-  preset names.
+- **Units are enabled by links in `/usr/lib/systemd/system`**, committed
+  as symlinks (`../<unit>`) in the unit's layer, never by `systemctl
+  enable` or a preset: FCOS runs `systemctl preset-all` at first boot,
+  which drops the `/etc` links no preset names.
 - **CI** (`.github/workflows/build-bootc.yml`) builds it with BuildKit,
   as `build.sh` (podman's `/run/.containerenv` turns OpenSCAP's machine
   rules off), for amd64 and arm64; scans amd64; on `main`, pushes and
@@ -43,7 +50,7 @@ each choice: [REFERENCES.md](REFERENCES.md).
   folder changed, keeping the newest 3 releases.
 - **OpenSCAP** checks the image at build and the nodes against
   scap-security-guide's `cis` profile (CIS level 2), tailored in
-  `sysroot/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
+  `sysroot/system/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
   image doesn't follow is turned off there, with its reason beside it;
   the ones still to decide are grouped last.
   `check-reports.sh` fails `build.sh` and CI on a failed rule, after
@@ -55,12 +62,12 @@ each choice: [REFERENCES.md](REFERENCES.md).
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;
   `check-reports.sh` fails on a fixable Critical. One
-  the image can't fix is ignored in `sysroot/usr/share/grype/ignore.yaml`,
+  the image can't fix is ignored in `sysroot/system/usr/share/grype/ignore.yaml`,
   at the package's exact version, with its reason.
-- **Checks:** what holds for the image's files goes in
-  `test/build.yaml` (goss, at every build, CI included); what needs the
-  booted node in `test/<layer>/<suite>.yaml` (goss, `test.sh`), in the
-  layer that ships it. A Containerfile `grep` only guards the
+- **Checks:** in the layer that ships what they check: what holds for
+  the image's files in `test/<layer>/build.yaml` (goss, at every build,
+  CI included), what needs the booted node in
+  `test/<layer>/<suite>.yaml` (goss, `test.sh`). A Containerfile `grep` only guards the
   `sed` before it.
 - **Renovate** proposes `BASE_VERSION`, `KUBERNETES_VERSION`, the Cilium
   of `vm.sh` and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
@@ -69,18 +76,19 @@ each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Layout
 
-- `Containerfile`, `sysroot/`: the image.
+- `Containerfile`, `sysroot/<layer>/`: the image (`system`, `kube`,
+  `vm`, `metal`).
 - `build.sh`: container image and its scan reports
   (`output/fedora-coreos/reports/`) on the cluster's BuildKit, then disk
   images (`qemu`, `openstack`, `metal`) in the workbench pod
   (`workbench.yaml`, `workbench.sh`).
 - `versions.sh`, `check-reports.sh`, `disk-images.sh`: the tag, the scan
   gate and the disk images, shared by `build.sh` and CI.
-- `test/build.yaml`: the goss checks of the build.
+- `test/build.yaml`, `test/<layer>/build.yaml`: the goss checks of the
+  build.
 - `vm.sh`, `test.sh`, `test/<suite>.yaml`, `test/<layer>/<suite>.yaml`,
   `test-greenboot.sh`: a test VM in the workbench (an NVMe disk), and the
-  goss suites run on it (`node`, `wx`, `cluster`), split by layer
-  (`system`, `vm`, `metal`, `kube`).
+  goss suites run on it (`node`, `wx`, `cluster`), split by layer.
 
 ## Build check
 
