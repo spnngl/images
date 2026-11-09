@@ -146,6 +146,9 @@ check "grype.service scans the node" bash -c '
     sudo systemctl start grype.service &&
     sudo grep -q "^grype_last_scan_timestamp_seconds " /var/lib/grype/grype.prom'
 check "rpm-ostree-countme.timer is masked" bash -c '[[ $(systemctl is-enabled rpm-ostree-countme.timer) == masked ]]'
+for u in systemd-homed.service systemd-homed-activate.service; do
+    check "${u} is masked" bash -c "[[ \$(systemctl is-enabled ${u}) == masked ]]"
+done
 for u in auditd chronyd; do
     check "${u} is active" systemctl is-active "${u}"
 done
