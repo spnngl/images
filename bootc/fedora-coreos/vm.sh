@@ -61,7 +61,9 @@ fi
 # sshd reads keys from the image only (etc/ssh/sshd_config.d/00-hardening.conf):
 # the test key gets its own directory, through a drop-in that sorts before
 # 00-hardening.conf (sshd keeps the first AuthorizedKeysFile). Not
-# /etc/ssh/authorized_keys: test/image.sh checks that sshd ignores it.
+# /etc/ssh/authorized_keys: test/system/node.yaml checks that sshd ignores
+# it. The drop-in is 0600, as OpenSCAP's file_permissions_sshd_drop_in_config
+# wants: test.sh node fails on any failed rule.
 {
     cat <<BU
 variant: fcos
@@ -79,7 +81,7 @@ BU
 storage:
   files:
     - path: /etc/ssh/sshd_config.d/0-vm-test.conf
-      mode: 0644
+      mode: 0600
       contents:
         inline: |
           AuthorizedKeysFile /usr/lib/ssh/authorized_keys/%u /etc/ssh/vm-test-keys/%u

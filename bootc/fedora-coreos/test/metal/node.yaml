@@ -1,0 +1,17 @@
+# The booted node, metal layer: the test node is a VM, so the dedicated
+# servers' units must skip it and leave the kernel defaults.
+
+command:
+  # The softnet budget is for large machines with a Mellanox NIC.
+  sysctl-mlx5-large skips the test VM:
+    exec: systemctl show -P ConditionResult sysctl-mlx5-large.service
+    exit-status: 0
+    stdout: [/^no$/]
+  sysctl-metal skips the test VM:
+    exec: systemctl show -P ConditionResult sysctl-metal.service
+    exit-status: 0
+    stdout: [/^no$/]
+
+kernel-param:
+  # The kernel default: sysctl-metal didn't run.
+  net.core.rmem_default: {value: "212992"}

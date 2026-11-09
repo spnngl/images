@@ -1,0 +1,3 @@
+# test.sh cluster: every layer's cluster.yaml.
+gossfile:
+  "*/cluster.yaml": {}

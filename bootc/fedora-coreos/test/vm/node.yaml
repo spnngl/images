@@ -1,0 +1,12 @@
+# The booted node, vm layer: what runs on a VM only. The test node is one.
+
+command:
+  the VM NIC gets DHCP from 99-vm-dhcp.network:
+    exec: |
+      dev=$(ip -4 route show default | awk '{print $5; exit}') &&
+          networkctl status --no-pager "${dev}"
+    exit-status: 0
+    stdout: ["Network File: /usr/lib/systemd/network/99-vm-dhcp.network"]
+
+service:
+  qemu-guest-agent: {running: true}

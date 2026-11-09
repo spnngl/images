@@ -1,0 +1,3 @@
+# test.sh wx: every layer's wx.yaml.
+gossfile:
+  "*/wx.yaml": {}

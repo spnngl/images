@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Tests of bootc/fedora-coreos on the test VM (vm.sh up), once kubeadm and
-# Cilium run in it (see PLAN.md step 3). They replace capi-image-builder's
-# goss suite (goss/rootless-role.yaml), minus what is cloud-init, AppArmor or
-# Ubuntu specific.
+# Tests of bootc/fedora-coreos on the test VM (vm.sh up): goss suites, in
+# test/, one file per layer (system, vm, metal, kube) and suite. They
+# replace capi-image-builder's goss suite (goss/rootless-role.yaml), minus
+# what is cloud-init, AppArmor or Ubuntu specific.
 #
-# Usage: bootc/fedora-coreos/test.sh image|cluster|wx
-#   image    what the image ships: packages, users, sshd, sysctl, containerd
-#   cluster  the node is Ready and runs a pod that executes scripts from an
-#            emptyDir and a configMap
+# Usage: bootc/fedora-coreos/test.sh node|wx|cluster
+#   node     the booted node: kernel, users, sshd, services, sysctls, scans
 #   wx       W^X: noexec mounts and their exceptions
+#   cluster  once vm.sh cluster ran: the node is Ready, runs a pod that
+#            executes scripts from an emptyDir and a configMap, etcd's units
 # Env:    BUILD_KUBE_CONTEXT  kube context of the build cluster (required)
 set -euo pipefail
 
@@ -19,30 +19,33 @@ die() {
     exit 1
 }
 
-[[ ${1:-} =~ ^(image|cluster|wx)$ ]] || die "usage: $0 image|cluster|wx"
+[[ ${1:-} =~ ^(node|wx|cluster)$ ]] || die "usage: $0 node|wx|cluster"
 
-# The script runs as rootless on the VM; `sudo` where root is needed. The
-# helpers: `check <description> <command...>` counts failures, `k` is kubectl
-# as admin.
-{
-    cat <<'EOF'
-set -uo pipefail
-fail=0
-check() {
-    local name="$1"
-    shift
-    if out=$("$@" 2>&1); then
-        echo "ok   ${name}"
-    else
-        echo "FAIL ${name}"
-        echo "${out}" | head -n 15 | sed 's/^/     /'
-        fail=1
-    fi
-}
-k() { sudo kubectl --kubeconfig /etc/kubernetes/admin.conf "$@"; }
-export -f k
-EOF
-    cat "bootc/fedora-coreos/test/$1.sh"
-    # shellcheck disable=SC2016 # Expanded on the VM.
-    echo 'exit "${fail}"'
-} | bootc/fedora-coreos/vm.sh ssh bash -s
+tmp=$(mktemp -d)
+trap 'rm -rf "${tmp}"' EXIT
+cp -R bootc/fedora-coreos/test/. "${tmp}/"
+# The workbench's goss: the image has none, and the VM runs the same
+# Fedora release.
+bootc/fedora-coreos/workbench.sh exec cat /usr/bin/goss >"${tmp}/goss" ||
+    die "no goss in the workbench, run: bootc/fedora-coreos/workbench.sh exec dnf -yq install goss"
+chmod 0755 "${tmp}/goss"
+
+# Runs as root on the VM, the suite's files on stdin. W^X makes every
+# writable mount noexec: goss runs from a tmpfs of its own, exec, that
+# goes away with the run. One check at a time: some change state, then
+# restore it.
+# shellcheck disable=SC2016 # Expanded on the VM.
+run='set -euo pipefail
+d=/run/goss
+if mountpoint -q "${d}"; then umount "${d}"; fi
+mkdir -p "${d}"
+mount -t tmpfs -o mode=0700,nosuid,nodev,size=64m tmpfs "${d}"
+trap "cd / && umount ${d}" EXIT
+tar -x --no-same-owner -C "${d}"
+cd "${d}"
+KUBECONFIG=/etc/kubernetes/admin.conf ./goss --gossfile "$1.yaml" validate \
+    --max-concurrent 1 --format documentation --no-color'
+
+# ustar, no macOS metadata: GNU tar on the VM reads it without warnings.
+COPYFILE_DISABLE=1 tar --format ustar -C "${tmp}" -cf - . |
+    bootc/fedora-coreos/vm.sh ssh "sudo bash -c $(printf %q "${run}") _ $1"

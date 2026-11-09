@@ -1,0 +1,52 @@
+# W^X: every writable mount is noexec, the exceptions are exec, and a
+# binary copied to a writable place can't run. test.sh runs goss from a
+# tmpfs of its own, /run/goss, which none of these checks reads.
+
+mount:
+  /var: {exists: true, opts: [nosuid, nodev, noexec]}
+  /etc: {exists: true, opts: [nosuid, nodev, noexec]}
+  # The remount keeps /sysroot and /boot read-only (FCOS warns otherwise:
+  # coreos-warn-invalid-mounts).
+  /sysroot: {exists: true, opts: [ro, nosuid, nodev, noexec]}
+  # The stateroot custom-coreos-disk-images names (disk-images.sh).
+  /sysroot/ostree/deploy/fedora-coreos/var: {exists: true, opts: [nosuid, nodev, noexec]}
+  /boot: {exists: true, opts: [ro, nosuid, nodev, noexec]}
+  /tmp: {exists: true, opts: [nosuid, nodev, noexec]}
+  /dev/shm: {exists: true, opts: [nosuid, nodev, noexec]}
+  /run: {exists: true, opts: [nosuid, nodev, noexec]}
+  # The exceptions: bind,exec mount units (REFERENCES.md, W^X).
+  /var/lib/kubelet: {exists: true, opts: {not: {contain-element: noexec}}}
+  /var/opt/cni/bin: {exists: true, opts: {not: {contain-element: noexec}}}
+
+command:
+  # Mounted only while bootupd updates the bootloader.
+  /boot/efi is nosuid,nodev,noexec when mounted:
+    exec: |
+      o=$(findmnt --noheadings --output OPTIONS --mountpoint /boot/efi) || exit 0
+      for f in nosuid nodev noexec; do
+          case ",${o}," in *,${f},*) ;; *) echo "${o}"; exit 1 ;; esac
+      done
+    exit-status: 0
+  # A copy of /usr/bin/true can't run from the writable places, but can
+  # from /usr and /var/lib/kubelet. bash exits 126 when exec is refused.
+  a binary can't run from /var/tmp, /etc, /tmp, /dev/shm, /run or the stateroot's /var:
+    exec: |
+      for d in /var/tmp /etc /tmp /dev/shm /run /sysroot/ostree/deploy/*/var/tmp; do
+          cp /usr/bin/true "${d}/wx-test" || exit 1
+          bash -c "${d}/wx-test" 2>/dev/null; rc=$?
+          rm -f "${d}/wx-test"
+          [ "${rc}" = 126 ] || { echo "${d}: exit ${rc}, not 126"; exit 1; }
+      done
+    exit-status: 0
+  binaries in /usr run:
+    exec: /usr/bin/true
+    exit-status: 0
+  a copy in /var/lib/kubelet runs:
+    exec: |
+      cp /usr/bin/true /var/lib/kubelet/wx-test && /var/lib/kubelet/wx-test; rc=$?
+      rm -f /var/lib/kubelet/wx-test
+      exit "${rc}"
+    exit-status: 0
+
+file:
+  /run/motd.d/50_invalid_mounts.motd: {exists: false}

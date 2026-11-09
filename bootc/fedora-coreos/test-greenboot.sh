@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Greenboot on the test VM (vm.sh up), PLAN.md step 5: an update that boots
-# is kept, and one that fails a required check is rolled back.
+# Greenboot on the test VM (vm.sh up): an update that boots is kept, and
+# one that fails a required check is rolled back.
 #
 # Usage: bootc/fedora-coreos/test-greenboot.sh
 # It needs the archive that build.sh made (/work/fedora-coreos.ociarchive in
