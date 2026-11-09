@@ -2,8 +2,9 @@
 
 Bootable OS images, one per `bootc/<name>/`, built with podman by
 `bootc/build.sh` and `.github/workflows/build-bootc.yml`. Every
-Containerfile has three stages (`fedora-coreos` has one and its own build
-and test scripts: [fedora-coreos/AGENTS.md](fedora-coreos/AGENTS.md)):
+Containerfile has three stages (`fedora-coreos` has one, its own build
+context and its own build and test scripts:
+[fedora-coreos/AGENTS.md](fedora-coreos/AGENTS.md)):
 
 - `base`: the host system, not an image on its own;
 - `kubeenv` (`FROM base`): k3s, no Docker. Tag
@@ -24,7 +25,8 @@ Before a change, read:
 
 - **Build context** is `bootc/`, shared: an image can `COPY` another's
   files (`COPY ./fedora/sysroot/common/ /`). `bootc/.containerignore`
-  covers every image.
+  covers every image but fedora-coreos, which builds from its own
+  folder.
 - **`sysroot/`** holds an image's files at their path in the image,
   copied with `COPY --link`: `sysroot/common/`, then
   `sysroot/<BASE_VERSION>/` for files that differ between base releases

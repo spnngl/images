@@ -112,6 +112,10 @@ jobs:
         # <version>/ folder.
         # builder: buildkit, built with docker buildx as bootc/<name>/build.sh
         # builds it, then handed to podman (default: podman).
+        # context: the build context (default: bootc/, shared by the images).
+        # signing: the folder holding the signature files the image ships,
+        # registries.d and the public key at their path in the image
+        # (default: bootc/fedora/sysroot/common, shared).
         # The push job reuses this list (YAML anchor).
         image: &images
           - name: fedora
@@ -155,6 +159,8 @@ jobs:
           # of a machine.
           - name: fedora-coreos
             builder: buildkit
+            context: bootc/fedora-coreos/
+            signing: bootc/fedora-coreos/sysroot
         # Every image is built for every platform. Keep the push job's
         # ARCHES in sync.
         platform:
@@ -168,6 +174,7 @@ jobs:
       VERSION: ${{ matrix.image.version }}
       SUFFIX: ${{ matrix.image.suffix }}
       TARGET: ${{ matrix.image.target }}
+      CONTEXT: ${{ matrix.image.context || 'bootc/' }}
       ARCH: ${{ matrix.platform.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -192,14 +199,14 @@ jobs:
       - if: matrix.image.builder != 'buildkit'
         run: |-
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" ${VERSION:+--build-arg "BASE_VERSION=${VERSION}"} ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${NAME}/Containerfile" bootc/
+          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" ${VERSION:+--build-arg "BASE_VERSION=${VERSION}"} ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
       # The scans first, as bootc/fedora-coreos/build.sh: a failed OpenSCAP
       # rule or a fixable Critical vulnerability stops here. amd64 only: the
       # nodes are x86_64. The reports are kept either way.
       - id: reports
         if: matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64'
         run: |-
-          docker buildx build --platform "linux/${ARCH}" --target reports --output "type=local,dest=${RUNNER_TEMP}/reports" -f "bootc/${NAME}/Containerfile" bootc/
+          docker buildx build --platform "linux/${ARCH}" --target reports --output "type=local,dest=${RUNNER_TEMP}/reports" -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
           bootc/fedora-coreos/check-reports.sh "${RUNNER_TEMP}/reports"
       - if: ${{ !cancelled() && steps.reports.outcome != 'skipped' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
@@ -212,7 +219,7 @@ jobs:
       - if: matrix.image.builder == 'buildkit'
         run: |-
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          docker buildx build ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --load -f "bootc/${NAME}/Containerfile" bootc/
+          docker buildx build ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --load -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
           docker save "${TAG}" | podman load
           docker image rm "${TAG}"
           docker buildx prune --all --force
@@ -293,6 +300,7 @@ jobs:
       NAME: ${{ matrix.image.name }}
       VERSION: ${{ matrix.image.version }}
       SUFFIX: ${{ matrix.image.suffix }}
+      SIGNING: ${{ matrix.image.signing || 'bootc/fedora/sysroot/common' }}
       # The build job's platform list.
       ARCHES: amd64 arm64
     steps:
@@ -325,8 +333,8 @@ jobs:
       # push only writes sigstore signatures where registries.d enables them,
       # and the check below reads the key from the path policy.json names.
       - run: |-
-          sudo install -D -m 0644 -t /etc/containers/registries.d/ bootc/fedora/sysroot/common/etc/containers/registries.d/spnngl-images.yaml
-          sudo install -D -m 0644 -t /usr/share/pki/containers/ bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ "${SIGNING}/etc/containers/registries.d/spnngl-images.yaml"
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ "${SIGNING}/usr/share/pki/containers/spnngl-images.pub"
       # Only CI signs: local builds (bootc/build.sh) are never pushed.
       # podman, not cosign: cosign 3 stores signatures as a sigstore bundle
       # (OCI referrers), which containers/image (bootc, podman, skopeo) can't
@@ -445,8 +453,8 @@ jobs:
       # oci-archive can't hold them; the policy check still runs on the
       # source (containers/image copy/single.go).
       - run: |-
-          sudo install -D -m 0644 -t /etc/containers/registries.d/ bootc/fedora/sysroot/common/etc/containers/registries.d/spnngl-images.yaml
-          sudo install -D -m 0644 -t /usr/share/pki/containers/ bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ bootc/fedora-coreos/sysroot/etc/containers/registries.d/spnngl-images.yaml
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ bootc/fedora-coreos/sysroot/usr/share/pki/containers/spnngl-images.pub
           mkdir "${RUNNER_TEMP}/disk"
           skopeo copy --override-arch amd64 --remove-signatures --policy bootc/fedora-coreos/sysroot/etc/containers/policy.json \
             "docker://ghcr.io/spnngl/images/fedora-coreos@$(< "${RUNNER_TEMP}/image/digest")" "oci-archive:${RUNNER_TEMP}/disk/fedora-coreos.ociarchive"

@@ -70,17 +70,16 @@ docker buildx create --name "${builder}" --driver remote "tcp://127.0.0.1:${port
 
 mkdir -p "${out}"
 # The scans first: a failed OpenSCAP rule or a fixable Critical vulnerability
-# stops here, with the reports. The build context is bootc/, shared by every
-# bootc image.
+# stops here, with the reports. The build context is the image's own folder.
 reports="${out}/reports"
 rm -rf "${reports}"
 docker buildx build --builder "${builder}" --platform linux/amd64 \
-    --file "${containerfile}" --target reports --output "type=local,dest=${reports}" bootc/
+    --file "${containerfile}" --target reports --output "type=local,dest=${reports}" bootc/fedora-coreos/
 bootc/fedora-coreos/check-reports.sh "${reports}"
 
 # The image, from the builder's cache.
 docker buildx build --builder "${builder}" --platform linux/amd64 \
-    --file "${containerfile}" --output "type=oci,dest=${archive}" bootc/
+    --file "${containerfile}" --output "type=oci,dest=${archive}" bootc/fedora-coreos/
 
 "${workbench}" up
 "${workbench}" exec bash -c 'cat > /work/fedora-coreos.ociarchive' <"${archive}"

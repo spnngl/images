@@ -23,7 +23,8 @@
   bootc/<name>/Containerfile` with context `bootc/`, so almalinux and
   centos reuse `fedora/sysroot/common/` instead of duplicating it. One
   `.containerignore` per context is enough: buildah reads it only from
-  the context root (or `--ignorefile`).
+  the context root (or `--ignorefile`). fedora-coreos builds from its
+  own folder (`fedora-coreos/REFERENCES.md`, "Own build context").
 - **`sysroot/<BASE_VERSION>/` after `sysroot/common/`:** almalinux
   builds 9 and 10 from one Containerfile, and a base upgrade adds a
   folder instead of editing the one the running release uses.
@@ -73,7 +74,9 @@ installed from one upgrades from CI's signed images.
   secret, without passphrase (with one, add a secret and write it to
   `--sign-passphrase-file`). The public key is
   `bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub`,
-  in `/usr` to update with the image.
+  in `/usr` to update with the image. fedora-coreos has its own copy of
+  the key, of `registries.d/spnngl-images.yaml` and of `policy.jq`, in
+  `bootc/fedora-coreos/`: a change to one updates both copies.
 - **`podman push --sign-by-sigstore-private-key`, not `cosign sign`:**
   bootc verifies through containers/image, which reads sigstore
   signatures only as `sha256-<digest>.sig` attachments; cosign 3 stores

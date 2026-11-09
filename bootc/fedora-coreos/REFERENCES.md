@@ -496,11 +496,19 @@ Read each at the version this repository pins.
   scans and makes disk images of amd64 only.
 - **Signed by CI as the other images** (`build-bootc.yml`):
   `policy.json` asks its signature for `ghcr.io/spnngl/images`
-  (`bootc/REFERENCES.md`), and the build checks it with
-  `bootc/fedora/policy.jq`. The public key and `registries.d` file are
-  `bootc/fedora/sysroot/common/`'s, copied by the Containerfile: one copy
-  for every image. Without the `registries.d` file, podman and bootc don't
-  look up the signatures, and the policy refuses every update.
+  (`bootc/REFERENCES.md`), and the build checks it with `policy.jq`.
+  Without the `registries.d` file, podman and bootc don't look up the
+  signatures, and the policy refuses every update. CI's `push` and
+  `disk-image` jobs install this folder's key and `registries.d` file
+  (matrix key `signing`): the check uses the files the nodes ship.
+- **Own build context, this folder:** if the build succeeds, it read no
+  file of another image. The signature files and `policy.jq` are copies
+  of `bootc/fedora/`'s, in this folder: a change to them makes a
+  fedora-coreos release ("OpenStack qcow2 as a GitHub release"). A key
+  rotation updates both copies; the `push` job checks the signature with
+  this folder's key, so a stale copy fails there.
+  `.dockerignore`, not `.containerignore`: BuildKit reads only the
+  former, buildah both.
 - **VM tests by hand:** they need KVM and a cluster's workbench.
 - **Renovate** (`renovate.json5`): `BASE_VERSION` through
   the dockerfile manager; `KUBERNETES_VERSION` (GitHub releases of
