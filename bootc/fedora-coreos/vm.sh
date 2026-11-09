@@ -32,6 +32,8 @@ die() {
 }
 
 workbench=bootc/fedora-coreos/workbench.sh
+# Itself, from the repository root (cd above): $0 may be relative.
+self=bootc/fedora-coreos/vm.sh
 
 up() {
     local config="${1:-}"
@@ -180,15 +182,15 @@ ssh)
     ;;
 reboot)
     # The SSH session dies with the VM: its exit status says nothing.
-    "$0" ssh 'sudo systemctl reboot' || true
+    "${self}" ssh 'sudo systemctl reboot' || true
     sleep 20
     for _ in $(seq 120); do
-        if "$0" ssh true 2>/dev/null; then
+        if "${self}" ssh true 2>/dev/null; then
             exit 0
         fi
         sleep 5
     done
-    die "the VM didn't come back; console:" "$("$0" log | tail -n 40)"
+    die "the VM didn't come back; console:" "$("${self}" log | tail -n 40)"
     ;;
 log) "${workbench}" exec cat /work/vm/console.log ;;
 down)
