@@ -1,0 +1,12 @@
+# The metal layer's files (sysroot/metal/): bare-metal-only units,
+# skipped in a VM by what systemd-detect-virt says.
+
+file:
+  /usr/lib/systemd/system/multi-user.target.wants/amd-hsmp.service: {exists: true, filetype: symlink, linked-to: ../amd-hsmp.service}
+  # The softnet budget is for large machines with a Mellanox NIC, the metal
+  # sysctls for dedicated servers: each unit's condition picks the node.
+  /usr/lib/systemd/system/multi-user.target.wants/sysctl-mlx5-large.service: {exists: true, filetype: symlink, linked-to: ../sysctl-mlx5-large.service}
+  /usr/lib/systemd/system/multi-user.target.wants/sysctl-metal.service: {exists: true, filetype: symlink, linked-to: ../sysctl-metal.service}
+  /usr/lib/systemd/system/amd-hsmp.service:
+    exists: true
+    contents: ["/^ConditionVirtualization=false$/"]

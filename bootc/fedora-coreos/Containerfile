@@ -6,10 +6,14 @@
 # Available tags: https://quay.io/repository/fedora/fedora-coreos?tab=tags
 ARG BASE_VERSION="44.20261023.3.1"
 
-FROM quay.io/fedora/fedora-coreos:${BASE_VERSION} AS builder
+# Layers, each stage FROM the one before (REFERENCES.md, "Layers"):
+# - system: the node's own packages and sysroot/system/;
+# - kube: Kubernetes and sysroot/kube/, so that a Kubernetes release
+#   rebuilds this stage alone;
+# - image: the platforms' files (sysroot/vm/, sysroot/metal/), then what
+#   reads the whole tree.
+FROM quay.io/fedora/fedora-coreos:${BASE_VERSION} AS system
 
-# Kubernetes patch release of kubelet, kubeadm and kubectl.
-ARG KUBERNETES_VERSION="1.35.10"
 ARG SOURCE_DATE_EPOCH=0
 ENV SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}
 
@@ -20,22 +24,9 @@ ENV TZ=UTC
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 RUN <<EORUN
-# Kubernetes RPMs: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
-# One repository per minor release. Removed below: the image is not
-# updated with dnf, a new Kubernetes patch is a new image.
-minor="${KUBERNETES_VERSION%.*}"
-cat > /etc/yum.repos.d/kubernetes.repo <<EOF
-[kubernetes]
-name=Kubernetes v${minor}
-baseurl=https://pkgs.k8s.io/core:/stable:/v${minor}/rpm/
-enabled=1
-gpgcheck=1
-gpgkey=https://pkgs.k8s.io/core:/stable:/v${minor}/rpm/repodata/repomd.xml.key
-EOF
-
 # Fedora's names for what image-builder install. The base already has jq, curl,
 # mdadm, lvm2, cryptsetup, tpm2-tools, chrony, socat, iptables-nft and
-# systemd-resolved.
+# systemd-resolved. Kubernetes' own are in the kube stage.
 # - systemd-networkd manages the network.
 # - greenboot checks an update boots and rolls back when it doesn't.
 # - openscap-scanner and scap-security-guide check the image (scan stage,
@@ -56,19 +47,17 @@ echo "%_netsharedpath /usr/share/scap-security-guide:${skip}" > /etc/rpm/macros.
 
 # No weak dependencies, as FCOS itself is built.
 dnf -yq install --setopt=install_weak_deps=False \
-    "kubelet-${KUBERNETES_VERSION}" "kubeadm-${KUBERNETES_VERSION}" "kubectl-${KUBERNETES_VERSION}" \
-    cri-tools \
-    conntrack-tools sysstat iproute-tc rootlesskit net-tools qemu-guest-agent greenboot \
+    sysstat rootlesskit net-tools qemu-guest-agent greenboot \
     greenboot-default-health-checks systemd-networkd openscap-scanner scap-security-guide \
     audispd-plugins grype nushell
 
-rm -f /etc/yum.repos.d/kubernetes.repo /etc/rpm/macros.ssg
+rm -f /etc/rpm/macros.ssg
 
 # Updates come from Cluster API (a new machine) or bootc-operator, never from
 # the node itself. moby-engine, docker-cli, toolbox: containerd is the runtime.
 # podman stays: bootc requires it, and removing it would remove bootc,
 # rpm-ostree and greenboot too. iptables-services: no host firewall, Cilium
-# filters (FCOS has neither firewalld nor ufw; test/build.yaml checks).
+# filters (FCOS has neither firewalld nor ufw; test/system/build.yaml checks).
 dnf -yq remove zincati moby-engine docker-cli iptables-services toolbox
 
 # CIS wants them gone: no node serves DNS or DHCP, nor copies with rsync.
@@ -88,12 +77,6 @@ rm /usr/lib/sysctl.d/10-default-yama-scope.conf
 # ModemManager isn't installed.
 dnf -yq remove nmstate NetworkManager-team NetworkManager-tui NetworkManager-cloud-setup
 
-# The base's /opt is /var/opt, and /var ships empty. kubernetes-cni (a kubelet
-# dependency) drops the CNI plugins there: Cilium installs its own at
-# runtime, and containerd's loopback is built in (use_internal_loopback).
-rm -rf /opt
-ln -s /var/opt /opt
-
 # chrony.conf has no include directory: replace its default pool with a
 # sources directory, filled by etc/chrony/sources.d/. Fail if the pool line
 # was not found.
@@ -112,10 +95,9 @@ dracut --force --reproducible --no-hostonly --omit 'ignition-conf ignition-conf-
 # /var ships empty.
 dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /run/selinux-policy
-# State directories the packages ship: kubelet, sysstat's pcp-libs and
-# audisp-remote create theirs at runtime.
-rm -rf /var/lib/kubelet /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated \
-    /var/spool/audit
+# State directories the packages ship: sysstat's pcp-libs and audisp-remote
+# create theirs at runtime.
+rm -rf /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated /var/spool/audit
 # moby-engine's group, left behind by its removal.
 if getent group docker >/dev/null; then groupdel docker; fi
 EORUN
@@ -124,10 +106,17 @@ EORUN
 # plus our changes (policy.jq).
 # After the packages, so that editing sysroot/ keeps their layer cached.
 RUN --mount=type=bind,source=policy.jq,target=/tmp/policy.jq \
-    --mount=type=bind,source=sysroot/etc/containers/policy.json,target=/tmp/policy.json \
+    --mount=type=bind,source=sysroot/system/etc/containers/policy.json,target=/tmp/policy.json \
     jq -e --slurpfile ours /tmp/policy.json -f /tmp/policy.jq /etc/containers/policy.json
 
-COPY --link ./sysroot/ /
+# Units are enabled by links in /usr/lib, committed in each layer's
+# sysroot/, not by `systemctl enable` (/etc): FCOS runs `systemctl
+# preset-all` at first boot, which removes the /etc links that no preset
+# names. Each link is what the unit's [Install] section asks for
+# (greenboot's: usr/lib/systemd/system of greenboot-rs), but
+# systemd-network-generator.service, networkd's, which the base enables.
+# test/system/build.yaml checks that no link dangles.
+COPY --link ./sysroot/system/ /
 
 RUN <<EORUN
 # COPY keeps a file's mode, and git only stores the executable bit. It also
@@ -142,13 +131,7 @@ grep -qx 'GSSAPIAuthentication yes' /etc/ssh/sshd_config.d/50-redhat.conf
 sed -i '/^GSSAPIAuthentication yes$/d' /etc/ssh/sshd_config.d/50-redhat.conf
 chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
-chmod 0755 /usr/libexec/{etcd-network-tuning.sh,openstack-fetch-metadata,openstack-disk-by-tag,wx-remount,openscap-scan,etc-diff,grype-scan,etcd-defrag}
-
-# The RPMs ship no bash completion, which etc/profile.d/kubernetes.sh loads.
-for tool in kubectl kubeadm crictl; do
-    "${tool}" completion bash > "/usr/share/bash-completion/completions/${tool}"
-done
-chmod 0755 /usr/lib/greenboot/check/required.d/*.sh
+chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan}
 
 # SELinux permissive, containerd runs with enable_selinux = false. It still labels files and logs denials.
 # TODO add it back ?
@@ -180,62 +163,8 @@ grep -qx 'active = yes' /etc/audit/plugins.d/syslog.conf
 # x86_64 has.
 rm /etc/audit/rules.d/audit.rules
 if [[ "$(uname -m)" != x86_64 ]]; then rm /etc/audit/rules.d/51-cis-x86_64.rules; fi
-# CIS 6.3.3.10: each setuid or setgid program, all in /usr (the image's),
-# its own rule; the check wants exactly those.
-find /usr -xdev -type f -perm /6000 | sort | while read -r f; do
-    for a in b32 b64; do
-        echo "-a always,exit -F arch=${a} -F path=${f} -F perm=x -F auid>=1000 -F auid!=unset -k privileged"
-    done
-done > /etc/audit/rules.d/52-privileged.rules
-test -s /etc/audit/rules.d/52-privileged.rules
 chmod 0750 /etc/audit/rules.d
 chmod 0640 /etc/audit/rules.d/*.rules
-
-# kubelet tries to create it, and /usr is read-only at runtime.
-mkdir -p /usr/libexec/kubernetes/kubelet-plugins/volume/exec
-
-# containerd's base spec for containers, from `ctr oci spec`, with a higher
-# open-files limit (what capi-image-builder's cri-base.json does).
-ctr oci spec \
-    | jq '.process.rlimits = [{"type": "RLIMIT_NOFILE", "hard": 65535, "soft": 65535}]' \
-    > /usr/lib/containerd/cri-base.json
-
-# The sandbox image kubeadm of this release expects, so that kubelet and
-# containerd agree on it (kubeadm warns otherwise).
-pause="$(kubeadm config images list --kubernetes-version "v${KUBERNETES_VERSION}" | grep '/pause:')"
-cat > /usr/lib/containerd/conf.d/20-pause.toml <<EOF
-[plugins.'io.containerd.cri.v1.images'.pinned_images]
-  sandbox = '${pause}'
-EOF
-
-# Units are enabled by links in /usr/lib, not by `systemctl enable` (/etc):
-# FCOS runs `systemctl preset-all` at first boot, which removes the /etc links
-# that no preset names. Each link is what the unit's [Install] section asks
-# for (greenboot's: usr/lib/systemd/system of greenboot-rs).
-wants() {
-    local dir="/usr/lib/systemd/system/$1"
-    shift
-    mkdir -p "${dir}"
-    for unit in "$@"; do
-        test -f "/usr/lib/systemd/system/${unit}"
-        ln -s "../${unit}" "${dir}/${unit}"
-    done
-}
-wants multi-user.target.wants containerd.service kubelet.service amd-hsmp.service \
-    openstack-hostname.service openstack-disk-tags.service greenboot-healthcheck.service \
-    systemd-networkd.service sysctl-mlx5-large.service sysctl-metal.service
-wants paths.target.wants etcd-network-tuning.path
-wants timers.target.wants openscap.timer etc-diff.timer grype.timer etcd-defrag.timer
-# The base enables systemd-network-generator.service, which networkd's [Install]
-# would add too.
-wants sysinit.target.wants wx-remount.service auditd.service chronyd.service
-wants sockets.target.wants systemd-networkd.socket systemd-networkd-varlink.socket \
-    systemd-networkd-resolve-hook.socket
-wants network-online.target.wants systemd-networkd-wait-online.service
-ln -s systemd-networkd.service /usr/lib/systemd/system/dbus-org.freedesktop.network1.service
-wants local-fs.target.wants var-lib-kubelet.mount var-opt-cni-bin.mount
-wants greenboot-success.target.requires greenboot-healthcheck.service
-wants ostree-finalize-staged.service.requires greenboot-set-rollback-trigger.service
 
 # systemd-networkd, not NetworkManager: the base enables NetworkManager in
 # /etc, and masking keeps preset-all from enabling it again.
@@ -256,6 +185,106 @@ systemctl mask systemd-homed.service systemd-homed-activate.service
 rm -rf /tmp/*
 EORUN
 
+FROM system AS kube
+
+# Inherited from system; repeated for hadolint, which reads one stage back.
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Kubernetes patch release of kubelet, kubeadm and kubectl.
+ARG KUBERNETES_VERSION="1.35.10"
+
+RUN <<EORUN
+# Kubernetes RPMs: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
+# One repository per minor release. Removed below: the image is not
+# updated with dnf, a new Kubernetes patch is a new image.
+minor="${KUBERNETES_VERSION%.*}"
+cat > /etc/yum.repos.d/kubernetes.repo <<EOF
+[kubernetes]
+name=Kubernetes v${minor}
+baseurl=https://pkgs.k8s.io/core:/stable:/v${minor}/rpm/
+enabled=1
+gpgcheck=1
+gpgkey=https://pkgs.k8s.io/core:/stable:/v${minor}/rpm/repodata/repomd.xml.key
+EOF
+
+# What kubeadm and the node's units need: conntrack-tools (kubeadm's
+# preflight), iproute-tc (etcd-network-tuning). No weak dependencies, as
+# FCOS itself is built.
+dnf -yq install --setopt=install_weak_deps=False \
+    "kubelet-${KUBERNETES_VERSION}" "kubeadm-${KUBERNETES_VERSION}" "kubectl-${KUBERNETES_VERSION}" \
+    cri-tools conntrack-tools iproute-tc
+
+rm -f /etc/yum.repos.d/kubernetes.repo
+
+# The base's /opt is /var/opt, and /var ships empty. kubernetes-cni (a kubelet
+# dependency) drops the CNI plugins there: Cilium installs its own at
+# runtime, and containerd's loopback is built in (use_internal_loopback).
+rm -rf /opt
+ln -s /var/opt /opt
+
+# /var ships empty. kubelet creates its state directory at runtime; the
+# packages' scriptlets bring back systemd's migrated/ and rpm-state/.
+dnf -yq clean all
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /var/lib/kubelet \
+    /var/lib/rpm-state /var/lib/systemd/migrated
+EORUN
+
+COPY --link ./sysroot/kube/ /
+
+RUN <<EORUN
+chmod 0755 /usr/libexec/etcd-network-tuning.sh /usr/libexec/etcd-defrag
+chmod 0755 /usr/lib/greenboot/check/required.d/*.sh
+
+# The RPMs ship no bash completion, which etc/profile.d/kubernetes.sh loads.
+for tool in kubectl kubeadm crictl; do
+    "${tool}" completion bash > "/usr/share/bash-completion/completions/${tool}"
+done
+
+# kubelet tries to create it, and /usr is read-only at runtime.
+mkdir -p /usr/libexec/kubernetes/kubelet-plugins/volume/exec
+
+# containerd's base spec for containers, from `ctr oci spec`, with a higher
+# open-files limit (what capi-image-builder's cri-base.json does).
+ctr oci spec \
+    | jq '.process.rlimits = [{"type": "RLIMIT_NOFILE", "hard": 65535, "soft": 65535}]' \
+    > /usr/lib/containerd/cri-base.json
+
+# The sandbox image kubeadm of this release expects, so that kubelet and
+# containerd agree on it (kubeadm warns otherwise).
+pause="$(kubeadm config images list --kubernetes-version "v${KUBERNETES_VERSION}" | grep '/pause:')"
+cat > /usr/lib/containerd/conf.d/20-pause.toml <<EOF
+[plugins.'io.containerd.cri.v1.images'.pinned_images]
+  sandbox = '${pause}'
+EOF
+
+rm -rf /tmp/*
+EORUN
+
+FROM kube AS image
+
+# Inherited; repeated for hadolint.
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# The platforms' files: each one's units skip the others (their
+# conditions).
+COPY --link ./sysroot/vm/ /
+COPY --link ./sysroot/metal/ /
+
+RUN <<EORUN
+chmod 0755 /usr/libexec/{openstack-fetch-metadata,openstack-disk-by-tag}
+
+# CIS 6.3.3.10: each setuid or setgid program, all in /usr (the image's),
+# its own rule; the check wants exactly those. Here, once every layer's
+# packages are in.
+find /usr -xdev -type f -perm /6000 | sort | while read -r f; do
+    for a in b32 b64; do
+        echo "-a always,exit -F arch=${a} -F path=${f} -F perm=x -F auid>=1000 -F auid!=unset -k privileged"
+    done
+done > /etc/audit/rules.d/52-privileged.rules
+test -s /etc/audit/rules.d/52-privileged.rules
+chmod 0640 /etc/audit/rules.d/52-privileged.rules
+EORUN
+
 # Keep this as the last instruction, on its own.
 # hadolint ignore=DL3059
 RUN bootc container lint
@@ -263,10 +292,10 @@ RUN bootc container lint
 # Scans of the image, in a stage of their own so that their files stay out of
 # the image. They report what they find; build.sh fails on it after exporting
 # the reports.
-FROM builder AS scan
+FROM image AS scan
 RUN --mount=type=cache,target=/var/cache/grype \
     <<EORUN
-# OpenSCAP, profile `build` of the tailoring (sysroot/usr/share/xml/scap/):
+# OpenSCAP, profile `build` of the tailoring (sysroot/system/usr/share/xml/scap/):
 # what a build can check. Exit 2: rules failed, the report is written.
 # BuildKit only: podman's /run/.containerenv turns the machine rules off.
 # /run/ostree-booted, as on a node, makes scap-security-guide see a bootc
@@ -285,21 +314,23 @@ EORUN
 
 # goss, from Fedora's package, in a stage of its own: the goss stage mounts
 # its binary alone, so that neither the image nor the scans see it. Same
-# Fedora release as the image, so the image's glibc runs it.
-FROM builder AS goss-bin
+# Fedora release as the image, so the image's glibc runs it. FROM system:
+# a Kubernetes release keeps it cached.
+FROM system AS goss-bin
 # No dnf clean: a throwaway stage, only its goss binary is used.
 # hadolint ignore=DL3040
 RUN dnf -yq install goss
 
-# Checks of the image's files (test/build.yaml). Exit 1: checks failed, the
-# report is written; build.sh fails on it after exporting the reports.
-FROM builder AS goss
+# Checks of the image's files (test/build.yaml, which includes each
+# layer's). Exit 1: checks failed, the report is written; build.sh fails on
+# it after exporting the reports.
+FROM image AS goss
 RUN --network=none \
     --mount=type=bind,from=goss-bin,source=/usr/bin/goss,target=/run/goss/goss \
-    --mount=type=bind,source=test/build.yaml,target=/run/goss/build.yaml \
+    --mount=type=bind,source=test,target=/run/goss/test \
     <<EORUN
 mkdir -p /reports/goss
-/run/goss/goss --gossfile /run/goss/build.yaml validate --format tap \
+/run/goss/goss --gossfile /run/goss/test/build.yaml validate --format tap \
     > /reports/goss/build.tap || [[ $? == 1 ]]
 EORUN
 
@@ -309,4 +340,4 @@ COPY --from=scan /reports/ /
 COPY --from=goss /reports/ /
 
 # The image, last: the default target.
-FROM builder
+FROM image

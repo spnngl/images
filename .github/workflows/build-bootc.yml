@@ -116,6 +116,8 @@ jobs:
         # signing: the folder holding the signature files the image ships,
         # registries.d and the public key at their path in the image
         # (default: bootc/fedora/sysroot/common, shared).
+        # policy: the policy.json the image ships (default:
+        # bootc/<name>/sysroot/<version>/etc/containers/policy.json).
         # The push job reuses this list (YAML anchor).
         image: &images
           - name: fedora
@@ -160,7 +162,8 @@ jobs:
           - name: fedora-coreos
             builder: buildkit
             context: bootc/fedora-coreos/
-            signing: bootc/fedora-coreos/sysroot
+            signing: bootc/fedora-coreos/sysroot/system
+            policy: bootc/fedora-coreos/sysroot/system/etc/containers/policy.json
         # Every image is built for every platform. Keep the push job's
         # ARCHES in sync.
         platform:
@@ -301,6 +304,7 @@ jobs:
       VERSION: ${{ matrix.image.version }}
       SUFFIX: ${{ matrix.image.suffix }}
       SIGNING: ${{ matrix.image.signing || 'bootc/fedora/sysroot/common' }}
+      POLICY: ${{ matrix.image.policy }}
       # The build job's platform list.
       ARCHES: amd64 arm64
     steps:
@@ -381,7 +385,7 @@ jobs:
       # if the signing key doesn't match the committed public key, which
       # would make hosts refuse every upgrade.
       - run: |-
-          policy="bootc/${NAME}/sysroot/${VERSION:+${VERSION}/}etc/containers/policy.json"
+          policy="${POLICY:-bootc/${NAME}/sysroot/${VERSION:+${VERSION}/}etc/containers/policy.json}"
           read -r -a arches <<< "${ARCHES}"
           for arch in "${arches[@]}"; do
             podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${TAG}"
@@ -453,10 +457,10 @@ jobs:
       # oci-archive can't hold them; the policy check still runs on the
       # source (containers/image copy/single.go).
       - run: |-
-          sudo install -D -m 0644 -t /etc/containers/registries.d/ bootc/fedora-coreos/sysroot/etc/containers/registries.d/spnngl-images.yaml
-          sudo install -D -m 0644 -t /usr/share/pki/containers/ bootc/fedora-coreos/sysroot/usr/share/pki/containers/spnngl-images.pub
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ bootc/fedora-coreos/sysroot/system/etc/containers/registries.d/spnngl-images.yaml
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ bootc/fedora-coreos/sysroot/system/usr/share/pki/containers/spnngl-images.pub
           mkdir "${RUNNER_TEMP}/disk"
-          skopeo copy --override-arch amd64 --remove-signatures --policy bootc/fedora-coreos/sysroot/etc/containers/policy.json \
+          skopeo copy --override-arch amd64 --remove-signatures --policy bootc/fedora-coreos/sysroot/system/etc/containers/policy.json \
             "docker://ghcr.io/spnngl/images/fedora-coreos@$(< "${RUNNER_TEMP}/image/digest")" "oci-archive:${RUNNER_TEMP}/disk/fedora-coreos.ociarchive"
       # osbuild needs root and loop devices: a privileged container of the
       # image's Fedora release (bootc/fedora-coreos/REFERENCES.md).

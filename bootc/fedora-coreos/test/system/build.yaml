@@ -1,0 +1,162 @@
+# The system layer's files (sysroot/system/, the Containerfile's system
+# stage).
+
+package:
+  # What the Containerfile installs, and what the base ships that the node
+  # needs.
+  sysstat: {installed: true}
+  rootlesskit: {installed: true}
+  net-tools: {installed: true}
+  qemu-guest-agent: {installed: true}
+  systemd-udev: {installed: true}
+  systemd-networkd: {installed: true}
+  openssh-clients: {installed: true}
+  grype: {installed: true}
+  nushell: {installed: true}
+  bootc: {installed: true}
+  rpm-ostree: {installed: true}
+  podman: {installed: true}
+  # What it removes, and what must never come in.
+  zincati: {installed: false}
+  moby-engine: {installed: false}
+  docker-cli: {installed: false}
+  toolbox: {installed: false}
+  firewalld: {installed: false}
+  ufw: {installed: false}
+  iptables-legacy: {installed: false}
+  iptables-services: {installed: false}
+  nmstate: {installed: false}
+  NetworkManager-team: {installed: false}
+  NetworkManager-tui: {installed: false}
+  NetworkManager-cloud-setup: {installed: false}
+  ModemManager: {installed: false}
+  dnsmasq: {installed: false}
+  rsync: {installed: false}
+  rpcbind: {installed: false}
+  nfsv3-client-utils: {installed: false}
+
+file:
+  /usr/share/scap-security-guide: {exists: false}
+  /etc/containers/registries.d/spnngl-images.yaml:
+    exists: true
+    contents: ["/^ *use-sigstore-attachments: true$/"]
+  /etc/sudoers.d/99-rootless: {exists: true, filetype: file, mode: "0440"}
+  # The image's value; vm.sh adds the test key's folder before it, through
+  # Ignition.
+  /etc/ssh/sshd_config.d/00-hardening.conf:
+    exists: true
+    contents: ["/^AuthorizedKeysFile /usr/lib/ssh/authorized_keys/%u$/"]
+
+  # Units are enabled by links in /usr/lib (Containerfile): `systemctl
+  # is-enabled` would call them disabled.
+  /usr/lib/systemd/system/multi-user.target.wants/greenboot-healthcheck.service: {exists: true, filetype: symlink, linked-to: ../greenboot-healthcheck.service}
+  /usr/lib/systemd/system/multi-user.target.wants/systemd-networkd.service: {exists: true, filetype: symlink, linked-to: ../systemd-networkd.service}
+  /usr/lib/systemd/system/timers.target.wants/openscap.timer: {exists: true, filetype: symlink, linked-to: ../openscap.timer}
+  /usr/lib/systemd/system/timers.target.wants/etc-diff.timer: {exists: true, filetype: symlink, linked-to: ../etc-diff.timer}
+  /usr/lib/systemd/system/timers.target.wants/grype.timer: {exists: true, filetype: symlink, linked-to: ../grype.timer}
+  /usr/lib/systemd/system/sysinit.target.wants/wx-remount.service: {exists: true, filetype: symlink, linked-to: ../wx-remount.service}
+  /usr/lib/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service: {exists: true, filetype: symlink, linked-to: ../systemd-networkd-wait-online.service}
+  /usr/lib/systemd/system/ostree-finalize-staged.service.requires/greenboot-set-rollback-trigger.service: {exists: true, filetype: symlink, linked-to: ../greenboot-set-rollback-trigger.service}
+  # Masked: FCOS's `systemctl preset-all` at first boot would enable them
+  # again if they were only disabled.
+  /etc/systemd/system/rpm-ostree-countme.timer: {exists: true, filetype: symlink, linked-to: /dev/null}
+  /etc/systemd/system/systemd-homed.service: {exists: true, filetype: symlink, linked-to: /dev/null}
+  /etc/systemd/system/systemd-homed-activate.service: {exists: true, filetype: symlink, linked-to: /dev/null}
+  /usr/lib/systemd/system/zincati.service: {exists: false}
+  /usr/lib/systemd/system/docker.socket: {exists: false}
+  # network-online waits for one routable link, not for all of them.
+  /usr/lib/systemd/system/systemd-networkd-wait-online.service.d/10-any.conf:
+    exists: true
+    contents: ["--any --operational-state=routable"]
+
+command:
+  # Every layer's unit links are committed in its sysroot/: one to a unit
+  # no layer ships, or a renamed one, would enable nothing.
+  no dangling unit link:
+    exec: test -z "$(find /usr/lib/systemd/system -xtype l)"
+    exit-status: 0
+  # The scans read Fedora's data stream alone (Containerfile, macros.ssg).
+  scap-security-guide, Fedora's data stream alone:
+    exec: test "$(ls /usr/share/xml/scap/ssg/content)" = ssg-fedora-ds.xml
+    exit-status: 0
+  # Each node makes its own identity at first boot.
+  ssh host keys:
+    exec: test -z "$(find /etc/ssh -name 'ssh_host_*')"
+    exit-status: 0
+  machine-id is empty:
+    exec: test ! -s /etc/machine-id
+    exit-status: 0
+  signatures, the key policy.json names:
+    exec: test -s "$(jq -r '.transports.docker["ghcr.io/spnngl/images"][0].keyPath' /etc/containers/policy.json)"
+    exit-status: 0
+  # iptables commands use nf_tables; the legacy x_tables tables can't load.
+  iptables is iptables-nft:
+    exec: iptables --version
+    exit-status: 0
+    stdout: [nf_tables]
+  rootless sudoers parse:
+    exec: visudo -cf /etc/sudoers.d/99-rootless
+    exit-status: 0
+  rootless keys:
+    exec: grep -c ^ssh-ed25519 /usr/lib/ssh/authorized_keys/rootless
+    exit-status: 0
+    stdout: ["/^2$/"]
+
+  # sshd: the first value wins, so check what it resolves to. UsePAM must
+  # stay yes (etc/ssh/sshd_config.d/00-hardening.conf). `sshd -T` needs a
+  # host key: a throwaway one.
+  sshd, resolved:
+    exec: ssh-keygen -q -t ed25519 -N '' -f /tmp/sshd-all && sshd -T -h /tmp/sshd-all
+    exit-status: 0
+    stdout:
+      - /^passwordauthentication no$/
+      - /^permitrootlogin no$/
+      - /^usepam yes$/
+      - /^kbdinteractiveauthentication no$/
+      - /^authorizedkeysfile /usr/lib/ssh/authorized_keys/%u$/
+      - /^gssapiauthentication no$/
+  # What applies to rootless, Match blocks included (90-allow-proxyjump.conf).
+  sshd, resolved for rootless:
+    exec: ssh-keygen -q -t ed25519 -N '' -f /tmp/sshd-rootless && sshd -T -h /tmp/sshd-rootless -C user=rootless,host=x,addr=192.0.2.1
+    exit-status: 0
+    stdout:
+      - /^passwordauthentication no$/
+      - /^permitrootlogin no$/
+      - /^usepam yes$/
+      - /^kbdinteractiveauthentication no$/
+      - /^authenticationmethods publickey$/
+      - /^allowusers rootless$/
+      - /^maxauthtries 3$/
+      - /^allowagentforwarding no$/
+      - /^allowtcpforwarding local$/
+      - /^gatewayports no$/
+      - /^gssapiauthentication no$/
+
+  coredump storage:
+    exec: systemd-analyze cat-config systemd/coredump.conf
+    exit-status: 0
+    stdout: [/^Storage=external$/]
+  systemd-coredump.socket is not masked:
+    exec: systemctl is-enabled systemd-coredump.socket || true
+    exit-status: 0
+    stdout: ["/^[a-z-]+$/", "!masked"]
+  resolved settings:
+    exec: systemd-analyze cat-config systemd/resolved.conf
+    exit-status: 0
+    stdout: [/^Domains=~.$/, /^FallbackDNS=1.1.1.1#cloudflare-dns.com/]
+  usb-storage is blacklisted:
+    exec: modprobe -c
+    exit-status: 0
+    stdout: [/^blacklist usb_storage$/]
+  RAID and LUKS tools:
+    exec: |
+      for c in mdadm cryptsetup systemd-cryptenroll pvcreate vgcreate networkctl; do
+        command -v "${c}" >/dev/null || { echo "missing: ${c}"; exit 1; }
+      done
+    exit-status: 0
+  # The TPM2 libraries systemd-cryptenroll loads. `has-tpm2` fails without
+  # a TPM, and still lists them.
+  TPM2 libraries for systemd-cryptenroll:
+    exec: systemd-analyze has-tpm2 || true
+    exit-status: 0
+    stdout: [+libtss2-esys.so, +libtss2-rc.so, +libtss2-mu.so]

@@ -76,8 +76,9 @@ Read each at the version this repository pins.
   API's `spec.version`, which `kubeadm upgrade` follows. `kubeadm init`
   without `--kubernetes-version` takes the newest patch release of the
   series, which may not be in the image: pass the version.
-- **One stage:** kubeadm nodes only, no k3s, no Docker. Replaces the
-  `base`/`kubeenv`/`dockerenv` scheme of `bootc/AGENTS.md`.
+- **One image:** kubeadm nodes only, no k3s, no Docker. Replaces the
+  `base`/`kubeenv`/`dockerenv` scheme of `bootc/AGENTS.md`; its stages
+  are layers of the one image ("Layers", below).
 - **Removed `zincati`, `moby-engine`, `docker-cli`:** updates come only from
   Cluster API or bootc-operator; containerd is the runtime.
   `bootc-fetch-apply-updates.timer` and `rpm-ostreed-automatic.timer` stay
@@ -134,7 +135,8 @@ Read each at the version this repository pins.
   have public IPs. Metrics stay on `0.0.0.0:23542` for Prometheus; Cilium
   host policies decide who reaches them.
 - **Own `sysroot/`:** node settings differ from `bootc/fedora`: sshd on 22,
-  systemd-networkd, no firewalld.
+  systemd-networkd, no firewalld. One folder per layer ("Layers",
+  below).
 - **Node settings in the repo** (`rootless` user, its SSH keys, sysctls): a deliberate deviation from
   "credentials from the runtime". `rootless` is `1500:1500` in `sysusers.d`, and
   `tmpfiles.d` refers to it by number: Ignition may create users in the
@@ -176,7 +178,10 @@ Read each at the version this repository pins.
   tests; links in `/usr` are image content, the same on every boot, and
   `preset-all` leaves them alone. Each link is what the unit's `[Install]`
   asks for. `systemctl is-enabled` reports such a unit `disabled` (it only
-  looks in `/etc`): check `systemctl show -P WantedBy` instead.
+  looks in `/etc`): check `systemctl show -P WantedBy` instead. The links
+  are committed in the unit's `sysroot/<layer>/`, not made by the
+  Containerfile: the tree shows what a layer enables, and goss fails on a
+  link to a unit no layer ships (`test/system/build.yaml`).
 - **Ported from `capi-image-builder`:** chrony sources (Cloudflare + Google,
   `sourcedir /etc/chrony/sources.d` replaces the `pool` line), sysctls
   (`995`-`998`, `90-kubernetes.conf` from image-builder's node
@@ -261,6 +266,33 @@ Read each at the version this repository pins.
 - **The data array and the public bond's MAC come with bare-metal
   installs** (Later): RAID10, its LUKS bound to the TPM with no PCR, since PCR 4
   changes with each bootc update.
+
+### Layers
+
+- **Three stages, each `FROM` the one before:** `system` (the node's
+  packages, `sysroot/system/`), `kube` (Kubernetes' packages,
+  `sysroot/kube/`), `image` (`sysroot/vm/`, `sysroot/metal/`, then what
+  reads the whole tree). `KUBERNETES_VERSION` is declared in `kube`: a
+  Kubernetes release rebuilds `kube` and `image`, and keeps `system`
+  cached (checked by building `--target image` with another
+  `KUBERNETES_VERSION`: every `system` step `CACHED`). In the source,
+  `sysroot/<layer>/` and `test/<layer>/` show what each part of the node
+  needs.
+- **Not for smaller downloads:** CI builds without a cache and with
+  `SOURCE_DATE_EPOCH` the commit's time, so every layer's digest changes
+  at every build and a node downloads them all, as before. The split
+  costs about 10 MB (1.256 GB against 1.247): `kube`'s `dnf install`
+  writes the rpm and dnf databases again.
+- **A file's layer:** `vm` or `metal` if only that platform uses it,
+  else `kube` if only Kubernetes does, else `system`. `vm` and `metal` are
+  folders of the `image` stage, not images: one image for VMs and
+  dedicated servers (`ConditionVirtualization=`).
+- **What reads the whole tree is in `image`:** `52-privileged.rules`
+  lists every setuid program, the `kube` packages' included.
+  `bootc container lint` runs last. The initramfs stays in `system`: no
+  `kube` package adds a dracut module (the tree diff of the split found
+  the same initramfs).
+- **`goss-bin` is `FROM system`:** a Kubernetes release keeps it cached.
 
 ### OpenSCAP
 
@@ -509,7 +541,7 @@ Read each at the version this repository pins.
   this folder's key, so a stale copy fails there.
   `.dockerignore`, not `.containerignore`: BuildKit reads only the
   former, buildah both.
-- **goss checks the image's files at build** (`test/build.yaml`, stage
+- **goss checks the image's files at build** (`test/<layer>/build.yaml`, stage
   `goss`, report `goss/build.tap` of `reports`): what holds without
   booting (packages, files, unit links and drop-ins, `sshd -T`, the
   merged containerd config). CI runs it on every build, through
@@ -524,7 +556,7 @@ Read each at the version this repository pins.
   checks read the image only.
 - **A Containerfile `grep` only guards the `sed` above it** (it fails
   when the edit matched nothing); the checks of a result are in
-  `test/build.yaml`, one place per fact.
+  `test/<layer>/build.yaml`, one place per fact.
 - **Unit facts as files at build:** a unit enabled by a link is checked
   as that link (`systemctl is-enabled` calls it `disabled`), a masked one
   as its `/etc` link to `/dev/null`, a condition or slice as its line in

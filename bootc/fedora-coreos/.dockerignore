@@ -4,3 +4,4 @@
 !policy.jq
 !sysroot/
 !test/build.yaml
+!test/*/build.yaml
