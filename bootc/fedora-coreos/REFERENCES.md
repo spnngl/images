@@ -511,15 +511,21 @@ Read each at the version this repository pins.
   `kubectl port-forward` to a free local port, a `docker buildx` remote
   builder, `--output type=oci`): the workstation is arm64 and the targets
   are x86_64.
-- **Disk images in a privileged pod, the workbench** (`workbench.yaml`): the
-  BuildKit is rootless and can't run osbuild; the tool names its output
-  after the host architecture, so it runs on x86_64. Its namespace must
-  allow privileged pods; `activeDeadlineSeconds` bounds the pod's life.
-- **Test VM: `qemu-system-x86_64` with KVM in the workbench:** the node
-  exposes `/dev/kvm`. Ignition goes through `fw_cfg`, a throwaway SSH key
+- **Disk images in a privileged container, the workbench**
+  (`workbench.sh`): the BuildKit is rootless and can't run osbuild; the
+  tool names its output after the host architecture, so it runs on
+  x86_64. Two backends, one interface (`up`, `down`, `exec`) and one
+  package list: `kube`, a pod on the build cluster (`workbench.yaml`,
+  git-ignored: it names the cluster; its namespace must allow privileged
+  pods, `activeDeadlineSeconds` bounds its life), and `podman`, a
+  rootful container on an x86_64 host with KVM (CI's `vm-test` job;
+  `--init` reaps the daemonized qemu and swtpm, as the pod's
+  `shareProcessNamespace`).
+- **Test VM: `qemu-system-x86_64` with KVM in the workbench:** the
+  cluster's bare-metal node and GitHub's runners expose `/dev/kvm`. Ignition goes through `fw_cfg`, a throwaway SSH key
   comes from Butane. Its disk is NVMe, as a dedicated server's.
-- **Workbench on the image's Fedora release** (`workbench.sh` writes the
-  major of `BASE_VERSION` into `workbench.yaml`): osbuild builds the disk
+- **Workbench on the image's Fedora release** (`workbench.sh` reads the
+  major of `BASE_VERSION`): osbuild builds the disk
   images from a tree of the same release, and the pin can't drift.
 - **Cilium ≥ 1.20 in `vm.sh cluster`:** 1.18.3 fails on kernel 7.2's BPF
   verifier (`call bpf_set_retval#187: R1 is not a scalar`). It runs with the
@@ -561,7 +567,14 @@ Read each at the version this repository pins.
   as that link (`systemctl is-enabled` calls it `disabled`), a masked one
   as its `/etc` link to `/dev/null`, a condition or slice as its line in
   the unit or drop-in. `systemctl show` needs a running systemd.
-- **VM tests by hand:** they need KVM and a cluster's workbench.
+- **VM tests in CI, and by hand** (`build-bootc.yml`, job `vm-test`):
+  the job boots the build job's image, on pull requests too, and runs
+  every suite of the Build check (`AGENTS.md`), `test-greenboot.sh`
+  included. A public repository's `ubuntu-26.04` runner has 4 vCPUs,
+  16 GB and `/dev/kvm`: room for the VM (4 CPUs, 8 GB). The `push` job
+  pushes fedora-coreos only if it passed: nodes follow the tag with
+  `bootc upgrade`, and greenboot rolls back only on its required
+  checks. By hand, the same scripts run in the cluster's workbench.
 - **VM tests as goss suites** (`test.sh node|wx|cluster`), like the
   build's: `test/<suite>.yaml` includes every layer's `<suite>.yaml`
   (`system/`, `vm/`, `metal/`, `kube/`), so a check lives in the layer
@@ -579,16 +592,15 @@ Read each at the version this repository pins.
   `kubernetes/kubernetes`, one PR per patch and per minor release: kubeadm
   upgrades one minor at a time), Cilium (its Helm
   repository) and `disk_images_commit` (weekly, no release upstream)
-  through custom managers. CI doesn't run the VM tests, so each PR waits
-  for the build check of `AGENTS.md`, but one:
+  through custom managers. Each PR waits for a review, its `vm-test`
+  job's result included, but one:
 - **A Fedora CoreOS release of the same major is automerged** once every
   check is green, the build and scans of `build-bootc.yml` included: the
   tag stays, a stable release has passed Fedora's own tests, and greenboot
   rolls back a node that fails to come up. Renovate merges it itself
   (`platformAutomerge: false`): GitHub's auto-merge waits for the required
   checks only, and `build-bootc.yml` has none. A new major changes the
-  tag, and Kubernetes, Cilium and `disk_images_commit` aren't exercised by
-  CI: by hand.
+  tag: reviewed by hand, as Kubernetes, Cilium and `disk_images_commit`.
 
 ### Bootstrap
 

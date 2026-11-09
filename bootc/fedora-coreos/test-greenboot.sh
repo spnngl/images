@@ -8,7 +8,7 @@
 # workbench, copied into the VM and applied with `bootc switch`:
 #   good  adds a marker file
 #   bad   adds a required check that fails
-# Env:    BUILD_KUBE_CONTEXT  kube context of the build cluster (required)
+# Env:    WORKBENCH, BUILD_KUBE_CONTEXT  the workbench (workbench.sh)
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."

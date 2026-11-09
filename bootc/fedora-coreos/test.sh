@@ -9,7 +9,7 @@
 #   wx       W^X: noexec mounts and their exceptions
 #   cluster  once vm.sh cluster ran: the node is Ready, runs a pod that
 #            executes scripts from an emptyDir and a configMap, etcd's units
-# Env:    BUILD_KUBE_CONTEXT  kube context of the build cluster (required)
+# Env:    WORKBENCH, BUILD_KUBE_CONTEXT  the workbench (workbench.sh)
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -27,7 +27,7 @@ cp -R bootc/fedora-coreos/test/. "${tmp}/"
 # The workbench's goss: the image has none, and the VM runs the same
 # Fedora release.
 bootc/fedora-coreos/workbench.sh exec cat /usr/bin/goss >"${tmp}/goss" ||
-    die "no goss in the workbench, run: bootc/fedora-coreos/workbench.sh exec dnf -yq install goss"
+    die "no goss in the workbench, run: bootc/fedora-coreos/workbench.sh up"
 chmod 0755 "${tmp}/goss"
 
 # Runs as root on the VM, the suite's files on stdin. W^X makes every
