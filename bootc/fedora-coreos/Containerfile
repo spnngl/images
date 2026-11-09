@@ -173,10 +173,6 @@ rm -rf /etc/systemd/system/NetworkManager.service.wants
 systemctl mask NetworkManager.service NetworkManager-wait-online.service \
     NetworkManager-dispatcher.service nm-priv-helper.service
 
-# It would report each node to Fedora's count of systems; masked, as
-# preset-all enables a disabled unit again.
-systemctl mask rpm-ostree-countme.timer
-
 # Not used. systemd-homed-activate too: preset-all would enable it, linking
 # it into the masked unit's wants in /etc.
 systemctl disable systemd-homed.service systemd-homed-activate.service
