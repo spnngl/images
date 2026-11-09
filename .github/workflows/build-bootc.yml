@@ -264,11 +264,12 @@ jobs:
       # docker-dir keeps the v2s2 manifest (OCI would drop SHELL), and
       # --compress gzips the layers here, both platforms in parallel: the
       # artifact is smaller, and the push job sends the blobs as they are.
-      - if: github.event_name != 'pull_request'
+      # fedora-coreos amd64 on pull requests too: the vm-test job boots it.
+      - if: github.event_name != 'pull_request' || (matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64')
         run: podman save --format docker-dir --compress -o "${RUNNER_TEMP}/${ARTIFACT}" "${TAG}"
       # compression-level 0: the layers are already gzipped.
       # overwrite: "Re-run all jobs" uploads names this run already has.
-      - if: github.event_name != 'pull_request'
+      - if: github.event_name != 'pull_request' || (matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64')
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ env.ARTIFACT }}
@@ -278,14 +279,73 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  # fedora-coreos's VM tests (bootc/fedora-coreos/AGENTS.md, Build check)
+  # on the image the build job made: its qemu disk image boots in a test
+  # VM, in a podman workbench (WORKBENCH=podman) with the runner's KVM.
+  # Pull requests too. The push job pushes fedora-coreos only if it passed:
+  # nodes follow the tag with bootc upgrade.
+  vm-test:
+    needs: build
+    # As the push job: another image's failed build doesn't stop it. A
+    # failed fedora-coreos amd64 build leaves no artifact, and fails here.
+    if: >-
+      !cancelled() && needs.build.result != 'skipped'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      WORKBENCH: podman
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG: the build job's ARTIFACT.
+      - run: bootc/fedora-coreos/versions.sh >> "${GITHUB_ENV}"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: fedora-coreos_${{ env.IMAGE_TAG }}_amd64
+          path: ${{ runner.temp }}/image
+      # osbuild keeps a raw disk and two trees of the image, and the VM's
+      # disk grows with the cluster's images: room from the runner's
+      # preinstalled SDKs, unused here. bwrap-userns-restrict: as the
+      # disk-image job.
+      - run: |-
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+          sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
+          df -h /
+      # The qemu disk image, as build.sh makes it: in the workbench, from
+      # the OCI archive, which test-greenboot.sh also reads there.
+      - run: |-
+          skopeo copy --quiet "dir:${RUNNER_TEMP}/image" "oci-archive:${RUNNER_TEMP}/fedora-coreos.ociarchive"
+          rm -rf "${RUNNER_TEMP}/image"
+          bootc/fedora-coreos/workbench.sh up
+          bootc/fedora-coreos/workbench.sh exec bash -c 'cat > /work/fedora-coreos.ociarchive' < "${RUNNER_TEMP}/fedora-coreos.ociarchive"
+          rm "${RUNNER_TEMP}/fedora-coreos.ociarchive"
+          bootc/fedora-coreos/workbench.sh exec bash -s -- /work qemu "ostree-image-signed:docker://ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}" \
+            < bootc/fedora-coreos/disk-images.sh
+      - run: bootc/fedora-coreos/vm.sh up
+      - run: bootc/fedora-coreos/test.sh node
+      - run: bootc/fedora-coreos/test.sh wx
+      - run: bootc/fedora-coreos/vm.sh cluster
+      - run: bootc/fedora-coreos/test.sh cluster
+      # W^X's remounts again, after a boot of a node with a cluster.
+      - run: |-
+          bootc/fedora-coreos/vm.sh reboot
+          bootc/fedora-coreos/test.sh wx
+      - run: bootc/fedora-coreos/test-greenboot.sh
+      # The serial console: boot and Ignition errors, the reboots.
+      - if: failure()
+        run: bootc/fedora-coreos/vm.sh log | tail -n 300
+
   # Merge each image's platforms into one manifest list, then sign, push,
   # attest and check it.
   push:
     name: push ${{ matrix.image.name }}${{ matrix.image.version && format(':{0}{1}', matrix.image.version, matrix.image.suffix) || '' }}
-    needs: build
+    needs: [build, vm-test]
     # needs: build waits for every build job, and fails if any did. Run
     # anyway, unless cancelled or hadolint failed: each image pushes on its
-    # own, and fails below if one of its platforms is missing.
+    # own, and fails below if one of its platforms is missing, or, for
+    # fedora-coreos, if its VM tests didn't pass.
     if: >-
       !cancelled() && github.event_name != 'pull_request' && needs.build.result != 'skipped'
     runs-on: ubuntu-26.04
@@ -309,6 +369,13 @@ jobs:
       # The build job's platform list.
       ARCHES: amd64 arm64
     steps:
+      # A job-level if can't read the matrix: this entry fails alone.
+      - if: matrix.image.name == 'fedora-coreos' && needs.vm-test.result != 'success'
+        env:
+          RESULT: ${{ needs.vm-test.result }}
+        run: |-
+          echo "::error::the vm-test job didn't pass (${RESULT}): fedora-coreos is not pushed"
+          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The build job's TAG, and its ARTIFACT without the platform.

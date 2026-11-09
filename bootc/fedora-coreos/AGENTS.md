@@ -80,8 +80,10 @@ each choice: [REFERENCES.md](REFERENCES.md).
   `vm`, `metal`).
 - `build.sh`: container image and its scan reports
   (`output/fedora-coreos/reports/`) on the cluster's BuildKit, then disk
-  images (`qemu`, `openstack`, `metal`) in the workbench pod
-  (`workbench.yaml`, `workbench.sh`).
+  images (`qemu`, `openstack`, `metal`) in the workbench
+  (`workbench.sh`: a pod of the build cluster, from the local, git-ignored
+  `workbench.yaml`, or with `WORKBENCH=podman` a container on an x86_64
+  host with KVM, as CI's `vm-test` job).
 - `versions.sh`, `check-reports.sh`, `disk-images.sh`: the tag, the scan
   gate and the disk images, shared by `build.sh` and CI.
 - `test/build.yaml`, `test/<layer>/build.yaml`: the goss checks of the
@@ -93,6 +95,8 @@ each choice: [REFERENCES.md](REFERENCES.md).
 ## Build check
 
 `BUILD_KUBE_CONTEXT` is the kube context of the build cluster, which runs the BuildKit and the workbench.
+CI's `vm-test` job runs the same commands from `vm.sh up` on, on the
+build job's image.
 
 ```sh
 export BUILD_KUBE_CONTEXT=<context>

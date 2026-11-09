@@ -37,6 +37,13 @@
   `fedora-coreos_reports`), failing on a failed rule, a fixable
   Critical or a failed goss check, and on `main` the `disk-image` job releases its OpenStack
   qcow2 when `bootc/fedora-coreos/` changed since the newest release.
+- **fedora-coreos's VM tests gate its push** (job `vm-test`, on pull
+  requests too): the build job uploads its amd64 image on pull requests
+  too, `vm-test` boots it in a test VM and runs the goss suites
+  (`bootc/fedora-coreos/REFERENCES.md`, "VM tests in CI"). A job-level
+  `if` can't read the matrix, so `push` needs `vm-test` and runs anyway;
+  its first step fails the fedora-coreos entry alone unless `vm-test`
+  passed.
 - **`build.sh`'s flags** (`--format=docker`, context `bootc/`), plus an
   `org.opencontainers.image.source` label linking the package to the
   repository, and `--platform` the runner's own. Rootless podman.

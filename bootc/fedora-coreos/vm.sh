@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Test VM of bootc/fedora-coreos: boots the `qemu` disk image that build.sh
-# made, inside the workbench pod (workbench.sh), with KVM.
+# made, inside the workbench (workbench.sh), with KVM.
 #
 # Usage: bootc/fedora-coreos/vm.sh up [ignition.ign]
 #        bootc/fedora-coreos/vm.sh cluster
@@ -18,7 +18,7 @@
 #   reboot  reboot the VM, wait until it answers over SSH again
 #   log   print the VM's serial console
 #   down  stop the VM and delete its disk
-# Env:    BUILD_KUBE_CONTEXT  kube context of the build cluster (required)
+# Env:    WORKBENCH, BUILD_KUBE_CONTEXT  the workbench (workbench.sh)
 # In the workbench, the VM answers on 127.0.0.1: SSH on 2222, the Kubernetes
 # API on 6443. Files are in /work/vm. Its disk is NVMe, as on the dedicated
 # servers.
