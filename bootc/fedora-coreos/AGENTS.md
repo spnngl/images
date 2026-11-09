@@ -71,8 +71,6 @@ each choice: [REFERENCES.md](REFERENCES.md).
   gate and the disk images, shared by `build.sh` and CI.
 - `vm.sh`, `test.sh`, `test/`, `test-greenboot.sh`: a
   test VM in the workbench (an NVMe disk), and the checks run on it.
-- `ignition-converter/`: Go webhook that turns CABPK's Ignition spec 2.3
-  into 3.0, with its own [README.md](ignition-converter/README.md).
 
 ## Build check
 
@@ -87,8 +85,6 @@ bootc/fedora-coreos/vm.sh cluster     # kubeadm init + Cilium
 bootc/fedora-coreos/test.sh cluster   # node Ready, pod runs scripts from emptyDir and configMap
 bootc/fedora-coreos/test.sh wx        # noexec everywhere but the exceptions
 bootc/fedora-coreos/test-greenboot.sh # good update kept, bad one rolled back
-bootc/fedora-coreos/ignition-converter/e2e.sh
-(cd bootc/fedora-coreos/ignition-converter && go vet ./... && go test ./...)
 bootc/fedora-coreos/vm.sh down
 bootc/fedora-coreos/workbench.sh down
 ```
