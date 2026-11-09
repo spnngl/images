@@ -153,13 +153,15 @@ Read each at the version this repository pins.
   arguments (`usr/lib/dracut/build-parameter.txt`): `rootless` is the only
   login, and CIS's checks of home files had `core`'s, from `/etc/skel`, to
   fail on. Nodes created before keep it.
-- **SSH host keys `root:ssh_keys 0600`**
-  (`sshd-keygen@.service.d/50-ssh-keys-group.conf`): Fedora's
-  `sshd-keygen` writes them `root:root`, scap-security-guide wants group
-  `ssh_keys` on Fedora. At 0600 the group reads nothing; the drop-in only
-  keeps `file_groupownership_sshd_private_key` checked until upstream
-  accepts `root` (https://github.com/ComplianceAsCode/content/pull/15310).
-  Keys made before stay `root:root`.
+- **SSH host keys `root:root 0600`**, as Fedora's `sshd-keygen` writes
+  them. scap-security-guide's `file_groupownership_sshd_private_key` wants
+  group `ssh_keys`, but `file_permissions_sshd_private_key` reads that
+  group's GID from `/etc/group` only, and FCOS keeps it in
+  `/usr/lib/group`: a `root:ssh_keys` key fails it
+  (https://github.com/ComplianceAsCode/content/issues/15320). The first
+  is off until upstream accepts `root`
+  (https://github.com/ComplianceAsCode/content/pull/15310). Nodes made
+  with the former `chgrp ssh_keys` drop-in keep such keys.
 - **sshd `00-hardening.conf`:** sshd keeps the first value of a keyword, so
   `00-` beats Fedora's drop-ins. `UsePAM yes` stays: with a locked password
   (`!`), `UsePAM no` would reject every login. The jump-host rule
@@ -358,7 +360,7 @@ Read each at the version this repository pins.
   https://github.com/ComplianceAsCode/content/pull/15304 (Fedora keys,
   rpm 6), `ensure_fedora_gpgkey_installed` goes back on; with
   https://github.com/ComplianceAsCode/content/pull/15310,
-  `sshd-keygen@.service.d/50-ssh-keys-group.conf` goes. `display_login_attempts`
+  `file_groupownership_sshd_private_key` goes back on. `display_login_attempts`
   (`standard`, not CIS) can't pass on Fedora 43 and later:
   https://github.com/ComplianceAsCode/content/issues/15305.
 - **authselect profile `local`, the base's, not `sssd`:** SSSD 2.11
