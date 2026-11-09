@@ -26,7 +26,9 @@ Read each at the version this repository pins.
   (`images/capi/ansible/roles/{containerd,kubernetes,node,sysprep}/`)
 - Cluster API: `github.com/kubernetes-sigs/cluster-api`
   (`bootstrap/kubeadm/pkg/ignition/clc/clc.go`, `kubeadmconfig_controller.go`)
-- `github.com/coreos/ign-converter` (`translate/v23tov30`)
+- The bootstrap webhook: `github.com/spnngl/ignition-converter`
+  (`README.md`, `deploy.yaml`), on `github.com/coreos/ign-converter`
+  (`translate/v23tov30`)
 - `github.com/fedora-iot/greenboot-rs` (`README.md`, `greenboot-rs.spec`,
   `usr/`)
 - `github.com/bootc-dev/bootc-operator` (`api/v1alpha1/`,
@@ -518,8 +520,9 @@ Read each at the version this repository pins.
 
 ### Bootstrap
 
-- **CABPK `format: ignition`, then a webhook** (`ignition-converter/`): FCOS
-  Ignition reads spec 3.x only; CABPK renders 2.3 for Flatcar. The webhook
+- **CABPK `format: ignition`, then a webhook**
+  (`spnngl/ignition-converter`): FCOS Ignition reads spec 3.x only;
+  CABPK renders 2.3 for Flatcar. The webhook
   mutates the bootstrap Secret (`cluster.x-k8s.io/secret`, `format:
   ignition`). Files off the `root` filesystem are denied: the translator
   would map an undeclared filesystem to `/`. Declared ones (`diskSetup`)
