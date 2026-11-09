@@ -3,3 +3,4 @@
 *
 !policy.jq
 !sysroot/
+!test/build.yaml

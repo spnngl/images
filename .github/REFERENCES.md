@@ -34,8 +34,8 @@
   podman for the push: podman's `/run/.containerenv` turns its OpenSCAP
   scan's machine rules off (`bootc/fedora-coreos/REFERENCES.md`). Its
   amd64 job also builds the scan reports (artifact
-  `fedora-coreos_reports`), failing on a failed rule or a fixable
-  Critical, and on `main` the `disk-image` job releases its OpenStack
+  `fedora-coreos_reports`), failing on a failed rule, a fixable
+  Critical or a failed goss check, and on `main` the `disk-image` job releases its OpenStack
   qcow2 when `bootc/fedora-coreos/` changed since the newest release.
 - **`build.sh`'s flags** (`--format=docker`, context `bootc/`), plus an
   `org.opencontainers.image.source` label linking the package to the

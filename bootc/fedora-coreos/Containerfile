@@ -63,14 +63,12 @@ dnf -yq install --setopt=install_weak_deps=False \
     audispd-plugins grype nushell
 
 rm -f /etc/yum.repos.d/kubernetes.repo /etc/rpm/macros.ssg
-test "$(ls "${ssg}")" = ssg-fedora-ds.xml
-test ! -e /usr/share/scap-security-guide
 
 # Updates come from Cluster API (a new machine) or bootc-operator, never from
 # the node itself. moby-engine, docker-cli, toolbox: containerd is the runtime.
 # podman stays: bootc requires it, and removing it would remove bootc,
 # rpm-ostree and greenboot too. iptables-services: no host firewall, Cilium
-# filters (FCOS has neither firewalld nor ufw; test/image.sh checks).
+# filters (FCOS has neither firewalld nor ufw; test/build.yaml checks).
 dnf -yq remove zincati moby-engine docker-cli iptables-services toolbox
 
 # CIS wants them gone: no node serves DNS or DHCP, nor copies with rsync.
@@ -210,32 +208,6 @@ cat > /usr/lib/containerd/conf.d/20-pause.toml <<EOF
   sandbox = '${pause}'
 EOF
 
-# Fail the build, not the node, if the merged containerd config misses what
-# we set (a mistyped plugin key is silently ignored).
-containerd --config /usr/lib/containerd/config.toml config dump > /tmp/containerd.toml
-grep -q "SystemdCgroup = true" /tmp/containerd.toml
-grep -q "sandbox = '${pause}'" /tmp/containerd.toml
-grep -q "use_internal_loopback = true" /tmp/containerd.toml
-grep -q "base_runtime_spec = '/usr/lib/containerd/cri-base.json'" /tmp/containerd.toml
-
-# Same for sshd: the first value wins, so check what it resolves to. UsePAM
-# must stay yes (etc/ssh/sshd_config.d/00-hardening.conf).
-ssh-keygen -q -t ed25519 -N '' -f /tmp/hostkey
-sshd -T -h /tmp/hostkey > /tmp/sshd.txt
-grep -qx 'passwordauthentication no' /tmp/sshd.txt
-grep -qx 'permitrootlogin no' /tmp/sshd.txt
-grep -qx 'usepam yes' /tmp/sshd.txt
-grep -qx 'kbdinteractiveauthentication no' /tmp/sshd.txt
-grep -qx 'authorizedkeysfile /usr/lib/ssh/authorized_keys/%u' /tmp/sshd.txt
-grep -qx 'gssapiauthentication no' /tmp/sshd.txt
-# What applies to rootless, Match blocks included (90-allow-proxyjump.conf).
-sshd -T -h /tmp/hostkey -C user=rootless,host=x,addr=192.0.2.1 > /tmp/sshd.txt
-grep -qx 'allowtcpforwarding local' /tmp/sshd.txt
-
-# Each node makes its own identity at first boot.
-test -z "$(find /etc/ssh -name 'ssh_host_*')"
-test ! -s /etc/machine-id
-
 # Units are enabled by links in /usr/lib, not by `systemctl enable` (/etc):
 # FCOS runs `systemctl preset-all` at first boot, which removes the /etc links
 # that no preset names. Each link is what the unit's [Install] section asks
@@ -281,9 +253,6 @@ systemctl mask rpm-ostree-countme.timer
 systemctl disable systemd-homed.service systemd-homed-activate.service
 systemctl mask systemd-homed.service systemd-homed-activate.service
 
-# /opt must stay the base's symlink to /var/opt.
-test "$(readlink /opt)" = /var/opt
-
 rm -rf /tmp/*
 EORUN
 
@@ -314,9 +283,30 @@ oscap xccdf eval --profile xccdf_local_profile_build \
 STATE_DIRECTORY=/reports/grype CACHE_DIRECTORY=/var/cache/grype /usr/libexec/grype-scan
 EORUN
 
+# goss, from Fedora's package, in a stage of its own: the goss stage mounts
+# its binary alone, so that neither the image nor the scans see it. Same
+# Fedora release as the image, so the image's glibc runs it.
+FROM builder AS goss-bin
+# No dnf clean: a throwaway stage, only its goss binary is used.
+# hadolint ignore=DL3040
+RUN dnf -yq install goss
+
+# Checks of the image's files (test/build.yaml). Exit 1: checks failed, the
+# report is written; build.sh fails on it after exporting the reports.
+FROM builder AS goss
+RUN --network=none \
+    --mount=type=bind,from=goss-bin,source=/usr/bin/goss,target=/run/goss/goss \
+    --mount=type=bind,source=test/build.yaml,target=/run/goss/build.yaml \
+    <<EORUN
+mkdir -p /reports/goss
+/run/goss/goss --gossfile /run/goss/build.yaml validate --format tap \
+    > /reports/goss/build.tap || [[ $? == 1 ]]
+EORUN
+
 # The reports alone: `--target reports --output type=local,dest=<dir>`.
 FROM scratch AS reports
 COPY --from=scan /reports/ /
+COPY --from=goss /reports/ /
 
 # The image, last: the default target.
 FROM builder

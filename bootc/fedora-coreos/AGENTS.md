@@ -8,8 +8,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
 ## Rules
 
 - **One image stage, not the three of `bootc/AGENTS.md`**: kubeadm nodes
-  only, no k3s, no Docker. The stages after it scan it (OpenSCAP, grype);
-  it is the default target. Tag `<major>-v<minor>` of `BASE_VERSION` and
+  only, no k3s, no Docker. The stages after it scan it (OpenSCAP, grype)
+  and check its files (goss, `test/build.yaml`); it is the default
+  target. Tag `<major>-v<minor>` of `BASE_VERSION` and
   `KUBERNETES_VERSION`, the Containerfile's `ARG`s, written by
   `versions.sh` for `build.sh` and CI: a patch release keeps the tag.
 - **Own build context, this folder** (`.dockerignore`), and own
@@ -56,6 +57,10 @@ each choice: [REFERENCES.md](REFERENCES.md).
   `check-reports.sh` fails on a fixable Critical. One
   the image can't fix is ignored in `sysroot/usr/share/grype/ignore.yaml`,
   at the package's exact version, with its reason.
+- **Checks:** what holds for the image's files goes in
+  `test/build.yaml` (goss, at every build, CI included); what needs the
+  booted node in `test/*.sh`. A Containerfile `grep` only guards the
+  `sed` before it.
 - **Renovate** proposes `BASE_VERSION`, `KUBERNETES_VERSION`, the Cilium
   of `vm.sh` and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
   automerged only for a `BASE_VERSION` of the same major, once CI is
@@ -70,7 +75,8 @@ each choice: [REFERENCES.md](REFERENCES.md).
   (`workbench.yaml`, `workbench.sh`).
 - `versions.sh`, `check-reports.sh`, `disk-images.sh`: the tag, the scan
   gate and the disk images, shared by `build.sh` and CI.
-- `vm.sh`, `test.sh`, `test/`, `test-greenboot.sh`: a
+- `test/build.yaml`: the goss checks of the build.
+- `vm.sh`, `test.sh`, `test/*.sh`, `test-greenboot.sh`: a
   test VM in the workbench (an NVMe disk), and the checks run on it.
 
 ## Build check
@@ -81,7 +87,7 @@ each choice: [REFERENCES.md](REFERENCES.md).
 export BUILD_KUBE_CONTEXT=<context>
 bootc/fedora-coreos/build.sh qemu,openstack,metal
 bootc/fedora-coreos/vm.sh up
-bootc/fedora-coreos/test.sh image     # packages, config, units, sshd, sysctls, OpenSCAP, grype
+bootc/fedora-coreos/test.sh image     # kernel, users, live sshd, units' state, sysctls, OpenSCAP, grype
 bootc/fedora-coreos/vm.sh cluster     # kubeadm init + Cilium
 bootc/fedora-coreos/test.sh cluster   # node Ready, pod runs scripts from emptyDir and configMap
 bootc/fedora-coreos/test.sh wx        # noexec everywhere but the exceptions

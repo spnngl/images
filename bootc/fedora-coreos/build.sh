@@ -11,6 +11,7 @@
 # Output: output/fedora-coreos/fedora-coreos-<platform>.x86_64.{qcow2,raw}
 #         output/fedora-coreos/reports/openscap/{results.xml,report.html}
 #         output/fedora-coreos/reports/grype/{grype.json,grype.prom}
+#         output/fedora-coreos/reports/goss/build.tap
 #
 # Why this way, and why on a cluster: bootc/fedora-coreos/REFERENCES.md.
 set -euo pipefail

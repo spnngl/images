@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# Summarise the scan reports of the `reports` target, and fail on a failed
-# OpenSCAP rule or a fixable Critical vulnerability. Run by build.sh and
-# build-bootc.yml.
+# Summarise the reports of the `reports` target, and fail on a failed
+# OpenSCAP rule, a fixable Critical vulnerability or a failed goss check.
+# Run by build.sh and build-bootc.yml.
 #
 # Usage: bootc/fedora-coreos/check-reports.sh <dir>
 #   dir  the `reports` target's output (openscap/results.xml,
-#        grype/grype.prom), absolute or from the repository root
+#        grype/grype.prom, goss/build.tap), absolute or from the
+#        repository root
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
@@ -19,7 +20,9 @@ reports="${1:-}"
 [[ -n ${reports} ]] || die "usage: $0 <dir>, the reports target's output"
 results="${reports}/openscap/results.xml"
 prom="${reports}/grype/grype.prom"
-[[ -f ${results} && -f ${prom} ]] || die "no ${results} or ${prom}: build the reports target first"
+tap="${reports}/goss/build.tap"
+[[ -f ${results} && -f ${prom} && -f ${tap} ]] ||
+    die "no ${results}, ${prom} or ${tap}: build the reports target first"
 
 failed=""
 # Rules out of the profile are `notselected`.
@@ -34,5 +37,14 @@ awk -F '"' '/^grype_vulnerability\{/ { n[$4]++ }
     END { printf "grype, fixable:"; for (s in n) printf " %d %s", n[s], s; print "" }' "${prom}"
 if grep -q '^grype_vulnerability{.*severity="Critical"' "${prom}"; then
     failed+=" Fixable Critical vulnerabilities: ${prom}."
+fi
+# TAP: a plan line `1..<count>`, then `ok` or `not ok` per check. goss
+# writes no plan when it can't read the suite.
+awk '/^ok / { ok++ } /^not ok / { nok++ } END { printf "goss: %d ok, %d not ok\n", ok, nok }' "${tap}"
+grep '^not ok ' "${tap}" || true
+if ! grep -qE '^1\.\.[1-9]' "${tap}"; then
+    failed+=" goss ran no check: ${tap}."
+elif grep -q '^not ok ' "${tap}"; then
+    failed+=" goss checks failed: ${tap}."
 fi
 [[ -z ${failed} ]] || die "${failed# }"
