@@ -51,7 +51,7 @@ check "rootless sudoers" bash -c '
     [[ $(sudo stat -c %a /etc/sudoers.d/99-rootless) == 440 ]] &&
     sudo visudo -cf /etc/sudoers.d/99-rootless'
 check "rootless home" bash -c '[[ $(stat -c %U:%a /var/home/rootless) == rootless:700 ]]'
-check "rootless keys" bash -c '[[ $(grep -c ^ssh-ed25519 /usr/lib/ssh/authorized_keys/rootless) == 8 ]]'
+check "rootless keys" bash -c '[[ $(grep -c ^ssh-ed25519 /usr/lib/ssh/authorized_keys/rootless) == 2 ]]'
 # The initramfs no longer creates FCOS' core user (Containerfile, dracut).
 check "no user core" bash -c '! getent passwd core && test ! -e /var/home/core'
 check "SSH host keys are root:root 0600" bash -c '
@@ -84,6 +84,9 @@ check "sshd ignores keys in /etc and ~/.ssh" bash -c '
     ssh -i "${t}/key" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
         -o LogLevel=ERROR rootless@127.0.0.1 true && rc=0 || rc=$?
     sudo rm -f /etc/ssh/authorized_keys/rootless; rm -rf ~/.ssh/authorized_keys.d/test ~/.ssh/authorized_keys "${t}"
+    # The directories install -D made, or the /etc drift scan reports them.
+    sudo rmdir --ignore-fail-on-non-empty /etc/ssh/authorized_keys
+    rmdir --ignore-fail-on-non-empty ~/.ssh/authorized_keys.d ~/.ssh
     [[ ${rc} == 255 ]]'
 
 # containerd (goss: containerd-merged-config, cri-base-json-*, pause-*).
