@@ -1,0 +1,101 @@
+# The node in a cluster (vm.sh cluster): Ready, a pod runs executables
+# from pod volumes (emptyDir and configMap live under /var/lib/kubelet,
+# W^X's exception), etcd's units act on the member, networkd leaves
+# Cilium's devices and routes. test.sh runs it as root with the admin
+# kubeconfig, one check at a time.
+
+command:
+  node is Ready:
+    exec: kubectl wait --for=condition=Ready node --all --timeout=60s
+    exit-status: 0
+    timeout: 90000
+  pod runs scripts from an emptyDir and a configMap:
+    exec: |
+      kubectl delete pod,configmap exec-test --ignore-not-found >/dev/null
+      kubectl apply -f - >/dev/null <<'YAML' || exit 1
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: exec-test
+      data:
+        run.sh: |
+          #!/bin/sh
+          echo configmap-ok
+      ---
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: exec-test
+      spec:
+        restartPolicy: Never
+        containers:
+          - name: test
+            image: docker.io/library/busybox:1.37
+            command:
+              - sh
+              - -c
+              - |
+                set -eu
+                printf '#!/bin/sh\necho emptydir-ok\n' > /scratch/run.sh
+                chmod +x /scratch/run.sh
+                /scratch/run.sh
+                /config/run.sh
+            volumeMounts:
+              - { name: scratch, mountPath: /scratch }
+              - { name: config, mountPath: /config }
+        volumes:
+          - name: scratch
+            emptyDir: {}
+          - name: config
+            configMap:
+              name: exec-test
+              defaultMode: 0755
+      YAML
+      for _ in $(seq 120); do
+          phase=$(kubectl get pod exec-test -o jsonpath='{.status.phase}')
+          [ "${phase}" = Succeeded ] || [ "${phase}" = Failed ] && break
+          sleep 2
+      done
+      echo "phase ${phase}"
+      kubectl logs exec-test 2>&1
+      kubectl delete pod,configmap exec-test >/dev/null
+    exit-status: 0
+    stdout: [/^phase Succeeded$/, /^emptydir-ok$/, /^configmap-ok$/]
+    timeout: 300000
+  # A control plane now: kubeadm wrote the etcd manifest.
+  etcd traffic gets the first band:
+    exec: |
+      systemctl is-active --quiet etcd-network-tuning.service || exit 1
+      for d in /sys/class/net/*/device; do
+          n=$(basename "$(dirname "${d}")")
+          tc qdisc show dev "${n}" | grep -q '^qdisc prio 1: root' || { echo "${n}: no prio"; exit 1; }
+          tc filter show dev "${n}" | grep -q 'match 094c0000/ffff0000' || { echo "${n}: no 2380 filter"; exit 1; }
+      done
+    exit-status: 0
+  # A new cluster has less than 100 MB to free: skipped_small, past the
+  # health check and the status read.
+  etcd-defrag runs on the member:
+    exec: systemctl start etcd-defrag.service && cat /var/lib/etcd-defrag/etcd-defrag.prom
+    exit-status: 0
+    stdout: ['/^etcd_defrag_result\{result="(defragmented|skipped_small)"\} 1$/']
+    timeout: 120000
+  # Cilium's devices, netkit or veth.
+  networkd leaves Cilium's devices alone:
+    exec: |
+      links=$(networkctl list --no-legend | awk '$2 ~ /^(lxc|cilium_|veth)/ {print $2, $5}')
+      [ -n "${links}" ] || { echo "no Cilium device"; exit 1; }
+      ! grep -v ' unmanaged$' <<<"${links}"
+    exit-status: 0
+  # ManageForeign*=no: a networkd restart keeps Cilium's routes.
+  Cilium's routes survive a networkd restart:
+    exec: |
+      before=$(ip route show table all | grep -E 'cilium_|lxc' | sort) && [ -n "${before}" ] || exit 1
+      systemctl restart systemd-networkd && sleep 5
+      after=$(ip route show table all | grep -E 'cilium_|lxc' | sort)
+      [ "${before}" = "${after}" ] || { echo "${before}"; echo "---"; echo "${after}"; exit 1; }
+    exit-status: 0
+    timeout: 60000
+  no failed unit:
+    exec: systemctl --failed --no-legend
+    exit-status: 0
+    stdout: {have-len: 0}

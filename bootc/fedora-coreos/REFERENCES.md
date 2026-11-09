@@ -514,8 +514,8 @@ Read each at the version this repository pins.
   booting (packages, files, unit links and drop-ins, `sshd -T`, the
   merged containerd config). CI runs it on every build, through
   `--target reports`; `check-reports.sh` fails on a `not ok`, or on a
-  report with no check (goss couldn't read the suite). `test/image.sh`
-  keeps what needs the booted node.
+  report with no check (goss couldn't read the suite). `test.sh` runs
+  what needs the booted node.
 - **goss from Fedora's package** (`goss-bin` stage, `dnf install`): no
   pin to update, it follows `BASE_VERSION` like cri-tools ("Versions not
   pinned"), and the image's glibc runs it (it is dynamically linked). The
@@ -530,6 +530,18 @@ Read each at the version this repository pins.
   as its `/etc` link to `/dev/null`, a condition or slice as its line in
   the unit or drop-in. `systemctl show` needs a running systemd.
 - **VM tests by hand:** they need KVM and a cluster's workbench.
+- **VM tests as goss suites** (`test.sh node|wx|cluster`), like the
+  build's: `test/<suite>.yaml` includes every layer's `<suite>.yaml`
+  (`system/`, `vm/`, `metal/`, `kube/`), so a check lives in the layer
+  that ships what it checks. goss is the workbench's (Fedora's package,
+  same release as the image), copied into the VM with the suite: the
+  image ships no test tool. One check at a time (`--max-concurrent 1`):
+  some change state (links, test keys), then restore it. A state goss's
+  resources can't read (`masked`, a condition skip, a live `sshd`) is a
+  `command`.
+- **The test VM's sshd drop-in is `0600`** (`vm.sh`):
+  OpenSCAP's `file_permissions_sshd_drop_in_config` fails on `0644`, and
+  `test.sh node` fails on any failed rule.
 - **Renovate** (`renovate.json5`): `BASE_VERSION` through
   the dockerfile manager; `KUBERNETES_VERSION` (GitHub releases of
   `kubernetes/kubernetes`, one PR per patch and per minor release: kubeadm
@@ -608,3 +620,7 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
   Cilium installs `cilium-cni` there and containerd runs it.
 - **No exception for `/var/lib/containerd`:** the cluster pod test passes
   without it (container root filesystems are overlay mounts of their own).
+- **The tests' goss runs from a tmpfs of its own** (`/run/goss`, exec,
+  mounted and unmounted by `test.sh`): `noexec` refuses `execve` and the
+  exec `mmap` of its libraries' loader. A temporary mount leaves no
+  exception on the node.

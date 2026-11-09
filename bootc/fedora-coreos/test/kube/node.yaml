@@ -1,0 +1,106 @@
+# The booted node, kube layer: containerd, the CNI and node-local-dns
+# links, the Kubernetes sysctls and modules. test.sh runs it as root, one
+# check at a time: some commands change state, then restore it.
+
+command:
+  # The legacy x_tables tables can't load: iptables commands use nf_tables.
+  module ip_tables can't load:
+    exec: "! modprobe ip_tables 2>/dev/null && ! lsmod | grep -q ^ip_tables"
+    exit-status: 0
+  module ip6_tables can't load:
+    exec: "! modprobe ip6_tables 2>/dev/null && ! lsmod | grep -q ^ip6_tables"
+    exit-status: 0
+  module arp_tables can't load:
+    exec: "! modprobe arp_tables 2>/dev/null && ! lsmod | grep -q ^arp_tables"
+    exit-status: 0
+  module ebtables can't load:
+    exec: "! modprobe ebtables 2>/dev/null && ! lsmod | grep -q ^ebtables"
+    exit-status: 0
+  # The first request of the pull goes to the first mirror.
+  docker.io pulls try the mirrors first:
+    exec: |
+      ctr image rm docker.io/library/busybox:1.37 >/dev/null 2>&1
+      ctr image pull --http-dump --hosts-dir /etc/containerd/certs.d docker.io/library/busybox:1.37 2>&1 |
+          grep -a -m1 'Host: '
+    exit-status: 0
+    stdout: [mirror.gcr.io]
+    timeout: 120000
+  crictl reaches containerd:
+    exec: crictl info
+    exit-status: 0
+  etcd-network-tuning waits for the etcd manifest:
+    exec: |
+      [ "$(systemctl show -P ActiveState etcd-network-tuning.service)" = inactive ] ||
+          test -e /etc/kubernetes/manifests/etcd.yaml
+    exit-status: 0
+  # Cilium's links: netkit/veth pods (lxc*), cilium_*, and any veth.
+  networkd leaves lxctest0 alone:
+    exec: |
+      ip link add lxctest0 type dummy || exit 1
+      ip link set lxctest0 up; sleep 2
+      state=$(networkctl list --no-legend lxctest0 | awk '{print $5}')
+      ip link del lxctest0
+      echo "${state}"
+    exit-status: 0
+    stdout: [/^unmanaged$/]
+  networkd leaves cilium_test alone:
+    exec: |
+      ip link add cilium_test type dummy || exit 1
+      ip link set cilium_test up; sleep 2
+      state=$(networkctl list --no-legend cilium_test | awk '{print $5}')
+      ip link del cilium_test
+      echo "${state}"
+    exit-status: 0
+    stdout: [/^unmanaged$/]
+  networkd leaves vethtest0 alone:
+    exec: |
+      ip link add vethtest0 type veth peer name vethtest1 || exit 1
+      ip link set vethtest0 up; sleep 2
+      state=$(networkctl list --no-legend vethtest0 | awk '{print $5}')
+      ip link del vethtest0
+      echo "${state}"
+    exit-status: 0
+    stdout: [/^unmanaged$/]
+  # node-local-dns' dummy link, as the pod creates it: networkd keeps the
+  # pod's address and points resolved at it for cluster names. On a cluster
+  # node, the pod's own link is checked, and left in place: deleting it
+  # would cut the node's cluster DNS.
+  "nodelocaldns: DNS for svc.cluster.local, address kept":
+    exec: |
+      made=false
+      if ! ip link show nodelocaldns >/dev/null 2>&1; then
+          ip link add nodelocaldns type dummy && ip addr add 169.254.25.10/32 dev nodelocaldns &&
+              ip link set nodelocaldns up && made=true || exit 1
+          sleep 3
+      fi
+      resolvectl status nodelocaldns; ip -4 -o addr show dev nodelocaldns
+      if ${made}; then ip link del nodelocaldns; fi
+    exit-status: 0
+    stdout: ["DNS Servers: 169.254.25.10", "DNS Domain: ~svc.cluster.local", "inet 169.254.25.10/32"]
+  # usr/lib/modules-load.d/10-kubernetes.conf.
+  modules overlay and br_netfilter are loaded:
+    exec: lsmod
+    exit-status: 0
+    stdout: [/^overlay /, /^br_netfilter /]
+
+file:
+  /run/containerd/debug.sock:
+    exists: true
+    filetype: socket
+
+kernel-param:
+  fs.aio-max-nr: {value: "524288"}
+  fs.inotify.max_queued_events: {value: "1048576"}
+  fs.inotify.max_user_instances: {value: "1048576"}
+  fs.inotify.max_user_watches: {value: "1048576"}
+  net.core.bpf_jit_limit: {value: "1000000000"}
+  net.ipv4.neigh.default.gc_thresh1: {value: "1024"}
+  net.ipv4.neigh.default.gc_thresh2: {value: "28672"}
+  net.ipv4.neigh.default.gc_thresh3: {value: "32768"}
+  kernel.softlockup_panic: {value: "0"}
+  kernel.panic: {value: "10"}
+  net.bridge.bridge-nf-call-iptables: {value: "1"}
+  net.bridge.bridge-nf-call-ip6tables: {value: "1"}
+  net.ipv4.ip_forward: {value: "1"}
+  vm.overcommit_memory: {value: "1"}
+  kernel.panic_on_oops: {value: "1"}

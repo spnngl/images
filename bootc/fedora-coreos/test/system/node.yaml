@@ -1,0 +1,152 @@
+# The booted node, system layer: kernel, users, sshd, the node scans,
+# networkd, chrony, CIS sysctls. test.sh runs it as root, one check at a
+# time: some commands change state, then restore it.
+
+command:
+  # usr/lib/bootc/kargs.d reached the disk (bootc, when osbuild deploys),
+  # once.
+  kernel arguments of kargs.d, once each:
+    exec: |
+      for a in $(bootc container inspect --json | jq -r '.kargs[]'); do
+          [ "$(tr ' ' '\n' </proc/cmdline | grep -cxF -- "${a}")" = 1 ] || { echo "${a}"; exit 1; }
+      done
+    exit-status: 0
+  # modprobe.d/hardening.conf, a CIS level 2 module.
+  module squashfs can't load:
+    exec: "! modprobe squashfs 2>/dev/null && ! lsmod | grep -q ^squashfs"
+    exit-status: 0
+  # etc/audit/rules.d: loaded and locked (-e 2), with the image's setuid
+  # programs, its backlog (kargs.d/20-audit.toml, 10-base.rules).
+  audit rules are loaded and locked:
+    exec: auditctl -s; auditctl -l | grep -c 'path=/usr/bin/sudo .* -F key=privileged'
+    exit-status: 0
+    stdout: [/^enabled 2$/, /^backlog_limit 8192$/, "/^[1-9][0-9]*$/"]
+  # -c loads past a rule the kernel rejects, and -e 2 keeps it out until a
+  # reboot: every rule of augenrules' file must be in the kernel.
+  "audit rules: the kernel has all of them":
+    exec: '[ "$(grep -cE "^-[aw] " /etc/audit/audit.rules)" = "$(auditctl -l | grep -cE "^-[aw] ")" ]'
+    exit-status: 0
+  rootless password is locked:
+    exec: passwd -S rootless
+    exit-status: 0
+    stdout: [/^rootless L /]
+  SSH host keys are root:root 0600:
+    exec: |
+      for k in /etc/ssh/ssh_host_*_key; do
+          [ "$(stat -c %U:%G:%a "${k}")" = root:root:600 ] || { echo "${k}"; exit 1; }
+      done
+    exit-status: 0
+  # The resolved config is checked at build time; here, what the running
+  # sshd does. As rootless, as a user would: sshd also refuses keys in a
+  # home it doesn't own (StrictModes), which would hide a config change.
+  sshd ignores keys in /etc and ~/.ssh:
+    exec: |
+      runuser -l rootless -c '
+          t=$(mktemp -d) && ssh-keygen -q -t ed25519 -N "" -f "${t}/key" || exit 1
+          sudo install -D -m 0644 "${t}/key.pub" /etc/ssh/authorized_keys/rootless
+          install -D -m 0600 "${t}/key.pub" ~/.ssh/authorized_keys.d/test
+          install -D -m 0600 "${t}/key.pub" ~/.ssh/authorized_keys
+          ssh -i "${t}/key" -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -o LogLevel=ERROR rootless@127.0.0.1 true && rc=0 || rc=$?
+          sudo rm -f /etc/ssh/authorized_keys/rootless
+          rm -rf ~/.ssh/authorized_keys.d/test ~/.ssh/authorized_keys "${t}"
+          # The directories install -D made, or the /etc drift scan reports them.
+          sudo rmdir --ignore-fail-on-non-empty /etc/ssh/authorized_keys
+          rmdir --ignore-fail-on-non-empty ~/.ssh/authorized_keys.d ~/.ssh
+          [ "${rc}" = 255 ]'
+    exit-status: 0
+    timeout: 30000
+  no failed unit:
+    exec: systemctl --failed --no-legend
+    exit-status: 0
+    stdout: {have-len: 0}
+  # Profile `node`: what the build's scan can't check (systemd services)
+  # too.
+  openscap.service scans the node, no rule fails:
+    exec: |
+      systemctl start openscap.service || exit 1
+      ! grep -E '<result>(fail|error)</result>' /var/lib/openscap/results.xml &&
+          grep -q '^openscap_rule{rule=' /var/lib/openscap/openscap.prom &&
+          grep -qx 'audit_rules_rejected 0' /var/lib/openscap/openscap.prom
+    exit-status: 0
+    timeout: 900000
+  etc-diff.service lists /etc's drift:
+    exec: |
+      systemctl start etc-diff.service &&
+          grep -q '^etc_diff_file{path="/etc/machine-id",change="A",expected="true"' /var/lib/etc-diff/etc-diff.prom
+    exit-status: 0
+    timeout: 120000
+  grype.service scans the node:
+    exec: systemctl start grype.service && grep -q '^grype_last_scan_timestamp_seconds ' /var/lib/grype/grype.prom
+    exit-status: 0
+    timeout: 900000
+  no swap:
+    exec: swapon --noheadings
+    exit-status: 0
+    stdout: {have-len: 0}
+  # systemd-networkd, not NetworkManager (capi-image-builder's systemd.yml).
+  # `masked`, which goss' service resource can't tell from disabled.
+  NetworkManager units are masked:
+    exec: |
+      for u in NetworkManager NetworkManager-wait-online NetworkManager-dispatcher; do
+          [ "$(systemctl is-enabled "${u}")" = masked ] || { echo "${u}"; exit 1; }
+      done
+    exit-status: 0
+  # The live sources, not the file: on qemu, chronyd runs with FCOS'
+  # platform config, which must include ours too.
+  chrony uses our sources:
+    exec: chronyc -N sources
+    exit-status: 0
+    stdout: [time.cloudflare.com]
+  SELinux is permissive:
+    exec: getenforce
+    exit-status: 0
+    stdout: [/^Permissive$/]
+  no link sends ICMP redirects:
+    exec: sysctl -a 2>/dev/null | grep -E '^net\.ipv4\.conf\.[^.]+\.send_redirects = 1'
+    exit-status: 1
+
+file:
+  /sys/kernel/security/lockdown:
+    exists: true
+    contents: ["[integrity]"]
+  /var/home/rootless:
+    exists: true
+    filetype: directory
+    owner: rootless
+    mode: "0700"
+  # The initramfs no longer creates FCOS' core user (Containerfile, dracut).
+  /var/home/core: {exists: false}
+
+user:
+  # Made at boot by sysusers.d.
+  rootless:
+    exists: true
+    uid: 1500
+    gid: 1500
+    home: /var/home/rootless
+    shell: /bin/bash
+    groups: [wheel]
+  core: {exists: false}
+
+service:
+  auditd: {running: true}
+  chronyd: {running: true}
+  systemd-networkd: {running: true}
+  conntrackd: {running: false}
+  NetworkManager: {running: false}
+  NetworkManager-wait-online: {running: false}
+  NetworkManager-dispatcher: {running: false}
+
+kernel-param:
+  net.ipv6.conf.all.disable_ipv6: {value: "1"}
+  net.ipv6.conf.default.disable_ipv6: {value: "1"}
+  net.core.default_qdisc: {value: fq}
+  net.ipv4.tcp_congestion_control: {value: bbr}
+  net.ipv4.tcp_slow_start_after_idle: {value: "0"}
+  net.ipv4.tcp_keepalive_time: {value: "60"}
+  vm.max_map_count: {value: "1048576"}
+  kernel.yama.ptrace_scope: {value: "1"}
+  kernel.dmesg_restrict: {value: "1"}
+  net.ipv4.conf.all.accept_redirects: {value: "0"}
+  net.ipv4.conf.all.log_martians: {value: "1"}

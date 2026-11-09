@@ -1,0 +1,3 @@
+# test.sh node: every layer's node.yaml.
+gossfile:
+  "*/node.yaml": {}
