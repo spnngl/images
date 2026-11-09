@@ -84,9 +84,10 @@ Read each at the version this repository pins.
   `bootc-fetch-apply-updates.timer` and `rpm-ostreed-automatic.timer` stay
   disabled. No `dnf autoremove`: it would take containerd with it. No weak
   dependencies, as FCOS itself is built.
-- **`rpm-ostree-countme.timer` masked:** it reports each node to Fedora's
-  count of systems. Masked, not disabled: `preset-all` at first boot would
-  enable it again, and presets leave masked units alone.
+- **`rpm-ostree-countme.timer` kept, as the base enables it:** each node
+  counts in Fedora's count of systems, which sends no identifier (a
+  `countme` bucket in the repository metadata requests, at most weekly:
+  https://fedoraproject.org/wiki/Changes/DNF_Better_Counting).
 - **No host firewall, nftables only:** Cilium filters (host policies), so
   `iptables-services` is removed and FCOS has neither firewalld nor ufw.
   `iptables` itself stays, a dependency of kubelet, bootc and podman: it is

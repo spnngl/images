@@ -57,9 +57,10 @@ file:
   /usr/lib/systemd/system/sysinit.target.wants/wx-remount.service: {exists: true, filetype: symlink, linked-to: ../wx-remount.service}
   /usr/lib/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service: {exists: true, filetype: symlink, linked-to: ../systemd-networkd-wait-online.service}
   /usr/lib/systemd/system/ostree-finalize-staged.service.requires/greenboot-set-rollback-trigger.service: {exists: true, filetype: symlink, linked-to: ../greenboot-set-rollback-trigger.service}
+  # Fedora's count of systems, enabled by the base (REFERENCES.md).
+  /etc/systemd/system/timers.target.wants/rpm-ostree-countme.timer: {exists: true, filetype: symlink, linked-to: /usr/lib/systemd/system/rpm-ostree-countme.timer}
   # Masked: FCOS's `systemctl preset-all` at first boot would enable them
   # again if they were only disabled.
-  /etc/systemd/system/rpm-ostree-countme.timer: {exists: true, filetype: symlink, linked-to: /dev/null}
   /etc/systemd/system/systemd-homed.service: {exists: true, filetype: symlink, linked-to: /dev/null}
   /etc/systemd/system/systemd-homed-activate.service: {exists: true, filetype: symlink, linked-to: /dev/null}
   /usr/lib/systemd/system/zincati.service: {exists: false}
