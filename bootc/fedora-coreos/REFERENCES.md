@@ -392,6 +392,11 @@ Read each at the version this repository pins.
   `-e 2` last: rules change only with a reboot, so a new image.
 - **`audit=1 audit_backlog_limit=8192`** (`kargs.d/20-audit.toml`): the
   kernel audits from boot, and holds events until auditd starts.
+  `grub2_audit_argument` and `grub2_audit_backlog_limit_argument` are
+  off: besides the boot entries, they want the argument in
+  `/etc/default/grub`, which bootc doesn't read; an unread copy there
+  would only satisfy the check. The scan's `audit_enabled` and
+  `audit_backlog_limit` metrics report the kernel's values.
 - **auditd suspends and rotates** (tailoring's values): a full disk or a
   write error stops logging instead of halting the node or dropping it to
   single-user mode, and logs rotate instead of filling `/var`. CIS level
