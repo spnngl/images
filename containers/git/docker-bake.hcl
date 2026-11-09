@@ -16,7 +16,7 @@ target "git" {
     ]
     openssh = [
       # renovate: datasource=github-tags depName=openssh/openssh-portable versioning=regex:^V_(?<major>\d+)_(?<minor>\d+)_P(?<patch>\d+)$ depType=automerge
-      { version = "V_10_6_P1", checksum = "a8c72b842423f0774f542d3c2197247c3dd28d74" },
+      { version = "V_10_6_P2", checksum = "d449e662b6b8b8cb20e852d8084c269af1c5e8f1" },
     ]
   }
   args = {
