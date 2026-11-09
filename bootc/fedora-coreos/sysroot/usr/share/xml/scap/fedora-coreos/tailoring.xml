@@ -10,7 +10,7 @@
 -->
 <Tailoring xmlns="http://checklists.nist.gov/xccdf/1.2" id="xccdf_local_tailoring_fedora-coreos">
   <benchmark href="/usr/share/xml/scap/ssg/content/ssg-fedora-ds.xml"/>
-  <version time="2026-11-06T00:00:00">4</version>
+  <version time="2026-11-09T00:00:00">5</version>
 
   <Profile id="xccdf_local_profile_node" extends="xccdf_org.ssgproject.content_profile_cis">
     <title>Fedora CoreOS node</title>
@@ -120,6 +120,14 @@
          and the check fails on any `DisableForwarding no`, Match blocks included
          (90-allow-proxyjump.conf). -->
     <select idref="xccdf_org.ssgproject.content_rule_sshd_disable_forwarding" selected="false"/>
+
+    <!-- Fedora's sshd-keygen writes the host keys root:root 0600, and this rule
+         wants group ssh_keys. A root:ssh_keys key fails
+         file_permissions_sshd_private_key, which reads the group's GID from
+         /etc/group only; FCOS keeps it in /usr/lib/group
+         (https://github.com/ComplianceAsCode/content/issues/15320). Back on
+         with https://github.com/ComplianceAsCode/content/pull/15310 -->
+    <select idref="xccdf_org.ssgproject.content_rule_file_groupownership_sshd_private_key" selected="false"/>
 
     <!-- Cilium filters the host (host policies); FCOS has no firewalld. -->
     <select idref="xccdf_org.ssgproject.content_rule_package_firewalld_installed" selected="false"/>
