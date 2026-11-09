@@ -123,17 +123,13 @@ if getent group docker >/dev/null; then groupdel docker; fi
 EORUN
 
 # Our policy.json, about to replace the base's, must still be the base's
-# plus our changes (fedora/policy.jq).
+# plus our changes (policy.jq).
 # After the packages, so that editing sysroot/ keeps their layer cached.
-RUN --mount=type=bind,source=fedora/policy.jq,target=/tmp/policy.jq \
-    --mount=type=bind,source=fedora-coreos/sysroot/etc/containers/policy.json,target=/tmp/policy.json \
+RUN --mount=type=bind,source=policy.jq,target=/tmp/policy.jq \
+    --mount=type=bind,source=sysroot/etc/containers/policy.json,target=/tmp/policy.json \
     jq -e --slurpfile ours /tmp/policy.json -f /tmp/policy.jq /etc/containers/policy.json
 
-COPY --link ./fedora-coreos/sysroot/ /
-# The signature files every bootc image shares: the key policy.json names,
-# and where the signatures are (registries.d).
-COPY --link ./fedora/sysroot/common/usr/share/pki/containers/ /usr/share/pki/containers/
-COPY --link ./fedora/sysroot/common/etc/containers/registries.d/ /etc/containers/registries.d/
+COPY --link ./sysroot/ /
 
 RUN <<EORUN
 # COPY keeps a file's mode, and git only stores the executable bit. It also

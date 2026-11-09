@@ -12,9 +12,10 @@ each choice: [REFERENCES.md](REFERENCES.md).
   it is the default target. Tag `<major>-v<minor>` of `BASE_VERSION` and
   `KUBERNETES_VERSION`, the Containerfile's `ARG`s, written by
   `versions.sh` for `build.sh` and CI: a patch release keeps the tag.
-- **Own `sysroot/`**; from `bootc/fedora/sysroot/common/` only the
-  signature files (public key, `registries.d`), copied by the
-  Containerfile (no firewalld, sshd on 22, systemd-networkd). Files that Ignition or the user
+- **Own build context, this folder** (`.dockerignore`), and own
+  `sysroot/` (no firewalld, sshd on 22, systemd-networkd). The signature
+  files (public key, `registries.d`) and `policy.jq` are copies of
+  `bootc/fedora/`'s: a key rotation updates both. Files that Ignition or the user
   may own stay in `/etc`; the rest is in `/usr`. SSH keys are only in
   `/usr/lib/ssh/authorized_keys/`: sshd reads no other file.
 - **No host firewall, no iptables rules:** Cilium filters; the legacy

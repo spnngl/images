@@ -5,6 +5,7 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- `sysroot/common/` and `policy.jq` are shared by every bootc image: a
-  change here changes almalinux and centos too, and fedora-coreos for
-  `policy.jq` and the signature files (public key, `registries.d`).
+- `sysroot/common/` and `policy.jq` are shared with almalinux and centos:
+  a change here changes them too. fedora-coreos has its own copies of
+  `policy.jq` and the signature files (public key, `registries.d`): a
+  key rotation updates both (`bootc/REFERENCES.md`, "Signing").
