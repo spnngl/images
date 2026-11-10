@@ -754,8 +754,24 @@ the workloads' images, never on the host.
   NVIDIA's `fedora44` repository only holds branches released during Fedora 44's life
   (610 to 620; the fleet's R580 is in `fedora42` and `rhel10`); a new
   branch changes the kernel module and the CUDA the workloads run
-  against: a person moves to it.
-
+  against: a person moves to it. The repository's URL holds the base's
+  Fedora major, which the Containerfile derives from `BASE_VERSION`;
+  `renovate.json5`'s URL for the driver is the one literal, a person
+  changes it with a new base major.
+- **The modules are built from NVIDIA's DKMS package in a stage of
+  their own, `nvidia-kmod`, and installed as an RPM:** the compiler and
+  the kernel headers stay out of the image (a node has no use for
+  them, and bootc nodes have no `dkms` to rebuild at boot). The stage
+  takes `kernel-devel` of the base's kernel from Fedora's `updates`
+  or `updates-archive` (the base's repositories hold no `kernel-devel`),
+  builds with `dkms build`, and packs the modules in a stub RPM that
+  provides `nvidia-kmod = 3:<NVIDIA_VERSION>`, which NVIDIA's
+  `nvidia-kmod-common` requires. Its RUN fails unless each of the five
+  modules (`nvidia`, `nvidia-drm`, `nvidia-modeset`, `nvidia-peermem`,
+  `nvidia-uvm`) exists for the base's kernel (`vermagic`) and is not
+  the proprietary one (licence `NVIDIA`; the open ones say
+  `Dual MIT/GPL`, peermem `Dual BSD/GPL`). dkms signs them with a key
+  of its own, which nothing trusts (see below).
 - **A stage of its own, `nvidia`, between `kube` and `image`; the
   build arg `IMAGE_BASE` picks what `image` builds on** (`kube` by
   default): `fedora-coreos` never builds `nvidia`, the GPU image's

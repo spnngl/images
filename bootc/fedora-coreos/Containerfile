@@ -267,6 +267,87 @@ EOF
 rm -rf /tmp/*
 EORUN
 
+# NVIDIA's open kernel modules, built for the base's kernel, as an RPM: the
+# compiler and kernel headers stay in this stage, out of the GPU image
+# (REFERENCES.md, "GPU image"). FROM system: a Kubernetes release keeps
+# it cached.
+FROM system AS nvidia-kmod
+
+# Inherited; repeated for hadolint.
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+ARG BASE_VERSION
+ARG NVIDIA_VERSION
+
+# A throwaway stage: no dnf clean, only /rpms is used.
+# hadolint ignore=DL3040
+RUN <<EORUN
+kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
+
+# NVIDIA's repository for the base's Fedora major (the base version's first
+# number; renovate.json5's URL for the driver's version follows it by hand).
+# Its DKMS package is the driver's source, which dkms builds below.
+# https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/fedora.html
+repo="https://developer.download.nvidia.com/compute/cuda/repos/fedora${BASE_VERSION%%.*}/x86_64"
+cat > /etc/yum.repos.d/cuda.repo <<EOF
+[cuda]
+name=NVIDIA CUDA
+baseurl=${repo}
+enabled=1
+gpgcheck=1
+gpgkey=${repo}/73CD9B30.pub
+EOF
+
+# kernel-devel of the base's kernel: Fedora's updates, or their archive when
+# the kernel is no longer the newest. The base has no kernel-devel.
+dnf -yq install --setopt=install_weak_deps=False \
+    "kernel-devel-${kver}" dkms make rpm-build "kmod-nvidia-open-dkms-3:${NVIDIA_VERSION}"
+
+dkms build -m nvidia -v "${NVIDIA_VERSION}" -k "${kver}"
+
+# The modules, where depmod finds them, as an RPM for the image: it provides
+# nvidia-kmod, which the driver's nvidia-kmod-common requires, at the same
+# version (epoch 3, as NVIDIA's packages). No debuginfo, no strip: the
+# modules go as built.
+stage="/tmp/stage/usr/lib/modules/${kver}/extra/nvidia"
+mkdir -p "${stage}" /rpms
+find "/var/lib/dkms/nvidia/${NVIDIA_VERSION}/${kver}" -name '*.ko*' -exec cp -t "${stage}" {} +
+
+# What the image needs: each module there, built for this kernel, none of the
+# proprietary ones (their licence says "NVIDIA"; the open ones' differ:
+# Dual MIT/GPL, Dual BSD/GPL for peermem). The licences go in the build log.
+for m in nvidia nvidia-drm nvidia-modeset nvidia-peermem nvidia-uvm; do
+    f="$(find "${stage}" -name "${m}.ko*")"
+    test -n "${f}"
+    modinfo -F vermagic "${f}" | grep -q "^${kver} "
+    license="$(modinfo -F license "${f}")"
+    echo "${m}: ${license}"
+    test "${license}" != NVIDIA
+done
+
+cat > /tmp/nvidia-kmod-open.spec <<EOF
+%global debug_package %{nil}
+%global __os_install_post %{nil}
+%global _build_id_links none
+Name: nvidia-kmod-open
+Epoch: 3
+Version: ${NVIDIA_VERSION}
+Release: 1
+Summary: NVIDIA open kernel modules, built for the image's kernel
+License: GPL-2.0-only OR MIT
+Provides: nvidia-kmod = 3:${NVIDIA_VERSION}
+Requires: kernel-core-uname-r = ${kver}
+%description
+The modules dkms built from kmod-nvidia-open-dkms for ${kver}.
+%install
+cp -a /tmp/stage/. %{buildroot}/
+%files
+/usr/lib/modules/${kver}/extra/nvidia
+EOF
+rpmbuild -bb --define '_topdir /tmp/rpmbuild' /tmp/nvidia-kmod-open.spec
+cp /tmp/rpmbuild/RPMS/*/nvidia-kmod-open-*.rpm /rpms/
+EORUN
+
 # The GPU image (REFERENCES.md, "GPU image"): built with
 # --build-arg IMAGE_BASE=nvidia.
 FROM kube AS nvidia
@@ -278,6 +359,18 @@ RUN <<EORUN
 # Its kernel modules are unsigned, which lockdown=integrity refuses to
 # load: the GPU image has no lockdown (REFERENCES.md, "GPU image").
 rm /usr/lib/bootc/kargs.d/10-lockdown.toml
+EORUN
+
+# The modules of the nvidia-kmod stage. A bind mount, not COPY: the RPM
+# stays out of the layers.
+RUN --mount=type=bind,from=nvidia-kmod,source=/rpms,target=/run/rpms <<EORUN
+kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
+dnf -yq install --setopt=install_weak_deps=False /run/rpms/nvidia-kmod-open-*.rpm
+depmod -a "${kver}"
+
+# /var ships empty (as the kube stage).
+dnf -yq clean all
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /var/lib/rpm-state /var/lib/systemd/migrated
 EORUN
 
 FROM ${IMAGE_BASE} AS image
