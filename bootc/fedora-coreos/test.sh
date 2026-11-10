@@ -4,11 +4,14 @@
 # replace capi-image-builder's goss suite (goss/rootless-role.yaml), minus
 # what is cloud-init, AppArmor or Ubuntu specific.
 #
-# Usage: bootc/fedora-coreos/test.sh node|wx|cluster
+# Usage: bootc/fedora-coreos/test.sh node|wx|cluster|nvidia [<user>@<host>]
 #   node     the booted node: kernel, users, sshd, services, sysctls, scans
 #   wx       W^X: noexec mounts and their exceptions
 #   cluster  once vm.sh cluster ran: the node is Ready, runs a pod that
 #            executes scripts from an emptyDir and a configMap, etcd's units
+#   nvidia   a node of the GPU image, with a GPU, from <user>@<host> over
+#            ssh: the VM's node checks that hold on a dedicated server, and
+#            the driver's (test/nvidia.yaml). Never the test VM: it has no GPU.
 # Env:    WORKBENCH, BUILD_KUBE_CONTEXT  the workbench (workbench.sh)
 set -euo pipefail
 
@@ -19,7 +22,8 @@ die() {
     exit 1
 }
 
-[[ ${1:-} =~ ^(node|wx|cluster)$ ]] || die "usage: $0 node|wx|cluster"
+[[ ${1:-} =~ ^(node|wx|cluster|nvidia)$ ]] || die "usage: $0 node|wx|cluster|nvidia [<user>@<host>]"
+[[ $1 != nvidia || -n ${2:-} ]] || die "nvidia runs on a GPU node: $0 nvidia <user>@<host>"
 
 tmp=$(mktemp -d)
 trap 'rm -rf "${tmp}"' EXIT
@@ -51,5 +55,13 @@ KUBECONFIG=/etc/kubernetes/admin.conf ./goss --gossfile "$1.yaml" validate \
     "${retry[@]}" --max-concurrent 1 --format documentation --no-color'
 
 # ustar, no macOS metadata: GNU tar on the VM reads it without warnings.
-COPYFILE_DISABLE=1 tar --format ustar -C "${tmp}" -cf - . |
-    bootc/fedora-coreos/vm.sh ssh "sudo bash -c $(printf %q "${run}") _ $1"
+# nvidia: the node is a real one, reached from here, not through the
+# workbench's qemu.
+if [[ $1 == nvidia ]]; then
+    # shellcheck disable=SC2029 # The script is quoted here, on purpose.
+    COPYFILE_DISABLE=1 tar --format ustar -C "${tmp}" -cf - . |
+        ssh "$2" "sudo bash -c $(printf %q "${run}") _ $1"
+else
+    COPYFILE_DISABLE=1 tar --format ustar -C "${tmp}" -cf - . |
+        bootc/fedora-coreos/vm.sh ssh "sudo bash -c $(printf %q "${run}") _ $1"
+fi
