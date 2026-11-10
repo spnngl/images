@@ -237,7 +237,9 @@
                 "ghcr.io/nushell/nushell",
                 "ghcr.io/project-dalec/dalec/frontend",
                 "docker.io/hadolint/hadolint",
-                "ghcr.io/renovatebot/renovate"
+                "ghcr.io/renovatebot/renovate",
+                "docker.io/rhysd/actionlint",
+                "ghcr.io/zizmorcore/zizmor"
             ],
             "matchUpdateTypes": ["minor", "patch"],
             "automerge": true

@@ -1,0 +1,9 @@
+# Rules zizmor applies beyond its defaults (AGENTS.md, Checks).
+rules:
+  unpinned-uses:
+    config:
+      policies:
+        # Our own shared workflows and actions follow main; anything else
+        # is pinned to a commit hash, Renovate updating it.
+        spnngl/*: ref-pin
+        '*': hash-pin

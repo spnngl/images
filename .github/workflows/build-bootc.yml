@@ -60,6 +60,8 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Run Hadolint
         uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
@@ -194,6 +196,8 @@ jobs:
       ARCH: ${{ matrix.platform.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # TAG, the image; ARTIFACT, the same as the push job's: <image>_<arch>.
       # "_" can't appear in a tag, so fedora_<version>_* doesn't match
@@ -358,6 +362,8 @@ jobs:
       WORKBENCH: podman
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG: the build job's ARTIFACT.
       - run: bootc/fedora-coreos/versions.sh >> "${GITHUB_ENV}"
@@ -449,6 +455,8 @@ jobs:
           echo "::error::the vm-test job didn't pass (${RESULT}): ${NAME} is not pushed"
           exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # The build job's TAG, and its ARTIFACT without the platform.
       - run: |-
@@ -548,6 +556,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          persist-credentials: false
       # No published release yet, or its tag gone: a release.
       - id: diff
         env:
@@ -583,6 +592,8 @@ jobs:
       attestations: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG.
       - run: bootc/fedora-coreos/versions.sh >> "${GITHUB_ENV}"

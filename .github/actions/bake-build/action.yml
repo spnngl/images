@@ -1,0 +1,143 @@
+# One target of Bake files, on one platform, on the runner of that platform:
+# native builds, no QEMU. Pushed by digest and untagged, for bake-push to
+# merge the platforms into one manifest list; or, without push, as an OCI
+# layout for the caller's scan or tests. Run once per target and platform
+# (.github/AGENTS.md, "Bake workflows").
+name: bake-build
+description: Build one Bake target for one platform.
+
+inputs:
+  item:
+    description: One target of bake-discover's `targets`, as JSON.
+    required: true
+  arch:
+    description: amd64 or arm64.
+    required: true
+  files:
+    description: Bake files, one per line (bake-discover's `files`).
+    required: true
+  push:
+    description: >-
+      "true" pushes the image by digest, to the first repository of the
+      target's tags, and uploads the digest as the artifact <id>_<arch>;
+      otherwise an OCI layout goes to `oci-dir`.
+    default: "false"
+  oci-dir:
+    description: Where the OCI layout goes when not pushing.
+    default: ${{ runner.temp }}/oci
+  no-cache:
+    description: >-
+      "true" skips the build cache and refreshes it: for the rebuilds that
+      fetch the packages that follow their archive (.github/REFERENCES.md).
+    default: "false"
+  github-token:
+    description: Pushes to ghcr.io (packages:write).
+    default: ${{ github.token }}
+  dockerhub-username:
+    description: Docker Hub account, for the pulls the mirrors miss.
+  dockerhub-token:
+    description: Docker Hub access token of dockerhub-username.
+
+outputs:
+  digest:
+    description: Digest of the pushed image index; empty without push.
+    value: ${{ steps.digest.outputs.digest }}
+
+runs:
+  using: composite
+  steps:
+    - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ inputs.github-token }}
+
+    # Docker Hub: the pulls the mirrors below miss are authenticated, under
+    # the account's rate limit rather than the runner IP's anonymous one.
+    - if: inputs.dockerhub-username != ''
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+      with:
+        username: ${{ inputs.dockerhub-username }}
+        password: ${{ inputs.dockerhub-token }}
+
+    # A docker-container builder: the default docker driver can't add
+    # provenance and SBOM attestations.
+    # Pulls go to mirrors, outside Docker Hub's pull rate limit
+    # (.github/REFERENCES.md): the builder's image to mirror.gcr.io
+    # (setup-buildx's default tag); BuildKit's docker.io pulls to
+    # mirror.gcr.io, then public.ecr.aws (official images only), then
+    # docker.io.
+    - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      with:
+        driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+        buildkitd-config-inline: |
+          [registry."docker.io"]
+            mirrors = ["mirror.gcr.io", "public.ecr.aws/docker"]
+
+    # Bake's `set` overrides what CI decides, the rest staying in the files:
+    # - tags= : cleared. Bake names every image output after the tags,
+    #   which would push them; bake-push tags the manifest list.
+    # - platform: the runner's.
+    # - SOURCE_DATE_EPOCH: BuildKit dates the image and clamps the layers'
+    #   file times with it; the target's own wins (empty epoch).
+    # - cache: one scope per target and platform; mode=max: the build
+    #   stages hold the work. ignore-error: fork pull requests can't write
+    #   it.
+    # - output, pushed: by digest, untagged. rewrite-timestamp: BuildKit
+    #   also clamps the layers' file times to SOURCE_DATE_EPOCH, otherwise
+    #   they keep the build's time; off for an image whose file times
+    #   matter (containers/AGENTS.md).
+    # - output, not pushed: an OCI layout; nothing else keeps the image on
+    #   the runner.
+    # Attestations, attached to the image in its index
+    # (https://docs.docker.com/build/metadata/attestations/):
+    # - provenance mode=max: also the build args and each step's details
+    #   (no secrets); version=v1, SLSA 1.x.
+    # - sbom: BuildKit scans the final image for any frontend, Dalec
+    #   included: the Debian packages (dpkg database), the Python ones
+    #   (dist-info), a Go binary's modules.
+    # allow: the entitlements the target asks for (buildkit's smoke test
+    # runs a daemon: security.insecure); setup-buildx's builder permits
+    # security.insecure and network.host by default, so a target gets
+    # nothing it doesn't name.
+    # source: the checkout, not the Git context bake-action defaults to.
+    - id: bake
+      uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+      with:
+        source: .
+        files: ${{ inputs.files }}
+        targets: ${{ fromJSON(inputs.item).id }}
+        allow: ${{ fromJSON(inputs.item).allow }}
+        no-cache: ${{ inputs.no-cache }}
+        provenance: mode=max,version=v1
+        sbom: true
+        set: |
+          ${{ fromJSON(inputs.item).id }}.tags=
+          ${{ fromJSON(inputs.item).id }}.platform=linux/${{ inputs.arch }}
+          ${{ fromJSON(inputs.item).epoch != '' && format('{0}.args.SOURCE_DATE_EPOCH={1}', fromJSON(inputs.item).id, fromJSON(inputs.item).epoch) || '' }}
+          ${{ fromJSON(inputs.item).id }}.cache-from=type=gha,scope=${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
+          ${{ fromJSON(inputs.item).id }}.cache-to=type=gha,scope=${{ fromJSON(inputs.item).id }}_${{ inputs.arch }},mode=max,ignore-error=true
+          ${{ inputs.push == 'true' && format('{0}.output=type=image,name={1},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp={2}', fromJSON(inputs.item).id, fromJSON(inputs.item).repositories[0], fromJSON(inputs.item).rewritetimestamp) || format('{0}.output=type=oci,dest={1},tar=false,rewrite-timestamp={2}', fromJSON(inputs.item).id, inputs.oci-dir, fromJSON(inputs.item).rewritetimestamp) }}
+
+    # The digest, for bake-push: one file per target and platform.
+    # overwrite: "Re-run all jobs" uploads names this run already has.
+    - id: digest
+      if: inputs.push == 'true'
+      shell: bash
+      env:
+        METADATA: ${{ steps.bake.outputs.metadata }}
+        ID: ${{ fromJSON(inputs.item).id }}
+        ARCH: ${{ inputs.arch }}
+      run: |-
+        digest="$(jq -er --arg id "${ID}" '.[$id]["containerimage.digest"]' <<< "${METADATA}")"
+        mkdir -p "${RUNNER_TEMP}/digests"
+        printf '%s\n' "${digest}" > "${RUNNER_TEMP}/digests/${ID}_${ARCH}"
+        echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+    - if: inputs.push == 'true'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+      with:
+        name: ${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
+        path: ${{ runner.temp }}/digests/${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
+        overwrite: true
+        if-no-files-found: error
+        retention-days: 1

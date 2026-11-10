@@ -1,0 +1,163 @@
+# The targets of Bake files that changed, as a build matrix (.github/AGENTS.md,
+# "Bake workflows"). The rules, in discover.jq's order:
+# - the target's resolved definition (`bake --print`) differs from the base's
+#   (a version, a tag, an argument...);
+# - or a file its build reads changed: those its .dockerignore keeps, its
+#   Containerfile or spec, its ignore files;
+# - or the workflow, or one of these actions, changed;
+# - or there is no base to compare with: every target.
+name: bake-discover
+description: Targets of Bake files to build, those changed since the base.
+
+inputs:
+  files:
+    description: >-
+      Bake files, one path or glob per line, in the order Bake reads them.
+      Paths missing in the base (before they existed) are skipped there.
+    required: true
+  workflow:
+    description: >-
+      File name of the calling workflow: its last successful push run is the
+      base of a push, and a change to it builds every target.
+    required: true
+  github-token:
+    description: Reads the workflow's runs (actions:read).
+    default: ${{ github.token }}
+
+outputs:
+  targets:
+    description: >-
+      JSON array of {id, context, file, target, tags, repositories, epoch,
+      rewritetimestamp, allow}: the target's name, its build context and
+      Containerfile or spec, its Bake `target`, tags, the repositories of
+      those, SOURCE_DATE_EPOCH to set (empty when the target sets it), the
+      output's rewrite-timestamp and its entitlements, comma-separated.
+    value: ${{ steps.find.outputs.targets }}
+  files:
+    description: >-
+      The Bake files the inputs expand to, one per line, for bake-build.
+    value: ${{ steps.find.outputs.files }}
+  containerfiles:
+    description: JSON array of the changed targets' Containerfiles, once each.
+    value: ${{ steps.find.outputs.containerfiles }}
+  groups:
+    description: >-
+      JSON object, each Bake group to the ids of its changed targets.
+    value: ${{ steps.find.outputs.groups }}
+
+runs:
+  using: composite
+  steps:
+    # The whole history: each target's SOURCE_DATE_EPOCH is the last commit
+    # of its files.
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      with:
+        fetch-depth: 0
+        persist-credentials: false
+
+    # The commit to compare with, or nothing to build every target:
+    # - pull request: its base.
+    # - push: the workflow's last successful run on the branch, not the
+    #   previous push: a cancelled or failed run never pushed its images, so
+    #   the next one builds its changes too. Pull requests' runs are
+    #   skipped: their commit isn't the branch's.
+    # - schedule, workflow_dispatch, or no base (first run, history
+    #   rewritten: fetching it fails): nothing.
+    # The base goes in a worktree, to resolve its Bake files. A full fetch:
+    # --depth=1 would cut the history at the base.
+    - id: changes
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        GH_REPO: ${{ github.repository }}
+        PR_BASE: ${{ github.event.pull_request.base.sha }}
+        WORKFLOW: ${{ inputs.workflow }}
+      run: |-
+        base=""
+        case "${GITHUB_EVENT_NAME}" in
+          pull_request)
+            base="${PR_BASE}"
+            ;;
+          push)
+            base="$(gh run list --workflow "${WORKFLOW}" --branch "${GITHUB_REF_NAME}" --status success --limit 20 --json headSha,event --jq 'map(select(.event != "pull_request"))[0].headSha // empty')"
+            ;;
+          *) ;;
+        esac
+        if [[ -n "${base}" ]] && git fetch --quiet origin "${base}" && git worktree add --quiet --detach "${RUNNER_TEMP}/base" "${base}"; then
+          echo "base=${base}" >> "${GITHUB_OUTPUT}"
+        fi
+
+    # Bake takes one -f per file, and contexts from the repo root: relative
+    # paths, from where it runs. A file or glob matching nothing (in the base,
+    # before it existed) gives no file. The base's resolved targets: none if
+    # it can't resolve, so every target changed.
+    - id: find
+      shell: bash
+      env:
+        BASE: ${{ steps.changes.outputs.base }}
+        FILES: ${{ inputs.files }}
+        WORKFLOW: ${{ inputs.workflow }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: |-
+        shopt -s nullglob
+        bake_files() {
+          local pattern file
+          while read -r pattern; do
+            [[ -n "${pattern}" ]] || continue
+            # shellcheck disable=SC2086 # a glob, on purpose
+            for file in ${pattern}; do
+              if [[ -e "${file}" ]]; then echo "${file}"; fi
+            done
+          done <<< "${FILES}"
+        }
+        bake_print() {
+          (
+            cd "$1" || exit 1
+            args=()
+            while read -r file; do
+              args+=(-f "${file}")
+            done < <(bake_files)
+            docker buildx bake "${args[@]}" --print '*'
+          )
+        }
+        bake_print . > "${RUNNER_TEMP}/head.json"
+        bake_files | jq -Rcn '[inputs]' > "${RUNNER_TEMP}/bakefiles.json"
+
+        # Each target's .dockerignore: beside its Containerfile when named
+        # after it, else the context's.
+        jq -r '.target | to_entries[] | [.key, .value.context, (.value.dockerfile // "Dockerfile")] | @tsv' "${RUNNER_TEMP}/head.json" | while IFS=$'\t' read -r id context dockerfile; do
+          context="${context%/}"
+          ignore="${context}/${dockerfile}.dockerignore"
+          [[ -f "${ignore}" ]] || ignore="${context}/.dockerignore"
+          if [[ -f "${ignore}" ]]; then
+            jq -Rsc --arg id "${id}" '{($id): split("\n")}' "${ignore}"
+          else
+            jq -nc --arg id "${id}" '{($id): []}'
+          fi
+        done | jq -sc 'add // {}' > "${RUNNER_TEMP}/ignores.json"
+
+        if [[ -n "${BASE}" ]]; then
+          bake_print "${RUNNER_TEMP}/base" > "${RUNNER_TEMP}/base.json" || echo '{"group":{},"target":{}}' > "${RUNNER_TEMP}/base.json"
+          changed="$(git diff --name-only --no-renames "${BASE}" HEAD | jq -Rcn '[inputs]')"
+        else
+          echo '{"group":{},"target":{}}' > "${RUNNER_TEMP}/base.json"
+          changed=null
+        fi
+
+        git log --format=@%ct --name-only --no-renames | jq -Rs -c -f "${ACTION_PATH}/discover.jq" \
+          --slurpfile head "${RUNNER_TEMP}/head.json" \
+          --slurpfile base "${RUNNER_TEMP}/base.json" \
+          --argjson ign "$(< "${RUNNER_TEMP}/ignores.json")" \
+          --argjson bakefiles "$(< "${RUNNER_TEMP}/bakefiles.json")" \
+          --argjson changed "${changed}" \
+          --arg workflow "${WORKFLOW}" \
+          --arg headct "$(git log -1 --format=%ct)" \
+          > "${RUNNER_TEMP}/discovered.json"
+        {
+          echo "files<<EOF"
+          bake_files
+          echo "EOF"
+        } >> "${GITHUB_OUTPUT}"
+        echo "targets=$(jq -c .targets "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
+        echo "containerfiles=$(jq -c '[.targets[].file | select(endswith("/Containerfile"))] | unique' "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
+        echo "groups=$(jq -c .groups "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
