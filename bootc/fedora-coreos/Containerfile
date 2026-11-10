@@ -365,6 +365,16 @@ kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
 # (REFERENCES.md, "GPU image").
 rm /usr/lib/bootc/kargs.d/10-lockdown.toml
 
+# nvidia-persistenced's sysusers.d file makes the install run systemd-sysusers,
+# which writes every user of the image into /etc, rootless too (without its
+# home: OpenSCAP's accounts_user_interactive_home_directory_exists fails).
+# The image's users are made at boot, from sysusers.d: /etc's account files
+# go back as they were after the install. No file belongs to
+# nvidia-persistenced.
+accounts="/etc/passwd /etc/group /etc/shadow /etc/gshadow"
+mkdir /tmp/accounts
+for f in ${accounts}; do cp -a "${f}" /tmp/accounts/; done
+
 # The modules first: the driver's packages require nvidia-kmod, which only the
 # stub RPM provides.
 dnf -yq install --setopt=install_weak_deps=False \
@@ -381,6 +391,9 @@ for p in dkms gcc kernel-devel; do
         exit 1
     fi
 done
+
+for f in ${accounts}; do rm -f "${f}" "${f}-"; done
+cp -a /tmp/accounts/. /etc/
 
 # /var ships empty (as the kube stage); nvidia-driver-selinux's policy
 # install leaves its state in /run and semanage's locks in /etc.

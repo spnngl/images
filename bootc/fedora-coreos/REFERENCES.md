@@ -831,7 +831,11 @@ the workloads' images, never on the host.
   `/usr/local` and the read-only containerd config) stays disabled.
   The RUN fails if `dkms`, `gcc` or `kernel-devel` came in, and removes
   what `nvidia-driver-selinux`'s policy install leaves in `/run` and
-  `/etc`.
+  `/etc`. It puts `/etc`'s account files back as they were: the install
+  runs `systemd-sysusers` for `nvidia-persistenced`, which writes every
+  user of the image there, `rootless` without its home (OpenSCAP's
+  `accounts_user_interactive_home_directory_exists` failed on it); the
+  image's users are made at boot, from `sysusers.d`.
 - **`python3` is in the image after all:** `nvidia-driver-common`
   requires `/usr/bin/python3`, and `nvidia-driver-selinux` (required with
   `selinux-policy-targeted`) pulls the policy tools that need it. Expect

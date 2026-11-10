@@ -37,6 +37,11 @@ file:
   /usr/bin/nvidia-container-runtime: {exists: true, filetype: file}
 
 command:
+  # Users are made at boot (sysusers.d), not by the driver's install.
+  /etc/passwd has neither nvidia-persistenced nor rootless:
+    exec: "! grep -E '^(nvidia-persistenced|rootless):' /etc/passwd"
+    exit-status: 0
+
   # Each module is in the base's kernel's module index, which modprobe reads.
   the five modules are in modules.dep:
     exec: |
