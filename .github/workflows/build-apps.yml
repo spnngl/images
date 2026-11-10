@@ -26,12 +26,15 @@ on:
       timezone: Europe/Paris
   workflow_dispatch:
 
-# Every run on main pushes the same tags: cancel the older run so it can't
-# overwrite the newer one's images. The newer one also builds the changes
-# of the cancelled one (see bake-discover).
+# One run per branch at a time. Every run on main pushes the same tags, so
+# they queue: a run cancelled between its push and its signature would
+# leave a tag that hosts checking signatures refuse. A newer queued run
+# replaces an older queued one, and builds its changes too (bake-discover
+# compares with the last successful run). A pull request's older run is
+# cancelled: it pushes nothing.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -70,6 +73,14 @@ jobs:
             containers/docker-bake.hcl
             containers/*/docker-bake.hcl
           workflow: build-apps.yml
+          # A pull request changing this workflow or a bake-* action builds
+          # one image of each kind, not all of them (hours on the runners):
+          # a Containerfile, a Dalec spec, and an entitlement with a smoke
+          # test (buildkit). The push that merges it builds every image.
+          sample: |-
+            busybox
+            nftables-exporter
+            buildkit
 
   # Same as build-bootc.yml's, for the Containerfiles to build only: code
   # scanning keeps the others' alerts, from their last analysis.

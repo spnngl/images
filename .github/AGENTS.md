@@ -38,7 +38,8 @@ Rules of the actions, so a workflow stays a list of `uses:`:
   decides: the platform, the cache, the output, `SOURCE_DATE_EPOCH`.
 - `bake-discover` rebuilds a target when its resolved definition changed,
   or a file its context keeps changed (its `.dockerignore`), or the
-  workflow or an action changed.
+  workflow or an action changed (on a pull request, only its `sample`).
+  A change to `discover.jq` comes with a case in `test.sh`, beside it.
 - An image is pushed once, by digest, in `build`; `push` only adds tags.
   Never export one build twice (an OCI layout beside the push): the
   digest bake reports is then not the pushed one.

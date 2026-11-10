@@ -310,8 +310,8 @@ Read each at the version this repository pins.
   `sysroot/<layer>/` and `test/<layer>/` show what each part of the node
   needs.
 - **Smaller downloads, from CI's build cache:** a node downloads only
-  the layers whose digest changed. CI keeps the BuildKit cache in the
-  Actions cache (`build-bootc.yml`), and passes no `SOURCE_DATE_EPOCH`:
+  the layers whose digest changed. CI keeps the BuildKit cache in
+  ghcr.io (`build-bootc.yml`), and passes no `SOURCE_DATE_EPOCH`:
   `docker-bake.hcl`'s `0`. A Kubernetes-only change then
   rebuilds `kube` and `image`, and the `system` stage's layers keep
   their digests: the same tars, and podman's gzip gives the same bytes
@@ -808,7 +808,7 @@ the workloads' images, never on the host.
   module; the GPU stack loads `nvidia-uvm` lazily. No moment exists
   after which the set is complete: a missed module fails a pod or the
   network at runtime, and only a reboot fixes it.
-- **The GPU build has a cache scope of its own** (`fedora-coreos-nvidia_amd64`,
+- **The GPU build has a cache of its own** (tag `fedora-coreos-nvidia-<line>_amd64`,
   "Smaller downloads" above): its `nvidia-kmod` stage (the dkms build)
   and `nvidia` layer stay cached, so a GPU node downloads the driver's
   layer again only when the driver, the toolkit or a stage below

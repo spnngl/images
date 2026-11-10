@@ -36,6 +36,14 @@ inputs:
       "true" skips the build cache and refreshes it: for the rebuilds that
       fetch the packages that follow their archive (.github/REFERENCES.md).
     default: "false"
+  cache-repository:
+    description: >-
+      A registry repository for the build cache, instead of GitHub's
+      Actions cache (10 GB per repository, shared by every workflow): for
+      images whose cache would take most of it. Tag <id>_<arch>; a pull
+      request writes its own, <id>_<arch>-pr-<number>, and reads both.
+      Empty: GitHub's cache, scope <id>_<arch>.
+    default: ""
   github-token:
     description: Pushes to ghcr.io (packages:write).
     default: ${{ github.token }}
@@ -80,15 +88,45 @@ runs:
           [registry."docker.io"]
             mirrors = ["mirror.gcr.io", "public.ecr.aws/docker"]
 
+    # Where the build cache is read and written: one scope or tag per
+    # target and platform. mode=max: the build stages hold the work.
+    # ignore-error: fork pull requests can't write it. In a registry: an
+    # OCI image manifest (image-manifest), which ghcr.io stores as any
+    # image; a pull request writes its own tag, so that it never replaces
+    # main's, and reads main's.
+    - id: cache
+      shell: bash
+      env:
+        SCOPE: ${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
+        REPOSITORY: ${{ inputs.cache-repository }}
+        PR: ${{ github.event.pull_request.number }}
+      run: |-
+        if [[ -z ${REPOSITORY} ]]; then
+          from=("type=gha,scope=${SCOPE}")
+          to="type=gha,scope=${SCOPE},mode=max,ignore-error=true"
+        else
+          ref="${REPOSITORY}:${SCOPE}"
+          from=("type=registry,ref=${ref}")
+          if [[ -n ${PR} ]]; then
+            ref+="-pr-${PR}"
+            from+=("type=registry,ref=${ref}")
+          fi
+          to="type=registry,ref=${ref},mode=max,image-manifest=true,oci-mediatypes=true,ignore-error=true"
+        fi
+        {
+          echo "from<<EOF"
+          printf '*.cache-from=%s\n' "${from[@]}"
+          echo EOF
+          echo "to=${to}"
+        } >> "${GITHUB_OUTPUT}"
+
     # Bake's `set` overrides what CI decides, the rest staying in the files:
     # - tags= : cleared. Bake names every image output after the tags,
     #   which would push them; bake-push tags the manifest list.
     # - platform: the runner's.
     # - SOURCE_DATE_EPOCH: BuildKit dates the image and clamps the layers'
     #   file times with it; the target's own wins (empty epoch).
-    # - cache: one scope per target and platform; mode=max: the build
-    #   stages hold the work. ignore-error: fork pull requests can't write
-    #   it.
+    # - cache: the step above's.
     # - output, pushed: by digest, untagged. rewrite-timestamp: BuildKit
     #   also clamps the layers' file times to SOURCE_DATE_EPOCH, otherwise
     #   they keep the build's time; off for an image whose file times
@@ -132,8 +170,8 @@ runs:
           ${{ inputs.also != '' && format('{0}.cache-to=', inputs.also) || '' }}
           ${{ fromJSON(inputs.item).id }}.platform=linux/${{ inputs.arch }}
           ${{ fromJSON(inputs.item).epoch != '' && format('{0}.args.SOURCE_DATE_EPOCH={1}', fromJSON(inputs.item).id, fromJSON(inputs.item).epoch) || '' }}
-          *.cache-from=type=gha,scope=${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
-          ${{ fromJSON(inputs.item).id }}.cache-to=type=gha,scope=${{ fromJSON(inputs.item).id }}_${{ inputs.arch }},mode=max,ignore-error=true
+          ${{ steps.cache.outputs.from }}
+          ${{ fromJSON(inputs.item).id }}.cache-to=${{ steps.cache.outputs.to }}
           ${{ inputs.push == 'true' && format('{0}.output=type=image,name={1},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp={2}', fromJSON(inputs.item).id, fromJSON(inputs.item).repositories[0], fromJSON(inputs.item).rewritetimestamp) || format('{0}.output=type=oci,dest={1},tar=false,rewrite-timestamp={2}', fromJSON(inputs.item).id, inputs.oci-dir, fromJSON(inputs.item).rewritetimestamp) }}
 
     # The digest, for bake-push: one file per target and platform.

@@ -160,10 +160,14 @@ in a public asset.
   released is the file tested, unchanged.
 - **The test is `bootc status` over SSH on 42022**: the guest booted, its
   network and firewall let sshd answer, and bootc reads its deployment.
-- **Checked on fedora 45 and AlmaLinux 9** (systemd 252 applies the
-  credential), in a spike of the job. AlmaLinux 10's VM booted but
-  sshd never answered over qemu's user network (`Connection timed out
-  during banner exchange`), cause unknown: the job is its first test.
+- **The test's SSH client gets a firewalld zone of its own**
+  (`release-test`: its source, port 42022): qemu's user network connects
+  from 10.0.2.2, in the `geoblock-bogons` ipset that almalinux's
+  `geoblock` policy drops from the public zone. In a spike of the job,
+  AlmaLinux 10's VM booted and started sshd, which never answered
+  (`Connection timed out during banner exchange`). AlmaLinux 9 answered
+  (firewalld 1.3, against 2.4 on 10), and so did fedora 45, which has no
+  geoblock policy.
 - **The disk is built from the pushed digest**, pulled with the
   `policy.json` the image ships, then tagged: the disk's origin is the
   tag hosts follow, not the digest.

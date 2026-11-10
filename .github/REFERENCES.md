@@ -58,6 +58,12 @@ jobs `discover`, `hadolint`, `build` and `push` run `bake-discover`,
   when it or its GPU image changed (group `disk-image`): the OpenStack
   qcow2 of each, built from the pushed digest, the newest 3 of a line
   kept.
+- **A test run** (manual, input `test`) checks the push and release
+  jobs from a branch: every tag gets `-test` (`TAG_SUFFIX` of
+  `bootc/docker-bake.hcl`) and every release is a prerelease of that
+  name, so hosts and nodes, which follow the tags without it, never get
+  its images. The clean-up of releases skips prereleases: delete a test
+  run's tags and releases by hand.
 - **`gate-bootc` is the required check** (`gate`, build-apps.yml's):
   both workflows run on every pull request and skip what didn't
   change, so each gate always runs and passes. The matrix jobs' names
@@ -87,10 +93,20 @@ Dalec, and one way to build, attest and sign is simpler.
   context's, as BuildKit reads them), its Containerfile or spec, and the
   ignore files (docs, kept out by `.dockerignore`, don't count); every one
   when the workflow or an action changed, on the weekly rebuild and
-  manual runs. Since a pull request's base, or for a push the
-  workflow's last successful run on the branch: a cancelled or failed
-  run never pushed, so the next one builds its changes too. No such run:
-  every image.
+  manual runs. Since a pull request's merge commit's first parent (the
+  base branch it merges into: the event's `base.sha` is older when the
+  branch moved since), or for a push the workflow's last successful run
+  on the branch: a cancelled or failed run never pushed, so the next one
+  builds its changes too. No such run: every image.
+- **A pull request changing the workflow or an action builds a sample**
+  (`sample` of `bake-discover`): `build-apps.yml`'s 67 images take hours
+  on the runners, while a CI change breaks by kind of image (a
+  Containerfile, a Dalec spec, an entitlement), not by image. The push
+  that merges it builds every image, as a change of the workflow. The
+  bootc images have no sample: four kinds, four images.
+- **`discover.jq` has tests** (`.github/actions/bake-discover/test.sh`,
+  run by `shellcheck.yml`): what a target reads decides every build, and
+  a `.dockerignore` rule is easy to get wrong.
 - **Bake describes, our actions run it:** `docker/github-builder`
   (v1.19.0) pushes before anything else, which leaves no place for the
   scan on pull requests, and its `bake.yml` builds one target per call
@@ -137,11 +153,20 @@ Dalec, and one way to build, attest and sign is simpler.
   and Alpine's packages follow their archive (`containers/AGENTS.md`),
   and a cached step keeps the old ones. Hits are mostly re-runs and
   rebuilds of unchanged images: a version or snapshot bump changes build
-  arguments every `RUN` reads. `build-bootc.yml` caches fedora-coreos
-  the same way, for smaller node downloads
-  (`bootc/fedora-coreos/REFERENCES.md`, "Layers"), one scope per
-  platform. Its Sunday and manual runs drop `cache-from`, not
-  `no-cache`: the image step must reuse the reports step's build, the
+  arguments every `RUN` reads.
+- **The bootc images' build cache in ghcr.io**
+  (`ghcr.io/spnngl/images/buildcache`, `cache-repository` of
+  `bake-build`, <https://docs.docker.com/build/cache/backends/registry/>),
+  not the Actions cache: a repository has 10 GB of it, which the bootc
+  images' stages alone filled (10.9 GB on PR #295), evicting the
+  applications'. Tag `<id>_<arch>`; a pull request writes
+  `<id>_<arch>-pr-<number>`, and reads main's too, as the Actions cache
+  scopes a pull request's. `build-bootc.yml`'s weekly run deletes the
+  versions not updated in 14 days: main's tags are rewritten every week,
+  a closed pull request's are not. fedora-coreos's cache gives smaller
+  node downloads (`bootc/fedora-coreos/REFERENCES.md`, "Layers"). Its
+  reports target is built in the same Bake call as the image, where
+  BuildKit shares their stages, `no-cache` too: the image pushed is the
   one scanned.
 - **BuildKit attestations** in each platform's index: SLSA provenance
   (`mode=max`, `version=v1`, no secrets) and an SPDX SBOM by syft on the

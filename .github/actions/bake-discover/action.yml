@@ -4,8 +4,10 @@
 #   (a version, a tag, an argument...);
 # - or a file its build reads changed: those its .dockerignore keeps, its
 #   Containerfile or spec, its ignore files;
-# - or the workflow, or one of these actions, changed;
+# - or the workflow, or one of these actions, changed: every target, or on
+#   a pull request the `sample` input's;
 # - or there is no base to compare with: every target.
+# discover.jq's tests: test.sh, beside it.
 name: bake-discover
 description: Targets of Bake files to build, those changed since the base.
 
@@ -20,6 +22,12 @@ inputs:
       File name of the calling workflow: its last successful push run is the
       base of a push, and a change to it builds every target.
     required: true
+  sample:
+    description: >-
+      Target names, one per line: what a pull request changing the workflow
+      or one of these actions builds, beside the targets changed otherwise.
+      The push that merges it builds every target. Empty: every target.
+    default: ""
   github-token:
     description: Reads the workflow's runs (actions:read).
     default: ${{ github.token }}
@@ -105,6 +113,7 @@ runs:
         BASE: ${{ steps.changes.outputs.base }}
         FILES: ${{ inputs.files }}
         WORKFLOW: ${{ inputs.workflow }}
+        SAMPLE: ${{ github.event_name == 'pull_request' && inputs.sample || '' }}
         ACTION_PATH: ${{ github.action_path }}
       run: |-
         shopt -s nullglob
@@ -159,6 +168,7 @@ runs:
           --argjson bakefiles "$(< "${RUNNER_TEMP}/bakefiles.json")" \
           --argjson changed "${changed}" \
           --arg workflow "${WORKFLOW}" \
+          --argjson sample "$(jq -Rcn '[inputs | select(length > 0)] | if length > 0 then . else null end' <<< "${SAMPLE}")" \
           --arg headct "$(git log -1 --format=%ct)" \
           > "${RUNNER_TEMP}/discovered.json"
         {
