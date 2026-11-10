@@ -1,0 +1,7 @@
+# Kernel lockdown, in a file of its own: an image that loads unsigned
+# kernel modules (fedora-coreos-nvidia) deletes this file (REFERENCES.md).
+# lockdown=integrity: root can't change the running kernel (/dev/mem,
+# unsigned modules or kexec, module parameters, BPF writes to user memory).
+# Not confidentiality, which also stops kernel memory reads, kprobes and
+# tracefs: Tetragon and Falco need them (REFERENCES.md).
+kargs = ["lockdown=integrity"]

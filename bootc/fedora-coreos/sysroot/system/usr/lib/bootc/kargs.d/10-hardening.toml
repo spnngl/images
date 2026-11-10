@@ -1,5 +1,5 @@
-# Memory hardening and kernel lockdown. bootc adds these on upgrade, and to
-# new disks when osbuild deploys the image (REFERENCES.md).
+# Memory hardening. bootc adds these on upgrade, and to new disks when
+# osbuild deploys the image (REFERENCES.md).
 # https://bootc.dev/bootc/building/kernel-arguments.html
 # https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html
 #
@@ -11,15 +11,10 @@
 # costs a few percent of CPU on allocation-heavy work.
 # page_alloc.shuffle=1: randomizes the page allocator's free lists
 # (CONFIG_SHUFFLE_PAGE_ALLOCATOR is built in, but off without it).
-# lockdown=integrity: root can't change the running kernel (/dev/mem,
-# unsigned modules or kexec, module parameters, BPF writes to user memory).
-# Not confidentiality, which also stops kernel memory reads, kprobes and
-# tracefs: Tetragon and Falco need them (REFERENCES.md).
 kargs = [
     "init_on_alloc=1",
     "init_on_free=1",
     "slab_nomerge",
     "page_alloc.shuffle=1",
     "randomize_kstack_offset=on",
-    "lockdown=integrity",
 ]

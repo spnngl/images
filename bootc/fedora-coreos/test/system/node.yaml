@@ -109,6 +109,17 @@ command:
     exec: chronyc -N sources
     exit-status: 0
     stdout: [time.cloudflare.com]
+  # kargs.d/10-lockdown.toml, which an image with unsigned modules
+  # deletes: the expected mode follows the image's own arguments.
+  the kernel lockdown follows the image's kernel arguments:
+    exec: |
+      if bootc container inspect --json | jq -e '.kargs | index("lockdown=integrity")' >/dev/null; then
+          want=integrity
+      else
+          want=none
+      fi
+      cat /sys/kernel/security/lockdown | grep -F "[${want}]"
+    exit-status: 0
   SELinux is permissive:
     exec: getenforce
     exit-status: 0
@@ -118,9 +129,6 @@ command:
     exit-status: 1
 
 file:
-  /sys/kernel/security/lockdown:
-    exists: true
-    contents: ["[integrity]"]
   /var/home/rootless:
     exists: true
     filetype: directory
