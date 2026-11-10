@@ -115,6 +115,12 @@ check "epoch: the last commit of the files it reads, or of its Bake file" \
 check "platforms, repositories, one build per platform" \
   '(.targets[] | select(.id == "app") | .arches == ["amd64"] and .repositories == ["r/app", "d/app"])
    and (.builds.include | length) == 5' null
+if discover '[]' '["app", "gone"]' > /dev/null 2>&1; then
+  echo "FAIL: a sample name no target has fails discover"
+  failed=1
+else
+  echo "ok: a sample name no target has fails discover"
+fi
 check "groups list their built targets only" '.groups == {"default": ["alma"], "vm-test": []}' '["bootc/alma/x.sh"]'
 
 if ((failed)); then
