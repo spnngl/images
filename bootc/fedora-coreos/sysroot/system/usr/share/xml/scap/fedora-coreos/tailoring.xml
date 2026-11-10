@@ -178,10 +178,14 @@
     <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_all_forwarding" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_sysctl_net_ipv6_conf_default_forwarding" selected="false"/>
 
-    <!-- Not decided yet: idle shell timeout, CIS's crypto policy, shipping the
-         journal off the node. -->
-    <select idref="xccdf_org.ssgproject.content_rule_accounts_tmout" selected="false"/>
+    <!-- The policy modules need update-crypto-policies, which is Python, and the
+         image has none. The gap they close is sshd's SHA-1 and UMAC MACs (it
+         offers no CBC cipher): etc/ssh/sshd_config.d/00-hardening.conf drops
+         them. kubelet, containerd and bootc, in Go, ignore the policy. -->
     <select idref="xccdf_org.ssgproject.content_rule_configure_custom_crypto_policy_cis" selected="false"/>
+
+    <!-- The cluster's log collector, a pod reading the journal, ships the logs
+         off the node, not systemd-journal-upload. -->
     <select idref="xccdf_org.ssgproject.content_rule_package_systemd-journal-remote_installed" selected="false"/>
   </Profile>
 

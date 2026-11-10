@@ -124,6 +124,7 @@ command:
       - /^kbdinteractiveauthentication no$/
       - /^authorizedkeysfile /usr/lib/ssh/authorized_keys/%u$/
       - /^gssapiauthentication no$/
+      - /^macs hmac-sha2-256-etm@openssh.com,hmac-sha2-512-etm@openssh.com,hmac-sha2-256,hmac-sha2-512$/
   # What applies to rootless, Match blocks included (90-allow-proxyjump.conf).
   sshd, resolved for rootless:
     exec: ssh-keygen -q -t ed25519 -N '' -f /tmp/sshd-rootless && sshd -T -h /tmp/sshd-rootless -C user=rootless,host=x,addr=192.0.2.1

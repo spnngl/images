@@ -30,6 +30,12 @@ command:
     exec: passwd -S rootless
     exit-status: 0
     stdout: [/^rootless L /]
+  # etc/profile.d/tmout.sh: set, read-only, and sourced without error.
+  a login shell exits when idle:
+    exec: runuser -l rootless -c 'echo "TMOUT=${TMOUT}"; (TMOUT=0) 2>/dev/null && echo writable'
+    exit-status: 1
+    stdout: [/^TMOUT=900$/, "!writable"]
+    stderr: {have-len: 0}
   SSH host keys are root:root 0600:
     exec: |
       for k in /etc/ssh/ssh_host_*_key; do
