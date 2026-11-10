@@ -16,6 +16,11 @@ each choice: [REFERENCES.md](REFERENCES.md).
   `image` is the default target. Tag `<major>-v<minor>` of `BASE_VERSION` and
   `KUBERNETES_VERSION`, the Containerfile's `ARG`s, written by
   `versions.sh` for `build.sh` and CI: a patch release keeps the tag.
+- **A second image, `fedora-coreos-nvidia`, for the GPU nodes:** the same
+  Containerfile with `--build-arg IMAGE_BASE=nvidia`, which puts the
+  `nvidia` stage (NVIDIA's driver and toolkit, `sysroot/nvidia/`) under
+  `image`. Same tag, amd64 only, built and pushed by CI
+  (`REFERENCES.md`, "GPU image"). `fedora-coreos` never builds that stage.
 - **Own build context, this folder** (`.dockerignore`), and own
   `sysroot/` (no firewalld, sshd on 22, systemd-networkd), one folder
   per layer: `sysroot/<layer>/` holds the layer's files at their path in
