@@ -79,7 +79,7 @@ jobs:
           # test (buildkit). The push that merges it builds every image.
           sample: |-
             busybox
-            nftables-exporter
+            nftables-exporter-debian13
             buildkit
 
   # Same as build-bootc.yml's, for the Containerfiles to build only: code
