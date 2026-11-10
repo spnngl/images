@@ -4,18 +4,16 @@
     "extends": ["github>spnngl/.github:renovate.default.json5"],
     // Digests for actions and the application images' FROM lines only: the
     // preset's config:best-practices pins every image, and a digest on a
-    // bootc Containerfile's FROM would freeze the base between rebuilds and
-    // land in `ARG BASE_VERSION`, the image's tag (see the pinDigests rule
-    // below).
+    // bootc Containerfile's FROM would freeze the base between rebuilds (see
+    // the pinDigests rule below).
     "ignorePresets": ["docker:pinDigests"],
     // Any time; the Debian snapshot rules below wait for Saturday,
     // midnight to 5am, the day before the weekly rebuild.
     "schedule": ["at any time"],
     "automergeSchedule": ["at any time"],
-    // dockerfile: FROM lines, with `ARG BASE_VERSION` resolved, so the
-    // Containerfile default of a base image is updated in place.
-    // custom.regex: the other versions, written once each in a docker-bake.hcl
-    // (containers/AGENTS.md).
+    // dockerfile: the application images' FROM lines.
+    // custom.regex: every other version, written once each in a docker-bake.hcl
+    // (containers/AGENTS.md, bootc/AGENTS.md).
     "enabledManagers": ["dockerfile", "github-actions", "custom.regex"],
     // Debian's archive snapshots (snapshot.debian.org), newest 300: its JSON
     // is {"result": {"debian": [<timestamp>...]}}, all of them, oldest first.
@@ -63,83 +61,6 @@
         }
     },
     "customManagers": [
-        {
-            "customType": "regex",
-            "description": "fedora-bootc release in the build-bootc.yml matrix (the Containerfile's ARG BASE_VERSION is the dockerfile manager's: same dependency, same PR).",
-            "managerFilePatterns": ["/^\\.github/workflows/build-bootc\\.yml$/"],
-            "matchStrings": [
-                "- name: fedora\\n\\s+version: \"(?<currentValue>[^\"]+)\""
-            ],
-            "depNameTemplate": "quay.io/fedora/fedora-bootc",
-            "datasourceTemplate": "docker",
-            "versioningTemplate": "docker"
-        },
-        {
-            "customType": "regex",
-            "description": "almalinux-bootc major releases in the build-bootc.yml matrix (the Containerfile's ARG BASE_VERSION is the dockerfile manager's).",
-            "managerFilePatterns": ["/^\\.github/workflows/build-bootc\\.yml$/"],
-            "matchStrings": [
-                "- name: almalinux\\n\\s+version: \"(?<currentValue>[^\"]+)\""
-            ],
-            "depNameTemplate": "quay.io/almalinuxorg/almalinux-bootc",
-            "datasourceTemplate": "docker",
-            "versioningTemplate": "docker"
-        },
-        {
-            "customType": "regex",
-            "description": "k3s release of kubeenv in the build-bootc.yml matrix (its tag, v<x.y.z>+k3s<n>), with the -v<Kubernetes minor release>k3s tag suffix on the line above it: one replacement, so both always change together. Versioning: the k3s tag's (workarounds:k3sKubernetesVersioning, in config:recommended).",
-            "managerFilePatterns": ["/^\\.github/workflows/build-bootc\\.yml$/"],
-            "matchStrings": [
-                "suffix: &kubeenv -v\\d+\\.\\d+k3s\\n(?<indentation>[ ]*)k3s: &k3s (?<currentValue>\\S+)"
-            ],
-            "autoReplaceStringTemplate": "suffix: &kubeenv -v{{{newMajor}}}.{{{newMinor}}}k3s\n{{{indentation}}}k3s: &k3s {{{newValue}}}",
-            "depNameTemplate": "k3s",
-            "packageNameTemplate": "k3s-io/k3s",
-            "datasourceTemplate": "github-releases"
-        },
-        {
-            "customType": "regex",
-            "description": "k3s release of kubeenv: the Containerfiles' ARG INSTALL_K3S_VERSION default (same dependency as the build-bootc.yml matrix, same PR).",
-            "managerFilePatterns": ["/^bootc/[^/]+/Containerfile$/"],
-            "matchStrings": ["ARG INSTALL_K3S_VERSION=(?<currentValue>\\S+)"],
-            "depNameTemplate": "k3s",
-            "packageNameTemplate": "k3s-io/k3s",
-            "datasourceTemplate": "github-releases"
-        },
-        {
-            "customType": "regex",
-            "description": "Kubernetes release of bootc/fedora-coreos: the Containerfile's ARG KUBERNETES_VERSION. Its pkgs.k8s.io repository (v<minor>), its RPMs, its pause image and the image's tag (<major>-v<minor>, versions.sh) all follow from it.",
-            "managerFilePatterns": ["/^bootc/fedora-coreos/Containerfile$/"],
-            "matchStrings": ["ARG KUBERNETES_VERSION=\"(?<currentValue>[^\"]+)\""],
-            "depNameTemplate": "kubernetes",
-            "packageNameTemplate": "kubernetes/kubernetes",
-            "datasourceTemplate": "github-releases",
-            "extractVersionTemplate": "^v(?<version>.+)$"
-        },
-        {
-            "customType": "regex",
-            "description": "NVIDIA's driver of the GPU image of bootc/fedora-coreos: the Containerfile's ARG NVIDIA_VERSION, the version of the kmod-nvidia-open-dkms RPM in NVIDIA's CUDA repository for Fedora 44 (the rpm datasource gives <version>-<release>: the release is dropped). One branch only (allowedVersions below): a new branch is chosen by hand.",
-            "managerFilePatterns": ["/^bootc/fedora-coreos/Containerfile$/"],
-            "matchStrings": ["ARG NVIDIA_VERSION=\"(?<currentValue>[^\"]+)\""],
-            "depNameTemplate": "nvidia-driver",
-            "packageNameTemplate": "kmod-nvidia-open-dkms",
-            "registryUrlTemplate": "https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64/repodata/",
-            "datasourceTemplate": "rpm",
-            "extractVersionTemplate": "^(?<version>[^-]+)-",
-            "versioningTemplate": "loose"
-        },
-        {
-            "customType": "regex",
-            "description": "NVIDIA Container Toolkit of the GPU image of bootc/fedora-coreos: the Containerfile's ARG NVIDIA_CONTAINER_TOOLKIT_VERSION, the version of the nvidia-container-toolkit-base RPM in NVIDIA's stable repository (the release is dropped, as above).",
-            "managerFilePatterns": ["/^bootc/fedora-coreos/Containerfile$/"],
-            "matchStrings": ["ARG NVIDIA_CONTAINER_TOOLKIT_VERSION=\"(?<currentValue>[^\"]+)\""],
-            "depNameTemplate": "nvidia-container-toolkit",
-            "packageNameTemplate": "nvidia-container-toolkit-base",
-            "registryUrlTemplate": "https://nvidia.github.io/libnvidia-container/stable/rpm/x86_64/repodata/",
-            "datasourceTemplate": "rpm",
-            "extractVersionTemplate": "^(?<version>[^-]+)-",
-            "versioningTemplate": "loose"
-        },
         {
             "customType": "regex",
             "description": "Cilium chart of bootc/fedora-coreos's test cluster (vm.sh cluster).",
@@ -434,18 +355,12 @@
             "allowedVersions": "/^\\d+\\.\\d{8}\\.3\\.\\d+$/"
         },
         {
-            "description": "A new Fedora major of fedora-coreos: the GPU image's NVIDIA repository URLs hold it (bootc/fedora-coreos/nvidia.repo takes it from the base, $releasever, but renovate.json5's registryUrl for the driver is literal).",
+            "description": "A new Fedora major of fedora-coreos: the GPU image's NVIDIA repository URLs hold it (bootc/fedora-coreos/nvidia.repo takes it from the base, $releasever, but the driver's registryUrl in docker-bake.hcl is literal).",
             "matchDepNames": ["quay.io/fedora/fedora-coreos"],
             "matchUpdateTypes": ["major"],
             "prBodyNotes": [
-                "Change `fedora<major>` in the `registryUrlTemplate` of the `nvidia-driver` custom manager (`renovate.json5`) to the new major, and check that NVIDIA's repository for it holds an R620 driver (`bootc/fedora-coreos/REFERENCES.md`, \"GPU image\")."
+                "Change `fedora<major>` in the `registryUrl=` of the `NVIDIA_DRIVER` comment of `bootc/fedora-coreos/docker-bake.hcl` to the new major, and check that NVIDIA's repository for it holds an R620 driver (`bootc/fedora-coreos/REFERENCES.md`, \"GPU image\")."
             ]
-        },
-        {
-            "description": "Kubernetes of bootc/fedora-coreos: a PR per patch release of the current minor too, as k3s's, and one per minor release: kubeadm upgrades one minor at a time.",
-            "matchDepNames": ["kubernetes"],
-            "separateMinorPatch": true,
-            "separateMultipleMinor": true
         },
         {
             "description": "NVIDIA's driver of the GPU image: the R620 branch (long-term support until September 2029) only; a new branch changes the kernel module and the CUDA the nodes' workloads run against. Its PR is never automerged (the rule for bootc/fedora-coreos below), and the toolkit's: the node's GPUs and the operator's pods depend on them.",
@@ -470,28 +385,25 @@
             ]
         },
         {
-            "description": "Fedora CoreOS releases of the same major (BASE_VERSION <major>.<date>.3.<n>: docker versioning makes the date the minor): automerged once every check is green, build-bootc's build and scans included; the tag stays, so nodes take them with `bootc upgrade`. Renovate merges, not GitHub's auto-merge (platformAutomerge): that waits for the required checks only, and build-bootc has none. A new major changes the tag: by hand.",
+            "description": "Fedora CoreOS releases of the same major (BASE_VERSION <major>.<date>.3.<n>: docker versioning makes the date the minor): automerged once every check is green, build-bootc's gate-bootc check included; the tag stays, so nodes take them with `bootc upgrade`. A new major changes the tag: by hand.",
             "matchDepNames": ["quay.io/fedora/fedora-coreos"],
             "matchUpdateTypes": ["minor", "patch"],
-            "automerge": true,
-            "platformAutomerge": false
+            "automerge": true
         },
         {
-            "description": "Kubernetes patch releases of bootc/fedora-coreos: automerged as the rule above, once every check is green, the vm-test job's included; the tag stays. A minor release is a new tag: by hand.",
-            "matchDepNames": ["kubernetes"],
+            "description": "Kubernetes patch releases of bootc/fedora-coreos, one dependency per line (kubernetes-<major.minor>, whose extractVersion keeps its line): automerged as the rule above, once every check is green, the vm-test job's included; the tag stays. A new line is a new tag: added by hand (bootc/fedora-coreos/AGENTS.md, \"Kubernetes lines\").",
+            "matchDepNames": ["/^kubernetes-\\d+\\.\\d+$/"],
             "matchUpdateTypes": ["patch"],
-            "automerge": true,
-            "platformAutomerge": false
+            "automerge": true
         },
         {
             "description": "What only the vm-test job of bootc/fedora-coreos runs, automerged as the rules above: the test cluster's Cilium chart (vm.sh cluster; a major release by hand), and custom-coreos-disk-images (the qemu disk image the job boots; the disk-image job's OpenStack one runs no test).",
             "matchDepNames": ["cilium", "coreos/custom-coreos-disk-images"],
             "matchUpdateTypes": ["minor", "patch", "digest"],
-            "automerge": true,
-            "platformAutomerge": false
+            "automerge": true
         },
         {
-            "description": "AlmaLinux 9 is kept for x86-64-v2 hosts until its end of life (build-bootc.yml): never moved to 10.",
+            "description": "AlmaLinux 9 is kept for x86-64-v2 hosts until its end of life (bootc/almalinux/docker-bake.hcl): never moved to 10.",
             "matchDepNames": ["quay.io/almalinuxorg/almalinux-bootc"],
             "matchCurrentValue": "9",
             "enabled": false

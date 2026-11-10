@@ -10,10 +10,6 @@ inputs:
   item:
     description: One target of bake-discover's `targets`, as JSON.
     required: true
-  arches:
-    description: >-
-      Space-separated platforms bake-build ran. A missing one fails the merge.
-    default: amd64 arm64
   public-key:
     description: The key the signatures are checked with.
     default: bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub
@@ -41,7 +37,7 @@ runs:
   steps:
     - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
       with:
-        pattern: ${{ fromJSON(inputs.item).id }}_*
+        pattern: digest_${{ fromJSON(inputs.item).id }}_*
         path: ${{ runner.temp }}/digests
         merge-multiple: true
 
@@ -59,20 +55,19 @@ runs:
         username: ${{ inputs.dockerhub-username }}
         password: ${{ inputs.dockerhub-token }}
 
-    # Each platform's index (image and attestations) goes into the list. A
-    # missing platform fails here. imagetools create copies the blobs from
+    # Each platform's index (image and attestations) goes into the list: the
+    # target's `platforms`. A missing one fails here. imagetools create copies the blobs from
     # the first repository (where bake-build pushed) to each other
     # repository of the tags.
     - id: merge
       shell: bash
       env:
         ITEM: ${{ inputs.item }}
-        ARCHES: ${{ inputs.arches }}
       run: |-
         id="$(jq -r .id <<< "${ITEM}")"
         image="$(jq -r '.repositories[0]' <<< "${ITEM}")"
         mapfile -t tags < <(jq -r '.tags[]' <<< "${ITEM}")
-        read -r -a arches <<< "${ARCHES}"
+        mapfile -t arches < <(jq -r '.arches[]' <<< "${ITEM}")
         sources=()
         for arch in "${arches[@]}"; do
           sources+=("${image}@$(< "${RUNNER_TEMP}/digests/${id}_${arch}")")

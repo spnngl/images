@@ -1,17 +1,12 @@
 # syntax=docker.io/docker/dockerfile:1
 
-# Fedora CoreOS release, with the stable stream's tag form. Tag of this
-# image: <BASE_VERSION>-v<KUBERNETES_VERSION>.
+# Fedora CoreOS release, with the stable stream's tag form. Every version
+# below, this one, Kubernetes' and NVIDIA's, is set by
+# bootc/fedora-coreos/docker-bake.hcl, which has no default to keep in sync.
+# Tag of this image: <Fedora major>-v<Kubernetes minor>.
 #
 # Available tags: https://quay.io/repository/fedora/fedora-coreos?tab=tags
-ARG BASE_VERSION="44.20261023.3.1"
-
-# NVIDIA's driver branch and Container Toolkit of the GPU image (target
-# nvidia): the stages that install them redeclare these, so that one
-# value serves both. Renovate proposes them, never automerged
-# (REFERENCES.md, "GPU image").
-ARG NVIDIA_VERSION="620.70.06"
-ARG NVIDIA_CONTAINER_TOOLKIT_VERSION="1.20.2"
+ARG BASE_VERSION
 
 # Layers, each stage FROM the one before (REFERENCES.md, "Layers"):
 # - system: the node's own packages and sysroot/system/;
@@ -198,7 +193,7 @@ FROM system AS kube
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 # Kubernetes patch release of kubelet, kubeadm and kubectl.
-ARG KUBERNETES_VERSION="1.36.6"
+ARG KUBERNETES_VERSION
 
 RUN <<EORUN
 # Kubernetes RPMs: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
@@ -436,8 +431,7 @@ EORUN
 RUN bootc container lint
 
 # Scans of the image, in a stage of their own so that their files stay out of
-# the image. They report what they find; build.sh fails on it after exporting
-# the reports.
+# the image. They report what they find; the check stage judges.
 FROM image AS scan
 RUN --mount=type=cache,target=/var/cache/grype \
     <<EORUN
@@ -469,8 +463,7 @@ RUN dnf -yq install goss
 
 # Checks of the image's files (test/build.yaml, which includes each
 # layer's; test/<IMAGE_BASE>-build.yaml includes that one and adds the image's).
-# Exit 1: checks failed, the report is written; build.sh fails on it after
-# exporting the reports.
+# Exit 1: checks failed, the report is written; the check stage judges.
 FROM image AS goss
 ARG IMAGE_BASE
 
@@ -486,10 +479,58 @@ mkdir -p /reports/goss
     > /reports/goss/build.tap || [[ $? == 1 ]]
 EORUN
 
-# The reports alone: `--target reports --output type=local,dest=<dir>`.
+# The verdict on the reports: a failed OpenSCAP rule, a fixable Critical
+# vulnerability or a failed goss check. It never fails the build, so that the
+# reports are exported either way: it writes summary.txt, and failed, only
+# when something failed, for the caller to stop on (the build-bootc.yml
+# workflow, and bootc/fedora-coreos/AGENTS.md's build check, which print it).
+# grype.prom holds the fixable vulnerabilities of Medium severity and above.
+# FROM system: tools the image has, none of its files.
+FROM system AS check
+
+# Inherited; repeated for hadolint.
+SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
+
+RUN --network=none \
+    --mount=type=bind,from=scan,source=/reports,target=/scan \
+    --mount=type=bind,from=goss,source=/reports,target=/goss \
+    <<EORUN
+mkdir -p /reports
+failed=""
+{
+    # Rules out of the profile are `notselected`.
+    grep -o '<result>[a-z]*</result>' /scan/openscap/results.xml | awk -F '[<>]' '
+        $3 != "notselected" { n[$3]++ }
+        END { printf "OpenSCAP:"; for (r in n) printf " %d %s", n[r], r; print "" }'
+    awk -F '"' '/^grype_vulnerability\{/ { n[$4]++ }
+        END { printf "grype, fixable:"; for (s in n) printf " %d %s", n[s], s; print "" }' /scan/grype/grype.prom
+    # TAP: a plan line `1..<count>`, then `ok` or `not ok` per check. goss
+    # writes no plan when it can't read the suite.
+    awk '/^ok / { ok++ } /^not ok / { nok++ } END { printf "goss: %d ok, %d not ok\n", ok, nok }' /goss/goss/build.tap
+    grep '^not ok ' /goss/goss/build.tap || true
+} > /reports/summary.txt
+if grep -qE '<result>(fail|error)</result>' /scan/openscap/results.xml; then
+    failed+=" OpenSCAP rules failed: openscap/report.html."
+fi
+if grep -q '^grype_vulnerability{.*severity="Critical"' /scan/grype/grype.prom; then
+    failed+=" Fixable Critical vulnerabilities: grype/grype.prom."
+fi
+if ! grep -qE '^1\.\.[1-9]' /goss/goss/build.tap; then
+    failed+=" goss ran no check: goss/build.tap."
+elif grep -q '^not ok ' /goss/goss/build.tap; then
+    failed+=" goss checks failed: goss/build.tap."
+fi
+if [[ -n ${failed} ]]; then
+    echo "${failed# }" > /reports/failed
+fi
+EORUN
+
+# The reports alone, and the verdict:
+# `--target reports --output type=local,dest=<dir>`.
 FROM scratch AS reports
 COPY --from=scan /reports/ /
 COPY --from=goss /reports/ /
+COPY --from=check /reports/ /
 
 # The image, last: the default target.
 FROM image

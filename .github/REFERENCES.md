@@ -17,52 +17,48 @@
 
 ## `build-bootc.yml`
 
-- **Triggers:** push to `main`, Sunday 07:00 Europe/Paris (base and
-  package updates, fresh geo-blocking data) and manual runs push; pull
-  requests lint and build. Push and pull request runs only when a bootc
-  input changed (`paths`: `bootc/` but its scripts and docs, every file
-  of `bootc/fedora-coreos/`, the workflow), then rebuild every bootc
-  image: they share most files. A
-  failed push is retried by the next change or the weekly rebuild.
-- **The matrix is the list of images** (`name`, `version`, and for a
-  stage `target`, tag `suffix`, `k3s`), `version` passed as
-  `--build-arg BASE_VERSION`; the `push` job reuses it by YAML anchor.
-  An image without `version` pins its own and names its tag
-  (`bootc/<name>/versions.sh`): fedora-coreos, whose Fedora CoreOS
-  release has no major-only tag upstream.
-- **fedora-coreos with BuildKit** (`builder: buildkit`), loaded into
-  podman for the push: podman's `/run/.containerenv` turns its OpenSCAP
-  scan's machine rules off (`bootc/fedora-coreos/REFERENCES.md`). Its
-  amd64 job also builds the scan reports (artifact
-  `fedora-coreos_reports`), failing on a failed rule, a fixable
-  Critical or a failed goss check, and on `main` the `disk-image` job releases its OpenStack
-  qcow2, and the GPU image's, when `bootc/fedora-coreos/` changed since
-  the newest release.
+Same triggers, runners, actions and tags as `build-apps.yml` (below): its
+jobs `discover`, `hadolint`, `build` and `push` run `bake-discover`,
+`bake-build` and `bake-push`. What differs:
+
+- **Found, not listed:** `bake --print` of the root `docker-bake.hcl`,
+  `bootc/docker-bake.hcl` and every `bootc/*/docker-bake.hcl`: one
+  target per image (`fedora-45`, `almalinux-10`, `fedora-coreos-1-36`,
+  `fedora-coreos-nvidia-1-36`). Not `containers/`'s: two files define a
+  `tags()` each. Only what changed: the image's own files, as read by
+  its `Containerfile.dockerignore`; a change of `bootc/fedora/` rebuilds
+  almalinux, which reads it, and none of fedora-coreos's.
+- **BuildKit for every image**, not podman: one builder, one cache, the
+  same provenance and SBOM attestations as the applications. podman's
+  `/run/.containerenv` would turn fedora-coreos's OpenSCAP machine rules
+  off (`bootc/fedora-coreos/REFERENCES.md`).
+- **fedora-coreos's reports:** its amd64 build also exports the
+  `-reports` target (artifact `reports_<id>`), whose `check` stage fails
+  the job on a failed rule, a fixable Critical or a failed goss check.
 - **fedora-coreos's VM tests gate its push** (job `vm-test`, on pull
-  requests too): the build job uploads its amd64 image on pull requests
-  too, `vm-test` boots it in a test VM and runs the goss suites
-  (`bootc/fedora-coreos/REFERENCES.md`, "VM tests in CI"). A job-level
-  `if` can't read the matrix, so `push` needs `vm-test` and runs anyway;
-  its first step fails the fedora-coreos entry alone unless `vm-test`
-  passed.
-- **A second matrix entry, `fedora-coreos-nvidia`, from fedora-coreos's
-  folder:** the GPU image is one Containerfile stage away from
-  fedora-coreos (`bootc/fedora-coreos/REFERENCES.md`, "GPU image"), so
-  the entry names that folder (`dir`) and the stage its own builds on
-  (`image_base`, the build arg `IMAGE_BASE`). Its arm64 leg is
-  `exclude`d (matched on the nested `image.name` and `platform.arch`):
-  NVIDIA's repository has no arm64 driver. Its amd64 job builds the
-  same scan reports (artifact `fedora-coreos-nvidia_reports`).
-- **`build.sh`'s flags** (`--format=docker`, context `bootc/`), plus an
-  `org.opencontainers.image.source` label linking the package to the
-  repository, and `--platform` the runner's own. Rootless podman.
+  requests too, the targets of the `vm-test` group): `vm-test` boots the
+  amd64 image in a test VM and runs the goss suites
+  (`bootc/fedora-coreos/REFERENCES.md`, "VM tests in CI"). On pull
+  requests the build job keeps its OCI layout; on pushes `vm-test` pulls
+  the digest it pushed untagged. A job-level `if` can't read the matrix,
+  so `push` runs for every target, and its `tested` step fails the
+  fedora-coreos entries alone unless their line's `vm-passed_<id>`
+  artifact exists. The GPU image follows its line's tests: it differs
+  from fedora-coreos by one stage.
+- **The `release` job** makes one GitHub release per fedora-coreos line
+  when it or its GPU image changed (group `disk-image`): the OpenStack
+  qcow2 of each, built from the pushed digest, the newest 3 of a line
+  kept.
+- **`gate-bootc` is the required check** (`gate`, build-apps.yml's):
+  both workflows run on every pull request and skip what didn't
+  change, so each gate always runs and passes. The matrix jobs' names
+  change with the images, so no ruleset can require them.
 - **Native builds, no QEMU:** arm64 as fast as amd64, in parallel. Each
   platform downloads geo-blocking data itself: it can differ slightly.
-- **A `push` job per image** merges the platforms' `dir:` folders
-  (`podman save --format docker-dir --compress`: OCI would drop
-  `SHELL`), artifacts kept one day, into one manifest list; it fails
-  rather than push a partial list, and runs even when another image
-  failed.
+- **fedora-coreos's scan is a build check, not a report:** a fixable
+  Critical fails every build (pull request, push, weekly); an image the
+  build can't fix is ignored at its exact version
+  (`bootc/fedora-coreos/REFERENCES.md`).
 
 ## `build-apps.yml`
 

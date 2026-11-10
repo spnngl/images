@@ -75,7 +75,7 @@ Read each at the version this repository pins.
   ships `kubelet.service` and the kubeadm drop-in. The repo file is removed
   in the same `RUN`. `kubernetes-cni` ships `/opt/cni/bin`, which is
   `/var/opt` here: removed in that `RUN`, since `/var` ships empty.
-- **Tag `<major>-v<minor>`** (`versions.sh`, e.g. `44-v1.35`), as CI's
+- **Tag `<major>-v<minor>`** (`docker-bake.hcl`, e.g. `44-v1.35`), as CI's
   other images: a Fedora CoreOS release or a Kubernetes patch release
   reaches the nodes with `bootc upgrade`; a new major or Kubernetes minor
   is a new tag (`bootc switch`, or new machines through Cluster API).
@@ -84,7 +84,7 @@ Read each at the version this repository pins.
   without `--kubernetes-version` takes the newest patch release of the
   series, which may not be in the image: pass the version.
 - **One image:** kubeadm nodes only, no k3s, no Docker. Replaces the
-  `base`/`kubeenv`/`dockerenv` scheme of `bootc/AGENTS.md`; its stages
+  `base`/`kubeenv` scheme of `bootc/AGENTS.md`; its stages
   are layers of the one image ("Layers", below).
 - **Removed `zincati`, `moby-engine`, `docker-cli`:** updates come only from
   Cluster API or bootc-operator; containerd is the runtime.
@@ -312,7 +312,7 @@ Read each at the version this repository pins.
 - **Smaller downloads, from CI's build cache:** a node downloads only
   the layers whose digest changed. CI keeps the BuildKit cache in the
   Actions cache (`build-bootc.yml`), and passes no `SOURCE_DATE_EPOCH`:
-  the Containerfile's `0`, as `build.sh`. A Kubernetes-only change then
+  `docker-bake.hcl`'s `0`. A Kubernetes-only change then
   rebuilds `kube` and `image`, and the `system` stage's layers keep
   their digests: the same tars, and podman's gzip gives the same bytes
   from the same tar. Checked on PR #281: two CI runs gave the same 77
@@ -379,14 +379,14 @@ Read each at the version this repository pins.
   `rpm -V` doesn't report them missing.
 - **Scan in stages after the image** (`scan`, then `reports` from
   `scratch`): the reports stay out of the image, and the image stays the
-  default target. `build.sh` and CI export them.
+  default stage. CI exports them (the `-reports` Bake target).
 - **Built with BuildKit, in CI too** (`builder: buildkit` in
   `build-bootc.yml`, then `podman load` for the signing): podman and
   buildah mount `/run/.containerenv` in every `RUN`, and SSG's
   `installed_env_is_a_container` check turns the rules of a machine off
   when it exists. `OSCAP_PROBE_ROOT` on a mount of the image gave
   unstable results, and `chroot` lacks `/proc`.
-- **`build.sh` and CI fail on a failed rule**, before building the image:
+- **CI fails on a failed rule** (the `check` stage):
   `oscap` exits 2 when a rule fails, which the `scan` stage accepts so
   that the report is exported; any other error fails the stage.
 - **Nodes scan daily** (`openscap.timer`, `usr/libexec/openscap-scan`):
@@ -514,8 +514,8 @@ Read each at the version this repository pins.
   score; EPSS and CVSS by id; counts of every match by severity and fix
   state, and of the ignored ones by id, so an ignore rule stays visible;
   the database's age. `grype.json` keeps every match.
-- **`build.sh` and CI fail on a fixable Critical**: the stage reports,
-  and the build stops after exporting, as for OpenSCAP.
+- **CI fails on a fixable Critical** (the `check` stage): the job stops
+  after exporting the reports, as for OpenSCAP.
 - **Ignore rules for what the image can't fix**
   (`usr/share/grype/ignore.yaml`): Kubernetes' and Fedora's builds, and
   false positives. In the image, so the nodes ignore the same. Each names
@@ -600,7 +600,7 @@ Read each at the version this repository pins.
   `goss`, report `goss/build.tap` of `reports`): what holds without
   booting (packages, files, unit links and drop-ins, `sshd -T`, the
   merged containerd config). CI runs it on every build, through
-  `--target reports`; `check-reports.sh` fails on a `not ok`, or on a
+  the `reports` stage; the `check` stage fails on a `not ok`, or on a
   report with no check (goss couldn't read the suite). `test.sh` runs
   what needs the booted node.
 - **goss from Fedora's package** (`goss-bin` stage, `dnf install`): no

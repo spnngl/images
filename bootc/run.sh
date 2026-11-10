@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Boot output/<name>/<name>.qcow2, built by bootc/build.sh, in QEMU.
+# Boot output/<id>/<id>.qcow2, built by bootc/build.sh, in QEMU.
 # macOS on Apple Silicon only: HVF acceleration, Homebrew's qemu and firmware.
 #
-# Usage: [SSH_PORT=2222] bootc/run.sh [name]    (default: fedora)
+# Usage: [SSH_PORT=2222] bootc/run.sh [id]    (default: fedora-45)
 #
 # Console: this terminal, quit with Ctrl-a x.
 # SSH:     ssh -p 2222 <user from config.toml>@localhost (guest sshd port 42022)
 # Disk changes are discarded on exit (-snapshot).
 set -euo pipefail
 
-name="${1:-fedora}"
+name="${1:-fedora-45}"
 ssh_port="${SSH_PORT:-2222}"
 cd "$(dirname "$0")/.."
 

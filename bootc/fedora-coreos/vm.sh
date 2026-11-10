@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Test VM of bootc/fedora-coreos: boots the `qemu` disk image that build.sh
+# Test VM of bootc/fedora-coreos: boots the `qemu` disk image that disk-images.sh
 # made, inside the workbench (workbench.sh), with KVM.
 #
 # Usage: bootc/fedora-coreos/vm.sh up [ignition.ign]
@@ -49,7 +49,7 @@ set -euo pipefail
 cd /work/vm
 
 disk=/work/fedora-coreos-qemu.x86_64.qcow2
-[[ -f ${disk} ]] || { echo "error: ${disk} not found, run: bootc/fedora-coreos/build.sh qemu" >&2; exit 1; }
+[[ -f ${disk} ]] || { echo "error: ${disk} not found, run: bootc/fedora-coreos/disk-images.sh, see AGENTS.md" >&2; exit 1; }
 
 # Only one VM: replace the running one.
 pid=$(cat qemu.pid 2>/dev/null || true)

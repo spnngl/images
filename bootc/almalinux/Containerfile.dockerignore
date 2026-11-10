@@ -1,0 +1,8 @@
+# The build context is bootc/, shared by fedora and almalinux: send only what this
+# Containerfile reads. BuildKit reads this file, named after the Containerfile,
+# before bootc/.dockerignore (bootc/REFERENCES.md, "Own build context").
+*
+!almalinux
+!fedora
+!k3s
+**/*.md

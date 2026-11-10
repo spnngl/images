@@ -3,12 +3,12 @@
 Workflows in `workflows/`; `renovate.json5` at the repository root.
 Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
-- `build-bootc.yml`: lint, build, sign and push every bootc image of its
-  matrix, each platform on its own runner.
-- `build-apps.yml`: the same for the application images that changed,
-  found in the Bake files, not listed. Its `gate` job is the check the
-  `main` ruleset requires: its `needs` lists every job a pull request
-  runs.
+- `build-bootc.yml`, `build-apps.yml`: lint, build, sign and push the
+  bootc images, and the application images, that changed, found in the
+  Bake files, not listed. `build-bootc.yml` also runs the VM tests of
+  fedora-coreos before its push, and releases its disk images. Their
+  `gate-bootc` and `gate` jobs are the checks the `main` ruleset
+  requires: each one's `needs` lists every job a pull request runs.
 - `actions/bake-*`: the composite actions the build workflows share (see
   "Bake workflows").
 - `renovate.yml`: validates `renovate.json5`, and that Renovate reads
@@ -59,8 +59,8 @@ Rules of the actions, so a workflow stays a list of `uses:`:
   `packageRules` entry, with `prBodyNotes`.
 - Vulnerability false positives go in `.grype.yaml` and
   `.trivyignore.yaml`, each with its reason.
-- Application images' registries live in `tags()`
-  (`containers/docker-bake.hcl`), ghcr.io first: `bake-build` pushes
+- Images' registries live in `tags()` (`containers/docker-bake.hcl`,
+  `bootc/docker-bake.hcl`), ghcr.io first: `bake-build` pushes
   and `bake-push` attests there (`repositories[0]`); `bake-push` signs
   in every registry but Docker Hub. A new registry
   also needs its login in `bake-push` and, if signed, a scope in the

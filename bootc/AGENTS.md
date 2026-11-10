@@ -1,16 +1,15 @@
 # bootc images
 
-Bootable OS images, one per `bootc/<name>/`, built with podman by
-`bootc/build.sh` and `.github/workflows/build-bootc.yml`. Every
-Containerfile has three stages (`fedora-coreos` has one, its own build
-context and its own build and test scripts:
+Bootable OS images, one per `bootc/<name>/`, described by the
+`docker-bake.hcl` beside each Containerfile (targets, versions, tags) and
+built with BuildKit by `.github/workflows/build-bootc.yml`, or by
+`bootc/build.sh` for a disk image. `fedora` and `almalinux` have two
+stages (`fedora-coreos` has its own build context, tests and releases:
 [fedora-coreos/AGENTS.md](fedora-coreos/AGENTS.md)):
 
 - `base`: the host system, not an image on its own;
-- `kubeenv` (`FROM base`): k3s, no Docker. Tag
-  `<name>:<BASE_VERSION>-v<Kubernetes minor>k3s`;
-- `dockerenv` (`FROM base`): Docker. Last, so the default target: the
-  plain `<name>:<BASE_VERSION>` image.
+- `kubeenv` (`FROM base`): k3s. The one target, tagged
+  `<name>:<BASE_VERSION>-v<Kubernetes minor>k3s`.
 
 Before a change, read:
 
@@ -24,9 +23,10 @@ Before a change, read:
 ## Layout
 
 - **Build context** is `bootc/`, shared: an image can `COPY` another's
-  files (`COPY ./fedora/sysroot/common/ /`). `bootc/.containerignore`
-  covers every image but fedora-coreos, which builds from its own
-  folder.
+  files (`COPY ./fedora/sysroot/common/ /`). Each Containerfile
+  has a `Containerfile.dockerignore` beside it that lists what it reads,
+  so that a change to another image doesn't rebuild it; fedora-coreos
+  builds from its own folder, with its own `.dockerignore`.
 - **`sysroot/`** holds an image's files at their path in the image,
   copied with `COPY --link`: `sysroot/common/`, then
   `sysroot/<BASE_VERSION>/` for files that differ between base releases
@@ -41,14 +41,18 @@ Before a change, read:
   logs, caches and state.
 - Configure through drop-in folders (`*.d/`); files packages ship stay
   untouched.
-- `ARG BASE_VERSION=<version>` before `FROM` pins the base to a major
-  release and is the image's tag. CI passes it from the `build-bootc.yml`
-  matrix; Renovate bumps both in one PR, reviewed by hand. A new base
+- `ARG BASE_VERSION` before `FROM` pins the base to a major release and
+  is the image's tag. It has no default: the Bake target sets it, from
+  a `matrix` entry behind a `# renovate:` comment, which Renovate bumps
+  in a PR reviewed by hand. A new base
   fails the build until `sysroot/<BASE_VERSION>/` holds the new base's
   `/etc/containers/policy.json` plus our changes (REFERENCES.md,
   "Signing"). The tag changes: hosts move with `bootc switch`.
-- A new image joins both `build-bootc.yml` matrices, `hadolint` and
-  `build`.
+- A new image is a `docker-bake.hcl` beside its Containerfile, with its
+  own `Containerfile.dockerignore`: `build-bootc.yml` finds it, no
+  workflow changes. `docker buildx bake -f docker-bake.hcl -f
+  bootc/docker-bake.hcl -f bootc/<name>/docker-bake.hcl --print` lists
+  its targets.
 - `RUN bootc container lint` is the last instruction of each stage.
 - Users and SSH keys go in `config.toml` (repo root, git-ignored,
   template `bootc/config.example.toml`): added to the disk image only.
@@ -58,9 +62,8 @@ Before a change, read:
 ## Build check
 
 ```sh
-bootc/build.sh <name>   # default target and a qcow2; needs rootful podman and ./config.toml
-bootc/run.sh <name>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
-podman build --format=docker --target kubeenv -f bootc/<name>/Containerfile -t ghcr.io/spnngl/images/<name>:<BASE_VERSION>-v<Kubernetes minor>k3s bootc/
+bootc/build.sh <id>   # id: a Bake target, e.g. fedora-45; builds it and a qcow2; needs docker buildx, rootful podman and ./config.toml
+bootc/run.sh <id>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
 ```
 
 Done when each build ends without error and, for `run.sh`, the SSH login

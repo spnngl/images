@@ -3,13 +3,13 @@
 # Derived Fedora bootc image. Stages and build commands: bootc/AGENTS.md.
 # Docs: https://bootc.dev/bootc/building/guidance.html
 
-# Base image major release, also the tag of this image. CI sets it with
-# --build-arg (.github/workflows/build-bootc.yml); keep this default in sync.
+# Base image major release, also the tag of this image: set by
+# bootc/fedora/docker-bake.hcl, which has no default to keep in sync.
 # Available tags: https://quay.io/repository/fedora/fedora-bootc?tab=tags
-ARG BASE_VERSION=45
+ARG BASE_VERSION
 
 
-# The host system, shared by dockerenv and kubeenv.
+# The host system.
 FROM quay.io/fedora/fedora-bootc:${BASE_VERSION} AS base
 
 ARG SOURCE_DATE_EPOCH=0
@@ -73,9 +73,9 @@ COPY --link ./fedora/sysroot/${BASE_VERSION}/ /
 # bootc/K3S.md.
 FROM base AS kubeenv
 
-# k3s release (its tag), which sets Kubernetes' and CRI-O's. CI sets it
-# with --build-arg (.github/workflows/build-bootc.yml); keep this default in sync.
-ARG INSTALL_K3S_VERSION=v1.37.2+k3s1
+# k3s release (its tag), which sets Kubernetes' and CRI-O's: set by
+# bootc/fedora/docker-bake.hcl.
+ARG INSTALL_K3S_VERSION
 
 # Bind-mounted, not copied: the script stays out of the image.
 RUN --mount=type=bind,source=k3s,target=/k3s \
@@ -83,29 +83,6 @@ RUN --mount=type=bind,source=k3s,target=/k3s \
 
 # After the install, so that editing sysroot/ doesn't rerun it.
 COPY --link ./k3s/sysroot/ /
-
-# Keep this as the last instruction, on its own.
-# hadolint ignore=DL3059
-RUN bootc container lint
-
-
-# Docker. Last stage, so the default target.
-FROM base AS dockerenv
-
-RUN <<EORUN
-# See https://docs.docker.com/engine/install/fedora/
-dnf config-manager addrepo --from-repofile=https://download.docker.com/linux/fedora/docker-ce.repo
-
-dnf -yq install docker-ce docker-ce-cli containerd.io docker-buildx-plugin \
-    docker-compose-plugin docker-model-plugin
-
-systemctl enable docker.service containerd.service
-
-# /var ships empty.
-dnf -yq autoremove
-dnf -yq clean all
-rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf*
-EORUN
 
 # Keep this as the last instruction, on its own.
 # hadolint ignore=DL3059

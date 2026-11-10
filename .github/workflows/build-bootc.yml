@@ -1,39 +1,35 @@
-# Lint and build every bootc image, then push it to
-# ghcr.io/spnngl/images/<name>:<version>, <version> being the base
-# image major release (the Containerfile's BASE_VERSION build arg), or
-# the tag the image's versions.sh gives.
+# Build the bootc images (bootc/AGENTS.md): fedora, almalinux and
+# fedora-coreos, those that changed since the last build (every one on the
+# weekly rebuild and manual runs: see .github/actions/bake-discover), and
+# push them to the tags of their Bake target (bootc/*/docker-bake.hcl):
+# ghcr.io/spnngl/images/<name>:<tag>, signed with our key, which hosts check
+# (bootc/REFERENCES.md, "Signing"). Pull requests build, scan and test,
+# never push.
 # Application images: build-apps.yml.
-# Pull requests only lint and build, they never push.
+#
+# Bake describes what to build; the .github/actions/bake-* actions run it:
+# one job per target and platform; the VM tests of fedora-coreos pass before
+# any of its tags is pushed.
 #
 # Disk images stay local (bootc/build.sh): they need config.toml, which
 # holds credentials. fedora-coreos's has none: its OpenStack qcow2 is a
-# release (disk-image job).
+# release (release job).
 name: build-bootc
 
 on:
-  # Only when a bootc image's input changed, and then every bootc image:
-  # they share most of their files. bootc/*.sh: the local scripts
-  # (build.sh, run.sh), and *.md, the docs: not build inputs. Any file of
-  # bootc/fedora-coreos/ makes a fedora-coreos release (disk-image job).
   push:
     branches:
       - main
-    paths: &paths
-      - bootc/**
-      - "!bootc/*.sh"
-      - "!bootc/**/*.md"
-      - bootc/fedora-coreos/**
-      - .github/workflows/build-bootc.yml
   pull_request:
-    paths: *paths
-  # Weekly rebuild
+  # Weekly rebuild: picks up the base images' updates.
   schedule:
     - cron: "0 7 * * 0"
       timezone: Europe/Paris
   workflow_dispatch:
 
 # Every run on main pushes the same tags: cancel the older run so it can't
-# overwrite the newer one's images.
+# overwrite the newer one's images. The newer one also builds the changes
+# of the cancelled one (see bake-discover).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -46,15 +42,55 @@ defaults:
     shell: bash
 
 jobs:
+  # The images to build, found not listed: the targets of the Bake files,
+  # where versions are written once and Renovate updates them.
+  discover:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      # gh run list, in bake-discover.
+      actions: read
+    outputs:
+      targets: ${{ steps.discover.outputs.targets }}
+      builds: ${{ steps.discover.outputs.builds }}
+      files: ${{ steps.discover.outputs.files }}
+      containerfiles: ${{ steps.discover.outputs.containerfiles }}
+      groups: ${{ steps.discover.outputs.groups }}
+      releases: ${{ steps.releases.outputs.releases }}
+    steps:
+      # The action's own files: a local action needs the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - id: discover
+        uses: ./.github/actions/bake-discover
+        with:
+          # The root file holds line(); the others, the targets.
+          files: |-
+            docker-bake.hcl
+            bootc/docker-bake.hcl
+            bootc/*/docker-bake.hcl
+          workflow: build-bootc.yml
+
+      # One release per fedora-coreos line, when it or its GPU image
+      # changed: the ids of the images that are not the GPU's.
+      - id: releases
+        env:
+          GROUPS_JSON: ${{ steps.discover.outputs.groups }}
+        run: |-
+          echo "releases=$(jq -c '.["disk-image"] | map(sub("^fedora-coreos-nvidia-"; "fedora-coreos-")) | unique' <<< "${GROUPS_JSON}")" >> "${GITHUB_OUTPUT}"
+
+  # Same as build-apps.yml's, for the Containerfiles to build only: code
+  # scanning keeps the others' alerts, from their last analysis.
   hadolint:
+    needs: discover
+    if: needs.discover.outputs.containerfiles != '[]'
     runs-on: ubuntu-26.04
     strategy:
       fail-fast: false
       matrix:
-        containerfile:
-          - bootc/fedora/Containerfile
-          - bootc/almalinux/Containerfile
-          - bootc/fedora-coreos/Containerfile
+        containerfile: ${{ fromJSON(needs.discover.outputs.containerfiles) }}
     permissions:
       contents: read
       security-events: write
@@ -80,316 +116,157 @@ jobs:
           category: hadolint-${{ matrix.containerfile }}
         if: always()
 
-  # One job per image and platform, each on a runner of that platform:
-  # native builds, no QEMU. The push job below merges them into one
-  # manifest list per image.
+  # One job per target and platform, each on a runner of that platform:
+  # native builds and tests, no QEMU. The push job below merges them into
+  # one manifest list per target.
   build:
-    name: build ${{ matrix.image.name }}${{ matrix.image.version && format(':{0}{1}', matrix.image.version, matrix.image.suffix) || '' }} ${{ matrix.platform.arch }}
-    needs: hadolint
-    # Preinstalled Podman 5.7 / Buildah 1.42: the Containerfiles use
-    # COPY --link (buildah 1.41+); ubuntu-24.04 only has buildah 1.33.
+    name: build ${{ matrix.target.id }} ${{ matrix.platform.arch }}
+    needs:
+      - discover
+      - hadolint
+    # Also when hadolint is skipped (no Containerfile to build), not when
+    # it failed.
+    if: >-
+      !cancelled() && !failure() && needs.discover.outputs.targets != '[]'
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
-      # The scan's SARIF upload, on pull requests (disabled below).
-      # security-events: write
+      packages: write
     strategy:
       fail-fast: false
-      matrix:
-        # x86-64 levels: fedora-bootc only has v3 images. almalinux-bootc:10 has v3 and v2 images, but the docker-ce
-        # repository only has v3 binaries. almalinux:9 (EOL 2032) gives v2
-        # binaries without issue.
-        #
-        # Optional keys, for multi-stage Containerfiles: target, the stage to
-        # build (default: the last one), suffix, appended to the tag, and
-        # k3s, the k3s release (the Containerfiles' ARG INSTALL_K3S_VERSION).
-        # fedora and almalinux: dockerenv is <version>, kubeenv
-        # <version>-v<Kubernetes minor release>k3s. Anchors: suffix and k3s
-        # are written once. The tag has no patch release: a patch reaches
-        # hosts with `bootc upgrade`, only a minor needs `bootc switch`.
-        # No version: the image has one, and its own tag, both read from its
-        # Containerfile by bootc/<name>/versions.sh; its sysroot/ has no
-        # <version>/ folder.
-        # builder: buildkit, built with docker buildx as bootc/<name>/build.sh
-        # builds it, then handed to podman (default: podman).
-        # context: the build context (default: bootc/, shared by the images).
-        # signing: the folder holding the signature files the image ships,
-        # registries.d and the public key at their path in the image
-        # (default: bootc/fedora/sysroot/common, shared).
-        # policy: the policy.json the image ships (default:
-        # bootc/<name>/sysroot/<version>/etc/containers/policy.json).
-        # dir: the image's folder in bootc/ (default: its name), when
-        # another image builds from it. image_base: the Containerfile's
-        # build arg IMAGE_BASE, the stage the image's own stage builds on.
-        # arches: the platforms the push job merges (default: both).
-        # The push job reuses this list (YAML anchor).
-        image: &images
-          - name: fedora
-            version: "45"
-            target: dockerenv
-          - name: fedora
-            version: "45"
-            target: kubeenv
-            # Renovate updates both in one replacement (renovate.json5):
-            # keep them on consecutive lines, in this order.
-            suffix: &kubeenv -v1.37k3s
-            k3s: &k3s v1.37.2+k3s1
-          - name: almalinux
-            version: "9"
-            target: dockerenv
-          - name: almalinux
-            version: "9"
-            target: kubeenv
-            suffix: *kubeenv
-            k3s: *k3s
-          - name: almalinux
-            version: "10"
-            target: dockerenv
-          - name: almalinux
-            version: "10"
-            target: kubeenv
-            suffix: *kubeenv
-            k3s: *k3s
-          # Kubernetes nodes (bootc/fedora-coreos/AGENTS.md). BuildKit: in a
-          # podman build, /run/.containerenv makes OpenSCAP skip the rules
-          # of a machine.
-          - name: fedora-coreos
-            builder: buildkit
-            context: bootc/fedora-coreos/
-            signing: bootc/fedora-coreos/sysroot/system
-            policy: bootc/fedora-coreos/sysroot/system/etc/containers/policy.json
-          # The GPU nodes' image: fedora-coreos's Containerfile, built up to
-          # its nvidia stage (REFERENCES.md, "GPU image"). Same tag as
-          # fedora-coreos, from its versions.sh. amd64 only: the exclude
-          # below, and `arches` for the push job.
-          - name: fedora-coreos-nvidia
-            dir: fedora-coreos
-            image_base: nvidia
-            arches: amd64
-            builder: buildkit
-            context: bootc/fedora-coreos/
-            signing: bootc/fedora-coreos/sysroot/system
-            policy: bootc/fedora-coreos/sysroot/system/etc/containers/policy.json
-        # Every image is built for every platform, but for the exclude.
-        # Keep the push job's ARCHES in sync.
-        platform:
-          - arch: amd64
-            runner: ubuntu-26.04
-          - arch: arm64
-            runner: ubuntu-26.04-arm
-        exclude:
-          - image:
-              name: fedora-coreos-nvidia
-            platform:
-              arch: arm64
-    env:
-      K3S: ${{ matrix.image.k3s }}
-      NAME: ${{ matrix.image.name }}
-      DIR: ${{ matrix.image.dir || matrix.image.name }}
-      # build-push-action's: the GPU image's IMAGE_BASE, none for the others
-      # (an empty IMAGE_BASE= would replace the Containerfile's default).
-      BUILD_ARGS: ${{ matrix.image.image_base && format('IMAGE_BASE={0}', matrix.image.image_base) || '' }}
-      VERSION: ${{ matrix.image.version }}
-      SUFFIX: ${{ matrix.image.suffix }}
-      TARGET: ${{ matrix.image.target }}
-      CONTEXT: ${{ matrix.image.context || 'bootc/' }}
-      ARCH: ${{ matrix.platform.arch }}
+      matrix: ${{ fromJSON(needs.discover.outputs.builds) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      # TAG, the image; ARTIFACT, the same as the push job's: <image>_<arch>.
-      # "_" can't appear in a tag, so fedora_<version>_* doesn't match
-      # fedora_<version>-v<minor>k3s_*.
-      - run: |-
-          tag="${VERSION}${SUFFIX}"
-          if [[ -z ${VERSION} ]]; then
-            tag="$(bootc/"${DIR}"/versions.sh | sed -n 's/^IMAGE_TAG=//p')"
-          fi
-          echo "TAG=ghcr.io/spnngl/images/${NAME}:${tag}" >> "${GITHUB_ENV}"
-          echo "ARTIFACT=${NAME}_${tag}_${ARCH}" >> "${GITHUB_ENV}"
+      # Pull requests: an OCI layout, scanned and tested below; others:
+      # pushed by digest. fedora-coreos's amd64 build also exports the scan
+      # and goss reports (its `-reports` target, sharing the image's stages):
+      # the nodes are x86_64. Weekly and manual rebuilds skip the build
+      # cache, to fetch the packages that follow their archive, and
+      # refresh it (.github/REFERENCES.md).
+      - uses: ./.github/actions/bake-build
+        with:
+          item: ${{ toJSON(matrix.target) }}
+          arch: ${{ matrix.platform.arch }}
+          files: ${{ needs.discover.outputs.files }}
+          also: ${{ startsWith(matrix.target.id, 'fedora-coreos') && matrix.platform.arch == 'amd64' && format('{0}-reports', matrix.target.id) || '' }}
+          push: ${{ github.event_name != 'pull_request' }}
+          no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
 
-      # Same flags as bootc/build.sh. --format=docker: the OCI format drops
-      # SHELL. --platform is the runner's own: without QEMU, a runner of
-      # another platform fails instead of building the wrong one. The source
-      # label links the ghcr.io package to this repository.
-      # SOURCE_DATE_EPOCH, the last commit's time, for reproducible builds.
-      # See: https://oneuptime.com/blog/post/2026-03-18-use-podman-reproducible-builds/view
-      - if: matrix.image.builder != 'buildkit'
-        run: |-
-          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" ${VERSION:+--build-arg "BASE_VERSION=${VERSION}"} ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${DIR}/Containerfile" "${CONTEXT}"
-      # BuildKit images: a docker-container builder, the default docker
-      # driver can't export a build cache. Its image from mirror.gcr.io, as
-      # build-apps.yml, outside Docker Hub's pull rate limit.
-      - if: matrix.image.builder == 'buildkit'
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-        with:
-          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-      # BuildKit images: build cache in the Actions cache, one scope per
-      # image and platform (not per tag: the tag holds the Kubernetes
-      # minor). A cached system stage keeps its layers' digests, so a node
-      # downloads only the layers that changed (bootc/fedora-coreos/
-      # REFERENCES.md, "Layers"). Sunday and manual runs read none, to
-      # refresh the packages; every run writes it (image step). Not
-      # no-cache: the image step reuses the reports step's build.
-      # No SOURCE_DATE_EPOCH build arg: the Containerfile's ENV comes before
-      # every RUN, and a per-commit value would rebuild them all.
-      - if: matrix.image.builder == 'buildkit'
-        run: |-
-          echo "CACHE=type=gha,scope=${NAME}_${ARCH}" >> "${GITHUB_ENV}"
-      # The scans first, as bootc/fedora-coreos/build.sh: a failed OpenSCAP
-      # rule, a fixable Critical vulnerability or a failed goss check
-      # (test/*/build.yaml) stops here. amd64 only: the nodes are x86_64.
-      # The reports are kept either way. The scan, goss-bin and goss stages
-      # are never in the cache (not the image target's): the scan always
-      # uses today's grype database.
-      # No attestations: the reports are files, and nodes don't read the
-      # image's (bootc/REFERENCES.md, "Signing").
-      - id: reports
-        if: startsWith(matrix.image.name, 'fedora-coreos') && matrix.platform.arch == 'amd64'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: ${{ env.CONTEXT }}
-          file: bootc/${{ env.DIR }}/Containerfile
-          target: reports
-          build-args: ${{ env.BUILD_ARGS }}
-          platforms: linux/${{ env.ARCH }}
-          provenance: false
-          sbom: false
-          cache-from: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && env.CACHE || '' }}
-          outputs: type=local,dest=${{ runner.temp }}/reports
-      - if: steps.reports.outcome == 'success'
-        run: bootc/fedora-coreos/check-reports.sh "${RUNNER_TEMP}/reports"
-      - if: ${{ !cancelled() && steps.reports.outcome != 'skipped' }}
+      # The reports of the build (OpenSCAP, grype, goss): kept, and the job
+      # fails on a failed rule, a fixable Critical or a failed check
+      # (bootc/fedora-coreos/REFERENCES.md): the `check` stage wrote
+      # reports/failed then.
+      - if: always() && hashFiles('reports/**') != ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: ${{ matrix.image.name }}_reports
-          path: ${{ runner.temp }}/reports
+          name: reports_${{ matrix.target.id }}
+          path: reports
           overwrite: true
-      # The image, from the scans' build, then into podman's storage, where
-      # the steps below find the others. mode=max: the system and kube
-      # stages hold the work. ignore-error: fork pull requests can't write.
-      - if: matrix.image.builder == 'buildkit'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: ${{ env.CONTEXT }}
-          file: bootc/${{ env.DIR }}/Containerfile
-          target: ${{ env.TARGET }}
-          build-args: ${{ env.BUILD_ARGS }}
-          platforms: linux/${{ env.ARCH }}
-          tags: ${{ env.TAG }}
-          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
-          provenance: false
-          sbom: false
-          cache-from: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && env.CACHE || '' }}
-          cache-to: ${{ env.CACHE }},mode=max,ignore-error=true
-          load: true
-      - if: matrix.image.builder == 'buildkit'
+          retention-days: 14
+      - if: startsWith(matrix.target.id, 'fedora-coreos') && matrix.platform.arch == 'amd64'
         run: |-
-          docker save "${TAG}" | podman load
-          docker image rm "${TAG}"
-          docker buildx prune --all --force
-      # Disabled: on the almalinux:9 amd64 jobs (1.5 GB compressed, the
-      # largest image), the runner received a shutdown signal mid-scan
-      # (PR #16), most likely out of disk or memory: podman's storage, the
-      # OCI layout and each scanner's unpacked copy and database don't fit.
-      # Pushed bootc images are still scanned daily by image-scan.yml.
-      # To enable again: free disk first (podman system prune --all --force
-      # after the save), then uncomment these steps and the permission
-      # above.
-      #
-      # Pull requests report findings, never fail on one (.github/REFERENCES.md,
-      # "Vulnerability scanning"); pushed images, image-scan.yml. An OCI
-      # layout: both scanners read it, not both podman's storage.
-      # - if: github.event_name == 'pull_request'
-      #   run: podman save --format oci-dir -o "${RUNNER_TEMP}/oci" "${TAG}"
-      # - id: scan
-      #   if: github.event_name == 'pull_request'
-      #   uses: spnngl/.github/.github/actions/scan-image@main
-      #   with:
-      #     oci-layout: ${{ runner.temp }}/oci
-      #     platform: linux/${{ env.ARCH }}
-      #     fail: false
-      # # Same categories as image-scan.yml's: the pull request shows the
-      # # findings its image adds to the pushed one's.
-      # - if: github.event_name == 'pull_request'
-      #   uses: github/codeql-action/upload-sarif@v4
-      #   with:
-      #     sarif_file: ${{ steps.scan.outputs.grype-sarif }}
-      #     category: grype-${{ env.TAG }}-linux/${{ env.ARCH }}
-      # - if: github.event_name == 'pull_request'
-      #   uses: github/codeql-action/upload-sarif@v4
-      #   with:
-      #     sarif_file: ${{ steps.scan.outputs.trivy-sarif }}
-      #     category: trivy-${{ env.TAG }}-linux/${{ env.ARCH }}
-      # Hand the image to the push job as a dir: transport folder.
-      # docker-dir keeps the v2s2 manifest (OCI would drop SHELL), and
-      # --compress gzips the layers here, both platforms in parallel: the
-      # artifact is smaller, and the push job sends the blobs as they are.
-      # fedora-coreos amd64 on pull requests too: the vm-test job boots it.
-      - if: github.event_name != 'pull_request' || (matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64')
-        run: podman save --format docker-dir --compress -o "${RUNNER_TEMP}/${ARTIFACT}" "${TAG}"
-      # compression-level 0: the layers are already gzipped.
-      # overwrite: "Re-run all jobs" uploads names this run already has.
-      - if: github.event_name != 'pull_request' || (matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64')
+          cat reports/summary.txt
+          [[ ! -e reports/failed ]]
+
+      # Pull requests: findings are reported, against the target's first tag
+      # as baseline (.github/REFERENCES.md, "Vulnerability scanning");
+      # pushed images, image-scan.yml.
+      - if: github.event_name == 'pull_request'
+        uses: spnngl/.github/.github/actions/scan-image@main
+        with:
+          oci-layout: ${{ runner.temp }}/oci
+          baseline: ${{ matrix.target.tags[0] }}
+          platform: linux/${{ matrix.platform.arch }}
+          fail: false
+
+      # The VM tests below run on the amd64 image of the targets of the
+      # `vm-test` group: on pushes they pull it from the registry, here it
+      # only exists as this layout.
+      - if: >-
+          github.event_name == 'pull_request' && matrix.platform.arch == 'amd64'
+          && contains(fromJSON(needs.discover.outputs.groups)['vm-test'], matrix.target.id)
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: ${{ env.ARTIFACT }}
-          path: ${{ runner.temp }}/${{ env.ARTIFACT }}
-          compression-level: 0
+          name: oci_${{ matrix.target.id }}
+          path: ${{ runner.temp }}/oci
           overwrite: true
-          if-no-files-found: error
           retention-days: 1
+          compression-level: 0
 
-  # fedora-coreos's VM tests (bootc/fedora-coreos/AGENTS.md, Build check)
-  # on the image the build job made: its qemu disk image boots in a test
-  # VM, in a podman workbench (WORKBENCH=podman) with the runner's KVM.
-  # Pull requests too. The push job pushes fedora-coreos only if it passed:
-  # nodes follow the tag with bootc upgrade.
+  # The VM tests of fedora-coreos (bootc/fedora-coreos/AGENTS.md, "Build
+  # check"): the amd64 image of each target of the `vm-test` group, a node
+  # booted from a disk made from it. They pass before the image's tags are
+  # pushed.
   vm-test:
-    needs: build
+    name: vm-test ${{ matrix.id }}
+    needs:
+      - discover
+      - hadolint
+      - build
     # As the push job: another image's failed build doesn't stop it. A
-    # failed fedora-coreos amd64 build leaves no artifact, and fails here.
+    # failed amd64 build leaves no image, and fails here.
     if: >-
-      !cancelled() && needs.build.result != 'skipped'
+      !cancelled() && needs.hadolint.result != 'failure'
+      && needs.build.result != 'skipped'
+      && toJSON(fromJSON(needs.discover.outputs.groups)['vm-test']) != '[]'
     runs-on: ubuntu-26.04
     timeout-minutes: 90
     permissions:
       contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        id: ${{ fromJSON(needs.discover.outputs.groups)['vm-test'] }}
     env:
       WORKBENCH: podman
+      ID: ${{ matrix.id }}
+      TARGETS: ${{ needs.discover.outputs.targets }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG: the build job's ARTIFACT.
-      - run: bootc/fedora-coreos/versions.sh >> "${GITHUB_ENV}"
+      # The image's first tag: the disk follows it (`bootc upgrade`).
+      - run: |-
+          echo "TAG=$(jq -r --arg id "${ID}" '.[] | select(.id == $id) | .tags[0]' <<< "${TARGETS}")" >> "${GITHUB_ENV}"
+
+      # Pushes: the digest the build job pushed, untagged. Pull requests:
+      # the layout it kept.
       - id: artifact
         continue-on-error: true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: fedora-coreos_${{ env.IMAGE_TAG }}_amd64
+          name: ${{ github.event_name == 'pull_request' && format('oci_{0}', matrix.id) || format('digest_{0}_amd64', matrix.id) }}
           path: ${{ runner.temp }}/image
       - if: steps.artifact.outcome == 'failure'
         run: |-
-          echo "::error::No image to test: the job build fedora-coreos amd64 failed"
+          echo "::error::No image to test: the job build ${ID} amd64 failed"
           exit 1
-      # bwrap-userns-restrict: as the disk-image job. No disk clean-up, as
-      # the disk-image job's: the runner's 145 GB disk is enough (df at the
+      # bwrap-userns-restrict: as the release job. No disk clean-up, as
+      # the release job's: the runner's 145 GB disk is enough (df at the
       # end of the job).
       - run: sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
-      # The qemu disk image, as build.sh makes it: in the workbench, from
-      # the OCI archive, which test-greenboot.sh also reads there.
-      - run: |-
-          skopeo copy --quiet "dir:${RUNNER_TEMP}/image" "oci-archive:${RUNNER_TEMP}/fedora-coreos.ociarchive"
+      # The qemu disk image: in the workbench, from the OCI archive, which
+      # test-greenboot.sh also reads there.
+      - env:
+          EVENT: ${{ github.event_name }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |-
+          archive="oci-archive:${RUNNER_TEMP}/fedora-coreos.ociarchive"
+          if [[ ${EVENT} == pull_request ]]; then
+            skopeo copy --quiet --override-arch amd64 "oci:${RUNNER_TEMP}/image" "${archive}"
+          else
+            skopeo copy --quiet --override-arch amd64 --src-creds "${GITHUB_ACTOR}:${GITHUB_TOKEN}" "docker://${TAG%:*}@$(< "${RUNNER_TEMP}/image/digest_${ID}_amd64")" "${archive}"
+          fi
           rm -rf "${RUNNER_TEMP}/image"
           bootc/fedora-coreos/workbench.sh up
           bootc/fedora-coreos/workbench.sh exec bash -c 'cat > /work/fedora-coreos.ociarchive' < "${RUNNER_TEMP}/fedora-coreos.ociarchive"
           rm "${RUNNER_TEMP}/fedora-coreos.ociarchive"
-          bootc/fedora-coreos/workbench.sh exec bash -s -- /work qemu "ostree-image-signed:docker://ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}" \
+          bootc/fedora-coreos/workbench.sh exec bash -s -- /work qemu "ostree-image-signed:docker://${TAG}" \
             < bootc/fedora-coreos/disk-images.sh
       - id: vm
         run: bootc/fedora-coreos/vm.sh up
@@ -411,14 +288,48 @@ jobs:
       - if: failure() && steps.vm.outcome != 'skipped'
         run: bootc/fedora-coreos/vm.sh log | tail -n 300
 
-  # Merge each image's platforms into one manifest list, then sign, push,
-  # attest and check it.
+      # What the push job of this image, and of its GPU image, waits for: a
+      # failed line leaves the others' pushes alone.
+      - run: touch "${RUNNER_TEMP}/vm-passed_${ID}"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: vm-passed_${{ matrix.id }}
+          path: ${{ runner.temp }}/vm-passed_${{ matrix.id }}
+          overwrite: true
+          retention-days: 1
+
+  # The pull request gate: the one check of this workflow the main
+  # ruleset requires, the others being named after the images that
+  # changed (.github/REFERENCES.md). Passes when every job above passed
+  # or was skipped (nothing to lint or build). always(): GitHub counts a
+  # skipped required check as passed, so this one must run when a job
+  # above fails.
+  gate-bootc:
+    needs:
+      - discover
+      - hadolint
+      - build
+      - vm-test
+    if: always()
+    runs-on: ubuntu-26.04
+    permissions: {}
+    steps:
+      - env:
+          NEEDS: ${{ toJSON(needs) }}
+        run: |-
+          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<< "${NEEDS}"
+
+  # Merge each target's platforms into one manifest list, then sign, check
+  # and attest it; fedora-coreos's only when its VM tests passed.
   push:
-    name: push ${{ matrix.image.name }}${{ matrix.image.version && format(':{0}{1}', matrix.image.version, matrix.image.suffix) || '' }}
-    needs: [build, vm-test]
+    name: push ${{ matrix.target.id }}
+    needs:
+      - discover
+      - build
+      - vm-test
     # needs: build waits for every build job, and fails if any did. Run
-    # anyway, unless cancelled or hadolint failed: each image pushes on its
-    # own, and fails below if one of its platforms is missing, or, for
+    # anyway, unless cancelled or hadolint failed: each target pushes on its
+    # own, and fails if one of its platforms is missing, or, for
     # fedora-coreos, if its VM tests didn't pass.
     if: >-
       !cancelled() && github.event_name != 'pull_request' && needs.build.result != 'skipped'
@@ -433,186 +344,144 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: *images
+        target: ${{ fromJSON(needs.discover.outputs.targets) }}
     env:
-      NAME: ${{ matrix.image.name }}
-      DIR: ${{ matrix.image.dir || matrix.image.name }}
-      VERSION: ${{ matrix.image.version }}
-      SUFFIX: ${{ matrix.image.suffix }}
-      SIGNING: ${{ matrix.image.signing || 'bootc/fedora/sysroot/common' }}
-      POLICY: ${{ matrix.image.policy }}
-      # The build job's platform list for this image (its matrix has no other
-      # legs).
-      ARCHES: ${{ matrix.image.arches || 'amd64 arm64' }}
+      ITEM: ${{ toJSON(matrix.target) }}
+      TESTED: ${{ needs.discover.outputs.groups }}
     steps:
-      # A job-level if can't read the matrix: this entry fails alone.
-      # The GPU image's VM tests are fedora-coreos's: its Containerfile and
-      # files, up to the nvidia stage.
-      - if: startsWith(matrix.image.name, 'fedora-coreos') && needs.vm-test.result != 'success'
-        env:
-          RESULT: ${{ needs.vm-test.result }}
+      # The action's own files: a local action needs the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # The VM tests are fedora-coreos's: the GPU image's are its line's
+      # (same Containerfile and files, up to the nvidia stage), and need
+      # to have passed only if they ran in this run.
+      - id: tested
         run: |-
-          echo "::error::the vm-test job didn't pass (${RESULT}): ${NAME} is not pushed"
+          id="$(jq -r .id <<< "${ITEM}")"
+          if [[ ${id} == fedora-coreos* ]] && jq -e --arg id "${id/fedora-coreos-nvidia-/fedora-coreos-}" '.["vm-test"] | index($id)' <<< "${TESTED}" > /dev/null; then
+            echo "id=${id/fedora-coreos-nvidia-/fedora-coreos-}" >> "${GITHUB_OUTPUT}"
+          fi
+      - if: steps.tested.outputs.id != ''
+        id: vm
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: vm-passed_${{ steps.tested.outputs.id }}
+          path: ${{ runner.temp }}/vm
+      - if: steps.tested.outputs.id != '' && steps.vm.outcome != 'success'
+        env:
+          ID: ${{ fromJSON(env.ITEM).id }}
+        run: |-
+          echo "::error::the VM tests of ${{ steps.tested.outputs.id }} didn't pass: ${ID} is not pushed"
           exit 1
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
 
-      # The build job's TAG, and its ARTIFACT without the platform.
-      - run: |-
-          tag="${VERSION}${SUFFIX}"
-          if [[ -z ${VERSION} ]]; then
-            tag="$(bootc/"${DIR}"/versions.sh | sed -n 's/^IMAGE_TAG=//p')"
-          fi
-          echo "TAG=ghcr.io/spnngl/images/${NAME}:${tag}" >> "${GITHUB_ENV}"
-          echo "ARTIFACT_PREFIX=${NAME}_${tag}" >> "${GITHUB_ENV}"
-
-      # One folder per artifact, named after it: <prefix>_<arch>. Except for a
-      # lone match, extracted into path itself (src/download-artifact.ts:
-      # `artifacts.length === 1`): the GPU image, amd64 only.
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          pattern: ${{ env.ARTIFACT_PREFIX }}_*
-          path: ${{ runner.temp }}/images
-      # One manifest list named TAG, an image per platform. Adding a
-      # missing folder fails: never push a list without every platform.
-      # The list points at the folders: the push below reads them.
-      - run: |-
-          read -r -a arches <<< "${ARCHES}"
-          podman manifest create "${TAG}"
-          for arch in "${arches[@]}"; do
-            dir="${RUNNER_TEMP}/images/${ARTIFACT_PREFIX}_${arch}"
-            (( ${#arches[@]} > 1 )) || dir="${RUNNER_TEMP}/images"
-            podman manifest add "${TAG}" "dir:${dir}"
-          done
-      # Install the files hosts get from the image, at the same paths: the
-      # push only writes sigstore signatures where registries.d enables them,
-      # and the check below reads the key from the path policy.json names.
-      - run: |-
-          sudo install -D -m 0644 -t /etc/containers/registries.d/ "${SIGNING}/etc/containers/registries.d/spnngl-images.yaml"
-          sudo install -D -m 0644 -t /usr/share/pki/containers/ "${SIGNING}/usr/share/pki/containers/spnngl-images.pub"
-      # Only CI signs: local builds (bootc/build.sh) are never pushed.
-      # podman, not cosign: cosign 3 stores signatures as a sigstore bundle
-      # (OCI referrers), which containers/image (bootc, podman, skopeo) can't
-      # read. podman writes the sha256-<digest>.sig attachments it reads, and
-      # takes cosign keys. RUNNER_TEMP is emptied at the end of the job.
-      # The key has no passphrase: --sign-passphrase-file /dev/null gives an
-      # empty one, without it podman prompts for it.
-      # manifest push signs the list (what bootc checks) and every image in
-      # it (what podman checks), and writes the list's digest for the
-      # attestation below.
-      # REGISTRY_AUTH_FILE: the attestation step only reads Docker's
-      # credential file, not podman's default auth.json (same format).
       - id: push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-        run: |-
-          umask 077
-          printf '%s\n' "${COSIGN_PRIVATE_KEY}" > "${RUNNER_TEMP}/cosign.key"
-          export REGISTRY_AUTH_FILE="${HOME}/.docker/config.json"
-          podman login ghcr.io -u "${GITHUB_ACTOR}" --password-stdin <<< "${GITHUB_TOKEN}"
-          podman manifest push --all --sign-by-sigstore-private-key "${RUNNER_TEMP}/cosign.key" --sign-passphrase-file /dev/null --digestfile "${RUNNER_TEMP}/digest" "${TAG}" "docker://${TAG}"
-          echo "digest=$(< "${RUNNER_TEMP}/digest")" >> "${GITHUB_OUTPUT}"
-      # The disk-image job builds from this exact image, not from its tag.
-      - if: startsWith(matrix.image.name, 'fedora-coreos')
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        uses: ./.github/actions/bake-push
         with:
-          name: ${{ matrix.image.name }}_digest
-          path: ${{ runner.temp }}/digest
-          overwrite: true
-          if-no-files-found: error
-      # SLSA build provenance (workflow, commit, run) for the manifest list,
-      # pushed next to the image as an OCI referrer. Hosts don't read it
-      # (see bootc/REFERENCES.md, "Signing"); check it with
-      # gh attestation verify oci://<tag> -R <owner>/<repo>.
-      # No storage record: it needs an organization-owned repository.
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-name: ghcr.io/spnngl/images/${{ matrix.image.name }}
-          subject-digest: ${{ steps.push.outputs.digest }}
-          push-to-registry: true
-          create-storage-record: false
-      # Pull every platform back with the policy.json this image ships: fails
-      # if the signing key doesn't match the committed public key, which
-      # would make hosts refuse every upgrade.
-      - run: |-
-          policy="${POLICY:-bootc/${DIR}/sysroot/${VERSION:+${VERSION}/}etc/containers/policy.json}"
-          read -r -a arches <<< "${ARCHES}"
-          for arch in "${arches[@]}"; do
-            podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${TAG}"
-          done
+          item: ${{ env.ITEM }}
+          cosign-private-key: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          cosign-password: ${{ secrets.COSIGN_PASSWORD }}
 
-  # Whether bootc/fedora-coreos/ changed since the newest fedora-coreos
-  # release. Compared with that release's tag, not with the push's commits:
-  # a run cancelled by a newer push (concurrency) loses no change.
-  disk-image-needed:
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-26.04
-    outputs:
-      needed: ${{ steps.diff.outputs.needed }}
-    steps:
-      # The tags, and the history to compare with.
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      # No published release yet, or its tag gone: a release.
-      - id: diff
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |-
-          last="$(gh release list --limit 100 --json tagName,createdAt,isDraft \
-            --jq '[.[] | select((.tagName | startswith("fedora-coreos-")) and (.isDraft | not))] | max_by(.createdAt) | .tagName // ""')"
-          if [[ -n ${last} ]] && git diff --quiet "${last}" HEAD -- bootc/fedora-coreos; then
-            echo "bootc/fedora-coreos/ unchanged since ${last}: no release"
-            echo needed=false >> "${GITHUB_OUTPUT}"
+      # Pull every platform back with the policy.json this image ships, and
+      # the files hosts get from the image, at the same paths: fails if the
+      # signing key doesn't match the committed public key, which would make
+      # hosts refuse every upgrade.
+      - run: |-
+          dir="$(jq -r '.file | sub("/[^/]*$"; "")' <<< "${ITEM}")"
+          tag="$(jq -r '.tags[0]' <<< "${ITEM}")"
+          if [[ ${dir} == bootc/fedora-coreos ]]; then
+            signing="${dir}/sysroot/system"
+            policy="${signing}/etc/containers/policy.json"
           else
-            echo needed=true >> "${GITHUB_OUTPUT}"
+            signing=bootc/fedora/sysroot/common
+            policy="${dir}/sysroot/$(jq -r .args.BASE_VERSION <<< "${ITEM}")/etc/containers/policy.json"
           fi
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ "${signing}/etc/containers/registries.d/spnngl-images.yaml"
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ "${signing}/usr/share/pki/containers/spnngl-images.pub"
+          while read -r arch; do
+            podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${tag}"
+          done < <(jq -r '.arches[]' <<< "${ITEM}")
+
+      # What the release job waits for: this image is pushed.
+      - run: |-
+          mkdir "${RUNNER_TEMP}/pushed"
+          touch "${RUNNER_TEMP}/pushed/pushed_$(jq -r .id <<< "${ITEM}")"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pushed_${{ matrix.target.id }}
+          path: ${{ runner.temp }}/pushed
+          overwrite: true
+          retention-days: 1
 
   # fedora-coreos's OpenStack disk image, and the GPU image's, from the
-  # images just pushed, as assets of one release: a release per change of
-  # bootc/fedora-coreos/, the newest 3 kept. Nodes made from them follow the
-  # image's tag with `bootc upgrade`. amd64 only: the nodes are x86_64.
-  disk-image:
-    needs: [push, disk-image-needed]
-    # Not on the push job's result: it fails when the GPU image's push does,
-    # and fedora-coreos's disk must not wait for it. The disks are made from
-    # the images of this run: fedora-coreos's digest artifact is required
-    # (its download fails without it), the GPU image's is not.
+  # images just pushed, as assets of one release per line: a release per
+  # change of the line's targets, the newest 3 of a line kept. Nodes made
+  # from them follow the image's tag with `bootc upgrade`. amd64 only: the
+  # nodes are x86_64. Not on the weekly rebuild: it changes no file.
+  release:
+    name: release ${{ matrix.id }}
+    needs:
+      - discover
+      - push
     if: >-
-      !cancelled() && github.event_name != 'pull_request'
-      && needs.disk-image-needed.outputs.needed == 'true'
+      !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && needs.push.result != 'skipped' && needs.discover.outputs.releases != '[]'
     runs-on: ubuntu-26.04
     permissions:
       contents: write
       # The qcow2's build provenance attestation, as the push job's.
       id-token: write
       attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        id: ${{ fromJSON(needs.discover.outputs.releases) }}
+    env:
+      ID: ${{ matrix.id }}
+      FILES: ${{ needs.discover.outputs.files }}
+      CHANGED: ${{ needs.discover.outputs.groups }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
-      # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG.
-      - run: bootc/fedora-coreos/versions.sh >> "${GITHUB_ENV}"
-      # The digests of the manifest lists the push jobs pushed.
+      # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG, GPU_ID: from the line's
+      # Bake target, which an unchanged one still has.
+      - run: |-
+          args=()
+          while read -r file; do
+            args+=(-f "${file}")
+          done <<< "${FILES}"
+          target="$(docker buildx bake "${args[@]}" --print "${ID}" | jq -c --arg id "${ID}" '.target[$id]')"
+          {
+            echo "BASE_VERSION=$(jq -r .args.BASE_VERSION <<< "${target}")"
+            echo "KUBERNETES_VERSION=$(jq -r .args.KUBERNETES_VERSION <<< "${target}")"
+            echo "IMAGE_TAG=$(jq -r '.tags[0] | sub("^.*:"; "")' <<< "${target}")"
+            echo "GPU_ID=${ID/fedora-coreos-/fedora-coreos-nvidia-}"
+          } >> "${GITHUB_ENV}"
+
+      # Which of the line's images this run pushed: a changed one that isn't
+      # failed to push. The GPU image's failure leaves the release without
+      # its disk, and says so; fedora-coreos's fails the job.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          name: fedora-coreos_digest
-          path: ${{ runner.temp }}/fedora-coreos
-      # The GPU image failed to build or push: the release goes without its
-      # disk, and says so.
-      - id: gpu
-        continue-on-error: true
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
-        with:
-          name: fedora-coreos-nvidia_digest
-          path: ${{ runner.temp }}/fedora-coreos-nvidia
-      - if: steps.gpu.outcome != 'success'
-        run: |-
-          echo "::warning::no fedora-coreos-nvidia digest: this release has no GPU disk image"
+          pattern: pushed_*
+          path: ${{ runner.temp }}/pushed
+          merge-multiple: true
+      - run: |-
+          for id in "${ID}" "${GPU_ID}"; do
+            if jq -e --arg id "${id}" '.["disk-image"] | index($id)' <<< "${CHANGED}" > /dev/null && [[ ! -e "${RUNNER_TEMP}/pushed/pushed_${id}" ]]; then
+              if [[ ${id} == "${ID}" ]]; then
+                echo "::error::${id} was not pushed: no release"
+                exit 1
+              fi
+              echo "::warning::${id} was not pushed: this release has no GPU disk image"
+              echo GPU_DISK=failed >> "${GITHUB_ENV}"
+            fi
+          done
+
       # osbuild keeps a raw disk and two trees of the image: room from the
       # runner's preinstalled SDKs, unused here.
       - run: |-
@@ -640,26 +509,26 @@ jobs:
       # failure fails the job; the GPU image's runs in a shell of its own, so
       # that the release goes without its disk, and the job fails at its end
       # (GPU_DISK): a re-run of the failed job adds it to the release.
-      - env:
-          GPU: ${{ steps.gpu.outcome }}
-        run: |-
+      - run: |-
           sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
           disk() {
             local image="$1" work="${RUNNER_TEMP}/work-$1"
+            # The image's repository: its id without the line.
+            local repository="ghcr.io/spnngl/images/${image%-*-*}"
             mkdir "${work}"
             skopeo copy --override-arch amd64 --remove-signatures --policy bootc/fedora-coreos/sysroot/system/etc/containers/policy.json \
-              "docker://ghcr.io/spnngl/images/${image}@$(< "${RUNNER_TEMP}/${image}/digest")" "oci-archive:${work}/fedora-coreos.ociarchive"
+              "docker://${repository}@$(docker buildx imagetools inspect --format '{{ json .Manifest }}' "${repository}:${IMAGE_TAG}" | jq -r .digest)" "oci-archive:${work}/fedora-coreos.ociarchive"
             sudo podman run --rm --privileged -v /dev:/dev -v "${work}:/work" \
               -v "${PWD}/bootc/fedora-coreos/disk-images.sh:/disk-images.sh:ro" \
               "registry.fedoraproject.org/fedora:${BASE_VERSION%%.*}" \
-              bash /disk-images.sh /work openstack "ostree-image-signed:docker://ghcr.io/spnngl/images/${image}:${IMAGE_TAG}"
-            sudo mv "${work}/fedora-coreos-openstack.x86_64.qcow2" "${RUNNER_TEMP}/disk/${image}-openstack.x86_64.qcow2"
+              bash /disk-images.sh /work openstack "ostree-image-signed:docker://${repository}:${IMAGE_TAG}"
+            sudo mv "${work}/fedora-coreos-openstack.x86_64.qcow2" "${RUNNER_TEMP}/disk/${image%-*-*}-openstack.x86_64.qcow2"
             sudo rm -rf "${work}"
           }
-          disk fedora-coreos
-          if [[ ${GPU} == success ]]; then
-            if ! bash -euo pipefail -c "$(declare -f disk); disk fedora-coreos-nvidia"; then
-              echo "::error::the fedora-coreos-nvidia disk image failed: this release has no GPU disk image"
+          disk "${ID}"
+          if [[ ${GPU_DISK:-} != failed ]] && jq -e --arg id "${GPU_ID}" '.["disk-image"] | index($id)' <<< "${CHANGED}" > /dev/null; then
+            if ! bash -euo pipefail -c "$(declare -f disk); disk ${GPU_ID}"; then
+              echo "::error::the ${GPU_ID} disk image failed: this release has no GPU disk image"
               echo GPU_DISK=failed >> "${GITHUB_ENV}"
             fi
           fi
@@ -702,15 +571,15 @@ jobs:
             gh release edit "${release}" --draft=false
           else
             gh release create "${release}" --target "${GITHUB_SHA}" --title "${release}" "${assets[@]}" \
-              --notes "OpenStack disk images of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\` and, when its build passed, of \`fedora-coreos-nvidia:${IMAGE_TAG}\` (the GPU nodes'): Fedora CoreOS ${BASE_VERSION}, Kubernetes ${KUBERNETES_VERSION}, commit ${GITHUB_SHA}. A node made from one follows its tag with \`bootc upgrade\`. Check a download with \`sha256sum -c <asset>.sha256\` and \`gh attestation verify <asset> -R ${GITHUB_REPOSITORY}\`."
+              --notes "OpenStack disk images of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\` and, when it has one, of \`fedora-coreos-nvidia:${IMAGE_TAG}\` (the GPU nodes'): Fedora CoreOS ${BASE_VERSION}, Kubernetes ${KUBERNETES_VERSION}, commit ${GITHUB_SHA}. A node made from one follows its tag with \`bootc upgrade\`. Check a download with \`sha256sum -c <asset>.sha256\` and \`gh attestation verify <asset> -R ${GITHUB_REPOSITORY}\`."
           fi
-      # The newest 3 published releases stay, older ones go with their tags.
-      # Drafts killed runs left go too; they have no tag yet.
+      # The newest 3 published releases of the line stay, older ones go with
+      # their tags. Drafts killed runs left go too; they have no tag yet.
       - env:
           GH_TOKEN: ${{ github.token }}
         run: |-
-          releases="$(gh release list --limit 100 --json tagName,createdAt,isDraft \
-            --jq '[.[] | select(.tagName | startswith("fedora-coreos-"))]')"
+          releases="$(gh release list --limit 100 --json tagName,createdAt,isDraft |
+            jq -c --arg line "${KUBERNETES_VERSION%.*}" '[.[] | select(.tagName | startswith("fedora-coreos-") and contains("-v" + $line + "."))]')"
           jq -r '[.[] | select(.isDraft | not)] | sort_by(.createdAt) | reverse | .[3:][].tagName' <<< "${releases}" |
             while read -r old; do
               gh release delete "${old}" --cleanup-tag --yes
@@ -719,6 +588,6 @@ jobs:
             while read -r draft; do
               gh release delete "${draft}" --yes
             done
-      # Last: fedora-coreos's release is out, the GPU disk's failure shows.
+      # Last: the line's release is out, the GPU disk's failure shows.
       - if: env.GPU_DISK == 'failed'
         run: exit 1

@@ -3,7 +3,7 @@
 # one that fails a required check is rolled back.
 #
 # Usage: bootc/fedora-coreos/test-greenboot.sh
-# It needs the archive that build.sh made (/work/fedora-coreos.ociarchive in
+# It needs the archive the build check copied there (/work/fedora-coreos.ociarchive in
 # the workbench). Both updates are that image plus one layer, built in the
 # workbench, copied into the VM and applied with `bootc switch`:
 #   good  adds a marker file

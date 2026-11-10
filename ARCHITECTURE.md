@@ -6,17 +6,19 @@ unsigned, to Docker Hub, `docker.io/loladelannoy/<name>:<BASE_VERSION>`:
 
 - **bootc images** (`bootc/`): bootable operating systems. A host boots
   from one and updates by pulling a newer one (`bootc upgrade`). Built
-  with podman; `bootc/build.sh` also turns one into a qcow2 disk image
-  for the first install, with image-builder. `bootc/fedora-coreos/` is the
-  exception: one Fedora CoreOS image for kubeadm nodes, built on a
-  cluster (`bootc/fedora-coreos/AGENTS.md`), not yet in CI.
+  with `docker buildx bake`; `bootc/build.sh` also turns one into a qcow2
+  disk image for the first install, with image-builder.
+  `bootc/fedora-coreos/` is the exception: Fedora CoreOS images for
+  kubeadm nodes, tested in VMs before their push, and released as disk
+  images (`bootc/fedora-coreos/AGENTS.md`).
 - **Application images** (`containers/`): upstream apps the hosts run,
   shell-less (busybox excepted: a shell is its purpose; git, built on
   it: its hooks and aliases need one; buildkit, built on git: it runs
   `git submodule`; and gentoo, a build environment for CI jobs), from a
-  Containerfile on `scratch`, a Dalec spec, or a DHI definition. Built with `docker buildx`.
+  Containerfile on `scratch`, a Dalec spec, or a DHI definition. Built with `docker buildx bake`.
 
-The two share no build input: different builders, workflows and rules.
+The two share no build input: different Bake files, workflows and rules;
+they share the actions `.github/actions/bake-*`.
 
 ## Lifecycle
 

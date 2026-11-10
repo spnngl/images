@@ -52,6 +52,7 @@ jobs:
       actions: read
     outputs:
       targets: ${{ steps.discover.outputs.targets }}
+      builds: ${{ steps.discover.outputs.builds }}
       files: ${{ steps.discover.outputs.files }}
       containerfiles: ${{ steps.discover.outputs.containerfiles }}
     steps:
@@ -123,14 +124,7 @@ jobs:
       packages: write
     strategy:
       fail-fast: false
-      matrix:
-        target: ${{ fromJSON(needs.discover.outputs.targets) }}
-        # Keep the push job's `arches` in sync (its default).
-        platform:
-          - arch: amd64
-            runner: ubuntu-26.04
-          - arch: arm64
-            runner: ubuntu-26.04-arm
+      matrix: ${{ fromJSON(needs.discover.outputs.builds) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:

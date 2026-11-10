@@ -27,12 +27,19 @@ inputs:
 outputs:
   targets:
     description: >-
-      JSON array of {id, context, file, target, tags, repositories, epoch,
-      rewritetimestamp, allow}: the target's name, its build context and
-      Containerfile or spec, its Bake `target`, tags, the repositories of
-      those, SOURCE_DATE_EPOCH to set (empty when the target sets it), the
-      output's rewrite-timestamp and its entitlements, comma-separated.
+      JSON array of {id, context, file, args, arches, target, tags,
+      repositories, epoch, rewritetimestamp, allow}: the target's name, its
+      build context and Containerfile or spec, its Bake args, its platforms
+      (amd64, arm64), its Bake `target`, tags, the repositories of those,
+      SOURCE_DATE_EPOCH to set (empty when the target sets it), the output's
+      rewrite-timestamp and its entitlements, comma-separated. Targets
+      without tags (reports, checks) aren't listed.
     value: ${{ steps.find.outputs.targets }}
+  builds:
+    description: >-
+      A matrix, `{include: [{target, platform: {arch, runner}}]}`: one build
+      per target and platform, on a runner of that platform.
+    value: ${{ steps.find.outputs.builds }}
   files:
     description: >-
       The Bake files the inputs expand to, one per line, for bake-build.
@@ -159,5 +166,6 @@ runs:
           echo "EOF"
         } >> "${GITHUB_OUTPUT}"
         echo "targets=$(jq -c .targets "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
+        echo "builds=$(jq -c .builds "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
         echo "containerfiles=$(jq -c '[.targets[].file | select(endswith("/Containerfile"))] | unique' "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
         echo "groups=$(jq -c .groups "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
