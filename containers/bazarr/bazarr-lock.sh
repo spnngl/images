@@ -23,7 +23,7 @@ command -v docker >/dev/null || die "docker not found, install Docker: https://d
 command -v curl >/dev/null || die "curl not found, install it with your package manager"
 command -v jq >/dev/null || die "jq not found, install it with your package manager"
 # Read the versions Bake passes.
-args="$(docker buildx bake -f containers/docker-bake.hcl -f containers/bazarr/docker-bake.hcl --print "*" 2>/dev/null | jq -c '.target[].args')"
+args="$(docker buildx bake -f docker-bake.hcl -f containers/docker-bake.hcl -f containers/bazarr/docker-bake.hcl --print "*" 2>/dev/null | jq -c '.target[].args')"
 version="$(jq -r .BASE_VERSION <<<"${args}")"
 uv_version="$(jq -r .UV_VERSION <<<"${args}")"
 [[ -n ${version} && -n ${uv_version} ]] || die "containers/bazarr/docker-bake.hcl has no BASE_VERSION or UV_VERSION"

@@ -1,22 +1,18 @@
 # Build the application images (.github/REFERENCES.md): Dalec ones
 # (containers/<name>/spec.yml) and Containerfile ones
 # (containers/<name>/Containerfile), those that changed since the last
-# build (every one on the weekly rebuild and manual runs: see discover),
-# and push them to the tags of their Bake target (containers/AGENTS.md):
-# ghcr.io/spnngl/images/<name>:<version> and
+# build (every one on the weekly rebuild and manual runs: see
+# .github/actions/bake-discover), and push them to the tags of their Bake
+# target (containers/AGENTS.md): ghcr.io/spnngl/images/<name>:<version> and
 # docker.io/loladelannoy/<name>:<version>, <version> being the upstream
-# release, Docker Hub's unsigned (see push). Pull requests lint and
+# release, Docker Hub's unsigned (see bake-push). Pull requests lint and
 # build (running the spec's tests, the Containerfile's smoke test), never
 # push.
 # bootc images: build-bootc.yml.
 #
-# Not in build-bootc.yml: Dalec is a BuildKit frontend (the spec's #
-# syntax= line) that podman/buildah can't run. Docker tooling for every
-# application image: one way to build, attest and sign.
-#
-# Bake only describes what to build (`bake --print`); the builds stay
-# build-push-action's, one job per target and platform, scanned before
-# anything is pushed (docker/github-builder pushes first).
+# Bake describes what to build; the .github/actions/bake-* actions run it:
+# one job per target and platform, scanned before anything is pushed
+# (docker/github-builder pushes first).
 name: build-apps
 
 on:
@@ -32,7 +28,7 @@ on:
 
 # Every run on main pushes the same tags: cancel the older run so it can't
 # overwrite the newer one's images. The newer one also builds the changes
-# of the cancelled one (see the discover job).
+# of the cancelled one (see bake-discover).
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -48,138 +44,31 @@ jobs:
   # The images to build, found not listed: the targets of the Bake files
   # (containers/docker-bake.hcl, containers/*/docker-bake.hcl), where
   # versions are written once and Renovate updates them.
-  # Only those that changed: a target whose resolved definition differs
-  # from the base's (a version, a tag, an argument...), one with a file of
-  # its folder (its build context) changed but its docs (*.md, kept out by
-  # .dockerignore) and Bake file, or every one for this workflow.
   discover:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
-      # gh run list, below.
+      # gh run list, in bake-discover.
       actions: read
     outputs:
-      images: ${{ steps.find.outputs.images }}
-      containerfiles: ${{ steps.find.outputs.containerfiles }}
+      targets: ${{ steps.discover.outputs.targets }}
+      files: ${{ steps.discover.outputs.files }}
+      containerfiles: ${{ steps.discover.outputs.containerfiles }}
     steps:
-      # The whole history: each image's SOURCE_DATE_EPOCH is the last
-      # commit of its files (see find).
+      # The action's own files: a local action needs the checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
-      # The commit to compare with, or nothing to build every image:
-      # - pull request: its base.
-      # - push: this workflow's last successful run on the branch, not
-      #   the previous push: a cancelled or failed run never pushed its
-      #   images, so the next one builds its changes too. Pull requests'
-      #   runs are skipped: their commit isn't the branch's.
-      # - schedule, workflow_dispatch, or no base (first run, history
-      #   rewritten: fetching it fails): nothing.
-      # The base goes in a worktree, to resolve its Bake files. A full
-      # fetch: --depth=1 would cut the history at the base.
-      - id: changes
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          PR_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |-
-          base=""
-          case "${GITHUB_EVENT_NAME}" in
-            pull_request)
-              base="${PR_BASE}"
-              ;;
-            push)
-              base="$(gh run list --workflow build-apps.yml --branch "${GITHUB_REF_NAME}" --status success --limit 20 --json headSha,event --jq 'map(select(.event != "pull_request"))[0].headSha // empty')"
-              ;;
-            *) ;;
-          esac
-          if [[ -n "${base}" ]] && git fetch --quiet origin "${base}" && git worktree add --quiet --detach "${RUNNER_TEMP}/base" "${base}"; then
-            echo "base=${base}" >> "${GITHUB_OUTPUT}"
-          fi
-
-      # Each target of the Bake files, resolved, as one item:
-      # - id: the target's name, <image>-debian<N> or one per release line
-      #   (busybox: <image>).
-      # - file, target: Dalec images' target is the minimal image, from
-      #   scratch (see the specs); Containerfiles: none, the last stage.
-      # - tags: the first is the scan's baseline.
-      # - repositories: those of the tags, in their order, each but Docker
-      #   Hub's signed and attested on its own (see push).
-      # - buildargs: the target's args, and SOURCE_DATE_EPOCH: Dalec
-      #   exports it to the build (packaging tools clamp the package's file
-      #   times to it), the Containerfiles read it (ARG SOURCE_DATE_EPOCH),
-      #   and BuildKit dates the image and clamps its layers' file times
-      #   with it. The last commit of the target's context or of the
-      #   shared Bake file, docs excepted: per image, so other images'
-      #   commits keep the build cache (.github/REFERENCES.md).
-      # - rewritetimestamp: the target's output's rewrite-timestamp, true
-      #   when it sets none (see build).
-      # - allow: the target's entitlements, comma-separated; none for most
-      #   (see build).
-      # Bake takes one -f per file, and contexts from the repo root:
-      # relative paths, from where it runs.
-      # nullglob: no Bake file gives no target, not the pattern.
-      # The base's resolved targets: none if it has no Bake file (before
-      # they existed).
-      - id: find
-        env:
-          BASE: ${{ steps.changes.outputs.base }}
-        run: |-
-          shopt -s nullglob
-          bake_print() {
-            (
-              cd "$1" || exit 1
-              [[ -f containers/docker-bake.hcl ]] || { echo '{"target":{}}'; exit 0; }
-              args=(-f containers/docker-bake.hcl)
-              for file in containers/*/docker-bake.hcl; do
-                args+=(-f "${file}")
-              done
-              docker buildx bake "${args[@]}" --print '*'
-            )
-          }
-          bake_print . > "${RUNNER_TEMP}/head.json"
-          epochs="$(jq -r '[.target[].context] | unique[]' "${RUNNER_TEMP}/head.json" | while read -r context; do
-            printf '%s\t%s\n' "${context}" "$(git log -1 --format=%ct -- "${context}" containers/docker-bake.hcl ':(exclude)*.md')"
-          done | jq -Rcn '[inputs | split("\t") | {(.[0]): .[1]}] | add // {}')"
-          if [[ -n "${BASE}" ]]; then
-            bake_print "${RUNNER_TEMP}/base" > "${RUNNER_TEMP}/base.json"
-            files="$(git diff --name-only --no-renames "${BASE}" HEAD | jq -Rcn '[inputs]')"
-          else
-            echo '{"target":{}}' > "${RUNNER_TEMP}/base.json"
-            files=null
-          fi
-          jq -c --slurpfile base "${RUNNER_TEMP}/base.json" --argjson files "${files}" --argjson epochs "${epochs}" '
-            .target
-            | to_entries
-            | map(
-                .key as $id
-                | .value as $target
-                | {
-                    id: $id,
-                    context: $target.context,
-                    file: "\($target.context)/\($target.dockerfile)",
-                    target: ($target.target // ""),
-                    tags: $target.tags,
-                    repositories: (reduce ($target.tags[] | sub(":[^:/]+$"; "")) as $r ([]; if index([$r]) then . else . + [$r] end)),
-                    buildargs: (($target.args // {}) + {SOURCE_DATE_EPOCH: $epochs[$target.context]} | to_entries | map("\(.key)=\(.value)") | join("\n")),
-                    rewritetimestamp: (first($target.output[]? | ."rewrite-timestamp" // empty) // "true"),
-                    allow: (($target.entitlements // []) | join(",")),
-                    resolved: $target
-                  }
-              )
-            | map(
-                . as $image
-                | select(
-                    $files == null
-                    or $base[0].target[$image.id] != $image.resolved
-                    or any($files[]; . == ".github/workflows/build-apps.yml")
-                    or any($files[]; startswith("\($image.context)/") and (endswith(".md") | not) and (endswith("/docker-bake.hcl") | not))
-                  )
-                | del(.resolved)
-              )' "${RUNNER_TEMP}/head.json" > "${RUNNER_TEMP}/images.json"
-          echo "images=$(< "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
-          echo "containerfiles=$(jq -c 'map(.file | select(endswith("/Containerfile"))) | unique' "${RUNNER_TEMP}/images.json")" >> "${GITHUB_OUTPUT}"
+      - id: discover
+        uses: ./.github/actions/bake-discover
+        with:
+          # The root file holds line(); the others, the targets.
+          files: |-
+            docker-bake.hcl
+            containers/docker-bake.hcl
+            containers/*/docker-bake.hcl
+          workflow: build-apps.yml
 
   # Same as build-bootc.yml's, for the Containerfiles to build only: code
   # scanning keeps the others' alerts, from their last analysis.
@@ -196,6 +85,8 @@ jobs:
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: Run Hadolint
         uses: hadolint/hadolint-action@06be81baf89a55ffd0e24b8f04a4185738dd3387 # v3.5.0
@@ -218,14 +109,14 @@ jobs:
   # native builds and tests, no QEMU. The push job below merges them into
   # one manifest list per target.
   build:
-    name: build ${{ matrix.image.id }} ${{ matrix.platform.arch }}
+    name: build ${{ matrix.target.id }} ${{ matrix.platform.arch }}
     needs:
       - discover
       - hadolint
     # Also when hadolint is skipped (no Containerfile to build), not when
     # it failed.
     if: >-
-      !cancelled() && !failure() && needs.discover.outputs.images != '[]'
+      !cancelled() && !failure() && needs.discover.outputs.targets != '[]'
     runs-on: ${{ matrix.platform.runner }}
     permissions:
       contents: read
@@ -233,93 +124,31 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJSON(needs.discover.outputs.images) }}
-        # Keep the push job's ARCHES in sync.
+        target: ${{ fromJSON(needs.discover.outputs.targets) }}
+        # Keep the push job's `arches` in sync (its default).
         platform:
           - arch: amd64
             runner: ubuntu-26.04
           - arch: arm64
             runner: ubuntu-26.04-arm
-    env:
-      # The first tag's repository, ghcr.io's (tags() in
-      # containers/docker-bake.hcl): the platforms are pushed there, the
-      # push job copies them to the others.
-      IMAGE: ${{ matrix.image.repositories[0] }}
-      # Same as the push job's: <target>_<arch>.
-      ARTIFACT: ${{ matrix.image.id }}_${{ matrix.platform.arch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: false
 
-      # Docker Hub: the pulls the mirrors below miss are authenticated,
-      # under the account's rate limit rather than the runner IP's
-      # anonymous one.
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # A docker-container builder: the default docker driver can't add
-      # provenance and SBOM attestations.
-      # Pulls go to mirrors, outside Docker Hub's pull rate limit
-      # (.github/REFERENCES.md): the builder's image to mirror.gcr.io
-      # (setup-buildx's default tag); BuildKit's docker.io pulls to
-      # mirror.gcr.io, then public.ecr.aws (official images only), then
-      # docker.io.
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-        with:
-          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
-          buildkitd-config-inline: |
-            [registry."docker.io"]
-              mirrors = ["mirror.gcr.io", "public.ecr.aws/docker"]
-
-      # The discover item's fields; no target for a Containerfile (its
-      # last stage).
-      # Attestations, attached to the image in its index
-      # (https://docs.docker.com/build/metadata/attestations/):
-      # - provenance mode=max: also the build args and each step's
-      #   details (no secrets); version=v1, SLSA 1.x.
-      # - sbom: BuildKit scans the final image for any frontend, Dalec
-      #   included: the Debian packages (dpkg database), the Python ones
-      #   (dist-info), a Go binary's modules.
-      # outputs: pushed by digest, untagged (not on pull requests); the push
-      # job tags the manifest list. rewrite-timestamp: BuildKit also clamps
-      # the layers' file times to SOURCE_DATE_EPOCH, otherwise they keep the
-      # build's time; off for an image whose file times matter
-      # (containers/AGENTS.md). Pull requests: also an OCI layout, for the
-      # scan below (nothing else keeps the image on the runner).
-      # An empty line is no output.
-      # allow: the entitlements the target asks for (buildkit's smoke test
-      # runs a daemon: security.insecure); setup-buildx's builder permits
-      # security.insecure and network.host by default, so a target gets
-      # nothing it doesn't name.
-      # Build cache, one scope per target and platform; mode=max: the
-      # build stages hold the work. ignore-error: fork pull requests can't
-      # write it. Weekly and manual rebuilds skip it, to fetch the
-      # packages that follow their archive, and refresh it
+      # Pull requests: an OCI layout, scanned below; others: pushed by
+      # digest. Weekly and manual rebuilds skip the build cache, to fetch
+      # the packages that follow their archive, and refresh it
       # (.github/REFERENCES.md).
-      - id: build
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+      - uses: ./.github/actions/bake-build
         with:
-          context: ${{ matrix.image.context }}
-          file: ${{ matrix.image.file }}
-          target: ${{ matrix.image.target }}
-          platforms: linux/${{ matrix.platform.arch }}
-          build-args: ${{ matrix.image.buildargs }}
-          allow: ${{ matrix.image.allow }}
-          provenance: mode=max,version=v1
-          sbom: true
-          cache-from: type=gha,scope=${{ env.ARTIFACT }}
-          cache-to: type=gha,scope=${{ env.ARTIFACT }},mode=max,ignore-error=true
+          item: ${{ toJSON(matrix.target) }}
+          arch: ${{ matrix.platform.arch }}
+          files: ${{ needs.discover.outputs.files }}
+          push: ${{ github.event_name != 'pull_request' }}
           no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
-          outputs: |
-            type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name != 'pull_request' }},rewrite-timestamp=${{ matrix.image.rewritetimestamp }}
-            ${{ github.event_name == 'pull_request' && format('type=oci,dest={0}/oci,tar=false', runner.temp) || '' }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
 
       # Pull requests fail on a Critical vulnerability with a fix that the
       # pushed image doesn't have (.github/REFERENCES.md, "Vulnerability
@@ -329,26 +158,9 @@ jobs:
         uses: spnngl/.github/.github/actions/scan-image@main
         with:
           oci-layout: ${{ runner.temp }}/oci
-          baseline: ${{ matrix.image.tags[0] }}
+          baseline: ${{ matrix.target.tags[0] }}
           platform: linux/${{ matrix.platform.arch }}
           fail: true
-
-      # The digest, for the push job: one file per target and platform.
-      - if: github.event_name != 'pull_request'
-        env:
-          DIGEST: ${{ steps.build.outputs.digest }}
-        run: |-
-          mkdir -p "${RUNNER_TEMP}/digests"
-          printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/digests/${ARTIFACT}"
-      # overwrite: "Re-run all jobs" uploads names this run already has.
-      - if: github.event_name != 'pull_request'
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: ${{ env.ARTIFACT }}
-          path: ${{ runner.temp }}/digests/${{ env.ARTIFACT }}
-          overwrite: true
-          if-no-files-found: error
-          retention-days: 1
 
   # The pull request gate: the one check of this workflow the main
   # ruleset requires, the others being named after the images that
@@ -371,18 +183,15 @@ jobs:
           jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<< "${NEEDS}"
 
   # Merge each target's platforms into one manifest list with all its
-  # tags, on ghcr.io and Docker Hub, then sign, check and attest it in
-  # each repository but Docker Hub's: cosign's manifest reads there hit
-  # its pull rate limit (TOOMANYREQUESTS), and hosts and Kubernetes
-  # admission trust ghcr.io alone.
+  # tags, on ghcr.io and Docker Hub, then sign, check and attest it.
   push:
-    name: push ${{ matrix.image.id }}
+    name: push ${{ matrix.target.id }}
     needs:
       - discover
       - build
     # needs: build waits for every build job, and fails if any did. Run
     # anyway, unless cancelled: each target pushes on its own, and fails
-    # below if one of its platforms is missing.
+    # if one of its platforms is missing.
     if: >-
       !cancelled() && github.event_name != 'pull_request' && needs.build.result != 'skipped'
     runs-on: ubuntu-26.04
@@ -396,114 +205,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image: ${{ fromJSON(needs.discover.outputs.images) }}
-    env:
-      # The build job's platform list.
-      ARCHES: amd64 arm64
-      # Where the build job pushed the platforms.
-      IMAGE: ${{ matrix.image.repositories[0] }}
-      # Space-separated, the target's tags and their repositories.
-      TAGS: ${{ join(matrix.image.tags, ' ') }}
-      REPOSITORIES: ${{ join(matrix.image.repositories, ' ') }}
-      ARTIFACT_PREFIX: ${{ matrix.image.id }}
+        target: ${{ fromJSON(needs.discover.outputs.targets) }}
     steps:
-      # The public key the check below uses.
+      # The action's own files: a local action needs the checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
-          pattern: ${{ env.ARTIFACT_PREFIX }}_*
-          path: ${{ runner.temp }}/digests
-          merge-multiple: true
+          persist-credentials: false
 
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
+      # DOCKERHUB_TOKEN is a personal access token of DOCKERHUB_USERNAME,
+      # Read & Write.
+      - uses: ./.github/actions/bake-push
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # Docker Hub: DOCKERHUB_TOKEN is a personal access token of
-      # DOCKERHUB_USERNAME, Read & Write. A push creates a missing
-      # repository, with the account's default visibility.
-      - uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4
-        with:
-          username: ${{ vars.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # Each platform's index (image and attestations) goes into the list.
-      # A missing platform fails here. imagetools create copies the blobs
-      # from ghcr.io to each other repository of the tags.
-      - id: merge
-        run: |-
-          read -r -a arches <<< "${ARCHES}"
-          read -r -a tags <<< "${TAGS}"
-          sources=()
-          for arch in "${arches[@]}"; do
-            sources+=("${IMAGE}@$(< "${RUNNER_TEMP}/digests/${ARTIFACT_PREFIX}_${arch}")")
-          done
-          tag_flags=()
-          for tag in "${tags[@]}"; do
-            tag_flags+=(--tag "${tag}")
-          done
-          docker buildx imagetools create "${tag_flags[@]}" "${sources[@]}"
-          echo "digest=$(docker buildx imagetools inspect --format '{{ json .Manifest }}' "${tags[0]}" | jq -r .digest)" >> "${GITHUB_OUTPUT}"
-
-      - uses: sigstore/cosign-installer@756fe2d284c7292c4e9b62c8a28f1e5629c59532 # v4.1.3
-
-      # The key hosts check (bootc/REFERENCES.md, "Signing"), in the format they
-      # read: containers/image (bootc, podman, CRI-O) only reads
-      # sha256-<digest>.sig attachments, and can't match a keyless
-      # signature's GitHub workflow identity. Hence cosign 3's deprecated
-      # legacy flags:
-      # - --new-bundle-format=false --use-signing-config=false: the
-      #   attachment, not a sigstore bundle behind OCI referrers.
-      # - --tlog-upload=false: no Rekor entry; the policy doesn't ask for one.
-      # - --sign-container-identity: the tag, as podman writes it. cosign
-      #   writes the repository alone otherwise, which the hosts' default
-      #   signedIdentity (matchRepoDigestOrExact) rejects for a tag pull.
-      #   One signature per tag, in the tag's repository: a host pulling
-      #   any of them finds its own.
-      # --recursive: the list (what bootc checks) and every manifest in it
-      # (what podman and CRI-O check). The key has no passphrase:
-      # COSIGN_PASSWORD empty, without it cosign prompts for one.
-      - env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-          DIGEST: ${{ steps.merge.outputs.digest }}
-        run: |-
-          read -r -a tags <<< "${TAGS}"
-          for tag in "${tags[@]}"; do
-            [[ "${tag}" == docker.io/* ]] && continue
-            cosign sign --yes --recursive --key env://COSIGN_PRIVATE_KEY --new-bundle-format=false --use-signing-config=false --tlog-upload=false --sign-container-identity "${tag}" "${tag%:*}@${DIGEST}"
-          done
-
-      # Every manifest in the list carries, in each repository, a signature
-      # from the key hosts trust (the public key in the fedora image). --new-bundle-format=false:
-      # cosign switches to bundles when the image has one (the provenance
-      # below, on a re-run), then ignores the .sig attachment.
-      - env:
-          DIGEST: ${{ steps.merge.outputs.digest }}
-        run: |-
-          read -r -a tags <<< "${TAGS}"
-          read -r -a repositories <<< "${REPOSITORIES}"
-          mapfile -t digests < <(docker buildx imagetools inspect --raw "${tags[0]}" | jq -r '.manifests[].digest')
-          for repository in "${repositories[@]}"; do
-            [[ "${repository}" == docker.io/* ]] && continue
-            for digest in "${DIGEST}" "${digests[@]}"; do
-              cosign verify --key bootc/fedora/sysroot/common/usr/share/pki/containers/spnngl-images.pub --new-bundle-format=false --insecure-ignore-tlog=true "${repository}@${digest}" > /dev/null
-            done
-          done
-
-      # Signed SLSA build provenance (workflow, commit, run) for the
-      # manifest list, pushed next to it as an OCI referrer: what
-      # Kubernetes admission checks (.github/REFERENCES.md). BuildKit's
-      # provenance in the index is unsigned. Check it with
-      # gh attestation verify oci://<tag> -R <owner>/<repo>.
-      # No storage record: it needs an organization-owned repository.
-      # ghcr.io's alone, repositories[0].
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
-        with:
-          subject-name: ${{ matrix.image.repositories[0] }}
-          subject-digest: ${{ steps.merge.outputs.digest }}
-          push-to-registry: true
-          create-storage-record: false
+          item: ${{ toJSON(matrix.target) }}
+          dockerhub-username: ${{ vars.DOCKERHUB_USERNAME }}
+          dockerhub-token: ${{ secrets.DOCKERHUB_TOKEN }}
+          cosign-private-key: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          cosign-password: ${{ secrets.COSIGN_PASSWORD }}

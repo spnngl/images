@@ -1,5 +1,5 @@
-# What every containers/<name>/docker-bake.hcl uses. Build and update
-# rules: containers/AGENTS.md.
+# What every containers/<name>/docker-bake.hcl uses, with line() of the
+# root docker-bake.hcl. Build and update rules: containers/AGENTS.md.
 
 # Debian releases images build on, by version; an image names its own
 # (its matrix's `debian`). A map, so Debian 14 is added while images move
@@ -16,12 +16,6 @@ variable "DEBIAN" {
 variable "DEBIAN_SNAPSHOT" {
   # renovate: datasource=custom.debian-snapshot depName=debian-snapshot
   default = "20261106T203421Z"
-}
-
-# <major>.<minor> of a version: a release line.
-function "line" {
-  params = [version]
-  result = regex("^[0-9]+\\.[0-9]+", version)
 }
 
 # Tags name the upstream version alone (haproxy:3.2.25): Debian only

@@ -5,6 +5,8 @@
 name: copilot-fix
 
 on:
+  # zizmor: ignore[dangerous-triggers] -- see the ask job: nothing of the
+  # run is checked out or executed.
   workflow_run:
     workflows:
       - build-apps

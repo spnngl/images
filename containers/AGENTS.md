@@ -14,7 +14,8 @@ Every version is written once, in the image's `docker-bake.hcl`, never
 in a Containerfile or spec. `containers/docker-bake.hcl` holds what all
 images share: the Debian releases (`DEBIAN`), the Debian snapshot
 (`DEBIAN_SNAPSHOT`) and the functions that make tags and build
-arguments. Each image's `docker-bake.hcl` has one `target` whose
+arguments; the root `docker-bake.hcl` holds `line()`, shared with the
+bootc images. Each image's `docker-bake.hcl` has one `target` whose
 `matrix` lists what to build:
 
 - `debian`: the Debian release, one per image (`["13"]`): tags don't
@@ -125,7 +126,7 @@ and give Renovate `dhi.io` credentials for the frontend's tags.
 ## Build check
 
 ```sh
-f=(-f containers/docker-bake.hcl -f containers/<name>/docker-bake.hcl)
+f=(-f docker-bake.hcl -f containers/docker-bake.hcl -f containers/<name>/docker-bake.hcl)
 docker buildx bake "${f[@]}" --print '<name>*'    # the targets, tags and arguments
 docker buildx bake "${f[@]}" '<name>*' --set '*.output=type=docker'
 docker buildx build -f containers/<name>/dhi.yaml containers/<name>/   # DHI: after docker login dhi.io

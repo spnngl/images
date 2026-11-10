@@ -70,27 +70,41 @@ Same triggers, runners and tags; Docker tooling only: podman can't run
 Dalec, and one way to build, attest and sign is simpler.
 
 - **Found, not listed:** `discover` makes the matrix from the targets
-  of `docker buildx bake --print '*'` on `containers/docker-bake.hcl`
-  and every `containers/*/docker-bake.hcl`: one item per image, line
-  and Debian release, with its context, file, build arguments and tags.
+  of `docker buildx bake --print '*'` on the root `docker-bake.hcl`
+  (`line()`), `containers/docker-bake.hcl` and every
+  `containers/*/docker-bake.hcl`: one item per image, line and Debian
+  release, with its context, file, tags and entitlements. It is the
+  `bake-discover` action, shared with `build-bootc.yml`.
 - **Only what changed:** a target whose resolved definition differs from
   the base's (the same `--print`, on a worktree of the base: a bumped
-  version, a new line), or whose folder changed (its docs and Bake file
-  excepted), every one when the workflow changed, on the weekly rebuild
-  and manual runs. Since a pull request's base, or for a push the
+  version, a new line), or one of whose files changed: those its
+  `.dockerignore` keeps (`<Containerfile>.dockerignore` first, then the
+  context's, as BuildKit reads them), its Containerfile or spec, and the
+  ignore files (docs, kept out by `.dockerignore`, don't count); every one
+  when the workflow or an action changed, on the weekly rebuild and
+  manual runs. Since a pull request's base, or for a push the
   workflow's last successful run on the branch: a cancelled or failed
   run never pushed, so the next one builds its changes too. No such run:
   every image.
-- **Bake only describes, the workflow builds:** `docker/github-builder`'s
-  Bake workflow pushes before anything else, which leaves no place for
-  the scan on pull requests, and builds one target per call. The item's
-  build arguments go to `docker/build-push-action`, plus
-  `SOURCE_DATE_EPOCH`: the time of the last commit of the target's
-  folder or of `containers/docker-bake.hcl` (the Debian snapshot), docs
-  excepted. Per image, not per commit as `build-bootc.yml`'s podman
-  images: the
-  Containerfiles set it as `ENV` before their first `RUN`, so each new
-  value misses the build cache. Bake can't read git history.
+- **Bake describes, our actions run it:** `docker/github-builder`
+  (v1.19.0) pushes before anything else, which leaves no place for the
+  scan on pull requests, and its `bake.yml` builds one target per call
+  and signs keyless only (the hosts check a key, `bootc/REFERENCES.md`,
+  "Signing"). `docker/bake-action` (v7.5.0) builds on our runners; its
+  `source: .` builds the checkout, not the Git context it defaults to.
+  The workflow sets only what CI decides, with `set`: the platform, the
+  cache, the output (Bake names every export after the target's `tags`,
+  which would push them: `tags=` is cleared) and `SOURCE_DATE_EPOCH`:
+  the time of the last commit of the files the build reads (see "Only
+  what changed") and of the Bake files beside them (the Debian
+  snapshot), docs excepted. Per image, not per commit as
+  `build-bootc.yml`'s podman images: the Containerfiles set it as `ENV`
+  before their first `RUN`, so each new value misses the build cache. A
+  target that sets it itself keeps its own. Bake can't read git history.
+- **One export per build:** an image pushed by digest and an OCI archive
+  of the same build report one digest, and it isn't the pushed one
+  (spike: `imagetools create` failed with `not found`). Pushes export
+  the image alone; pull requests, the OCI layout alone.
 - **`rewrite-timestamp` from the target's `output`, on by default:**
   an image whose file times matter turns it off (`containers/gentoo`:
   portage records each file's time, and skips a file whose time
@@ -102,10 +116,10 @@ Dalec, and one way to build, attest and sign is simpler.
   something privileged asks for it in Bake (`containers/buildkit`: its
   smoke test starts a daemon, which `security.insecure` lets create a
   user namespace). The workflow reads that attribute and passes it to
-  `build-push-action`; setup-buildx's default builder permits
+  `bake-action` (`allow`); setup-buildx's default builder permits
   `security.insecure` and `network.host` (`defaultBuildkitdFlags`), so
   nothing else changes, and a target that names none gets none.
-- **`docker/build-push-action`** on a `docker-container` builder (the
+- **`docker/setup-buildx-action`** on a `docker-container` builder (the
   docker driver can't attest). The image sets its own
   `org.opencontainers.image.source` label.
 - **Build cache in the Actions cache** (`type=gha`,
