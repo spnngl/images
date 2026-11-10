@@ -41,6 +41,11 @@ file:
     exists: true
     contents: ["/^ *use-sigstore-attachments: true$/"]
   /etc/sudoers.d/99-rootless: {exists: true, filetype: file, mode: "0440"}
+  # The default hostname, wildcards systemd fills from the machine ID.
+  /etc/hostname:
+    exists: true
+    mode: "0644"
+    contents: ["/^node-[?]{4}-[?]{4}$/"]
   # The image's value; vm.sh adds the test key's folder before it, through
   # Ignition.
   /etc/ssh/sshd_config.d/00-hardening.conf:

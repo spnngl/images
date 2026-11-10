@@ -1,0 +1,4 @@
+# Until Ignition or hostnamectl sets one: systemd replaces each ? with a
+# hex digit hashed from /etc/machine-id, stable per node (hostname(5)).
+# An Ignition file here needs `overwrite: true`. See REFERENCES.md.
+node-????-????

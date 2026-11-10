@@ -36,6 +36,11 @@ command:
     exit-status: 1
     stdout: [/^TMOUT=900$/, "!writable"]
     stderr: {have-len: 0}
+  # etc/hostname, while nothing replaced it (the test VM): its wildcards
+  # filled from the machine ID.
+  the default hostname is the machine's:
+    exec: "! grep -qxF 'node-????-????' /etc/hostname || hostname | grep -xE 'node-[0-9a-f]{4}-[0-9a-f]{4}'"
+    exit-status: 0
   SSH host keys are root:root 0600:
     exec: |
       for k in /etc/ssh/ssh_host_*_key; do
