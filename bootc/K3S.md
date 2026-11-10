@@ -66,8 +66,8 @@ no swap readahead: `bootc/k3s/sysroot/usr/lib/sysctl.d/60-zram.conf`).
   Running containers keep their swap limit until they restart.
 
 The kernel tracks pressure stall information (`psi=1`,
-`bootc/k3s/sysroot/usr/lib/bootc/kargs.d/10-psi.toml`), which AlmaLinux
-and CentOS kernels build disabled: node-exporter's `node_pressure_*`
+`bootc/k3s/sysroot/usr/lib/bootc/kargs.d/10-psi.toml`), which AlmaLinux's
+kernels build disabled: node-exporter's `node_pressure_*`
 metrics and the kubelet's PSI metrics need it.
 
 ## Control-plane

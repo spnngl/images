@@ -54,7 +54,6 @@ jobs:
         containerfile:
           - bootc/fedora/Containerfile
           - bootc/almalinux/Containerfile
-          - bootc/centos/Containerfile
           - bootc/fedora-coreos/Containerfile
     permissions:
       contents: read
@@ -95,15 +94,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # x86-64 levels: fedora-bootc and centos-bootc:stream10 only have
-        # v3 images. almalinux-bootc:10 has v3 and v2 images, but the docker-ce
+        # x86-64 levels: fedora-bootc only has v3 images. almalinux-bootc:10 has v3 and v2 images, but the docker-ce
         # repository only has v3 binaries. almalinux:9 (EOL 2032) gives v2
         # binaries without issue.
         #
         # Optional keys, for multi-stage Containerfiles: target, the stage to
         # build (default: the last one), suffix, appended to the tag, and
         # k3s, the k3s release (the Containerfiles' ARG INSTALL_K3S_VERSION).
-        # fedora, almalinux and centos: dockerenv is <version>, kubeenv
+        # fedora and almalinux: dockerenv is <version>, kubeenv
         # <version>-v<Kubernetes minor release>k3s. Anchors: suffix and k3s
         # are written once. The tag has no patch release: a patch reaches
         # hosts with `bootc upgrade`, only a minor needs `bootc switch`.
@@ -146,16 +144,6 @@ jobs:
             version: "10"
             target: dockerenv
           - name: almalinux
-            version: "10"
-            target: kubeenv
-            suffix: *kubeenv
-            k3s: *k3s
-          # CentOS Stream major release: the base image's tag is
-          # stream<version> (bootc/centos/Containerfile).
-          - name: centos
-            version: "10"
-            target: dockerenv
-          - name: centos
             version: "10"
             target: kubeenv
             suffix: *kubeenv

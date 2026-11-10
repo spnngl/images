@@ -20,8 +20,8 @@
 ## Decisions
 
 - **Shared build context `bootc/`:** `build.sh` passes `-f
-  bootc/<name>/Containerfile` with context `bootc/`, so almalinux and
-  centos reuse `fedora/sysroot/common/` instead of duplicating it. One
+  bootc/<name>/Containerfile` with context `bootc/`, so almalinux
+  reuses `fedora/sysroot/common/` instead of duplicating it. One
   `.containerignore` per context is enough: buildah reads it only from
   the context root (or `--ignorefile`). fedora-coreos builds from its
   own folder (`fedora-coreos/REFERENCES.md`, "Own build context").
@@ -97,7 +97,7 @@ installed from one upgrades from CI's signed images.
   registries, 10 sigstore): the base's file plus `"default": reject` and
   a `sigstoreSigned` requirement for `ghcr.io/spnngl/images`. It
   replaces containers-common's (in `/etc`, or `/usr/share/containers`
-  on CentOS Stream 10 and Fedora 45), since `policy.json` has no drop-in
+  on Fedora 45), since `policy.json` has no drop-in
   folder.
   `bootc/fedora/policy.jq` checks ours is still the base's plus those
   changes and fails the build otherwise: a new base release, or a
