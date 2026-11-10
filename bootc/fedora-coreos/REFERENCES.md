@@ -840,3 +840,15 @@ the workloads' images, never on the host.
   `test/nvidia-build.yaml`:** it includes `build.yaml` and sits outside
   `*/build.yaml`, which `fedora-coreos` runs (the Containerfile's goss
   stage picks the file from `IMAGE_BASE`).
+
+- **containerd: a runtime `nvidia` next to `runc`, which stays the
+  default** (`sysroot/nvidia/usr/lib/containerd/conf.d/60-nvidia.toml`):
+  the GPU Operator's pods name the `nvidia` RuntimeClass, and a pod
+  without a GPU needs no wrapper. The default runtime of the fleet's
+  Flatcar nodes is `nvidia`: a pod relying on it for a GPU, with no
+  `runtimeClassName`, breaks on this image (step "replace the nodes"
+  of `PLAN.nvidia.md` lists them first). CDI (`enable_cdi = true`,
+  `/etc/cdi` and `/var/run/cdi`) is containerd 2.x's default: no
+  setting, and no extra unit for the management spec (the runtime's
+  `auto` mode makes the spec it needs). `test/nvidia-build.yaml` checks
+  the merged config, as containerd ignores a mistyped key.

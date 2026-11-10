@@ -1,0 +1,16 @@
+# The `nvidia` runtime, for the RuntimeClass of the same name (the GPU
+# Operator's device plugin and pods name it). `runc` stays the default: a pod
+# without a GPU needs no wrapper. CDI (/etc/cdi, /var/run/cdi, where
+# nvidia-cdi-refresh writes the spec) is on by default in containerd 2.x.
+[plugins]
+  [plugins.'io.containerd.cri.v1.runtime']
+    [plugins.'io.containerd.cri.v1.runtime'.containerd]
+      [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes]
+        [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.nvidia]
+          runtime_type = "io.containerd.runc.v2"
+          # Same as runc's (conf.d/50-myconf.toml).
+          base_runtime_spec = "/usr/lib/containerd/cri-base.json"
+
+          [plugins.'io.containerd.cri.v1.runtime'.containerd.runtimes.nvidia.options]
+            BinaryName = "/usr/bin/nvidia-container-runtime"
+            SystemdCgroup = true
