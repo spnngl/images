@@ -10,7 +10,8 @@
   config: its `README.md#-build-config`); blueprint reference:
   <https://osbuild.org/docs/user-guide/blueprint-reference/> (each
   option's bootc tab)
-- buildah, which runs the Containerfiles: `github.com/containers/buildah`
+- BuildKit, which runs the Containerfiles (`docker buildx bake`):
+  `github.com/moby/buildkit`
 - firewalld: `github.com/firewalld/firewalld` (`doc/xml` for docs,
   `src/firewall/core` for behaviour)
 - containers/image signature policy: `github.com/containers/container-libs`
@@ -46,7 +47,7 @@
   pinned base release.
 - **One `RUN <<EORUN` heredoc with `set -xeuo pipefail`:** one layer
   without `&& \` chains; a heredoc `RUN` only fails on its last command's
-  status without `-e`. Needs buildah 1.33+.
+  status without `-e`. Needs BuildKit's dockerfile frontend 1.4+.
 
 ## Firewalld
 

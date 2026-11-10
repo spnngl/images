@@ -653,9 +653,8 @@ Read each at the version this repository pins.
   them with `bootc upgrade`, and greenboot rolls back a node that fails to
   come up), Cilium's minor and patch releases and `disk_images_commit`
   (only `vm-test` runs them: `vm.sh cluster`, the qemu disk image it
-  boots). Renovate merges them itself (`platformAutomerge: false`):
-  GitHub's auto-merge waits for the required checks only, and
-  `build-bootc.yml` has none.
+  boots). GitHub's auto-merge waits for the required checks: the main
+  ruleset requires `gate-bootc`, which waits for `vm-test`.
 - **By hand:** a new major of the base, a Kubernetes minor (both new
   tags: hosts move with `bootc switch` or new machines) and a Cilium
   major.
@@ -813,7 +812,7 @@ the workloads' images, never on the host.
   "Smaller downloads" above): its `nvidia-kmod` stage (the dkms build)
   and `nvidia` layer stay cached, so a GPU node downloads the driver's
   layer again only when the driver, the toolkit or a stage below
-  changes, or after the Sunday rebuild. `IMAGE_BASE` goes to build-push-action only for the GPU
+  changes, or after the Sunday rebuild. `IMAGE_BASE` is set by Bake only for the GPU
   image: an empty value would replace the Containerfile's default.
 - **The GPU build's VM tests are the fedora-coreos ones:** they cover
   the Containerfile and `sysroot/` up to `nvidia`, not the GPU image's
