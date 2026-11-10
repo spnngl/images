@@ -18,7 +18,7 @@ ARG BASE_VERSION=10
 # the build cache key, so only changed data reruns the steps below.
 #
 # The output is plain data, the same for every platform.
-FROM --platform=${BUILDPLATFORM} ghcr.io/nushell/nushell:0.116.1-alpine AS geoblock
+FROM --platform=${BUILDPLATFORM} ghcr.io/nushell/nushell:0.117.0-alpine AS geoblock
 
 # The nushell image runs as user "nushell": switch back to root so the
 # RUN below can write /out, and its output is owned by root like the rest
