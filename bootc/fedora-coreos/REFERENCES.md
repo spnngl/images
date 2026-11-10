@@ -99,6 +99,10 @@ Read each at the version this repository pins.
   image sets its command line; bootc has no `kargs` command, and applies
   the files' changes on upgrade. Some are already the kernel's defaults (each file says which),
   stated so a config change of Fedora's doesn't undo them.
+  `lockdown=integrity` has a file of its own, `10-lockdown.toml`: an image
+  that loads unsigned modules deletes it, and bootc drops the argument
+  from the nodes that switch to it. `test/system/node.yaml` expects `[integrity]`
+  or `[none]` by the image's own kernel arguments.
   **`lockdown=integrity`, not `confidentiality`:** confidentiality also
   blocks kprobes, tracefs, perf and BPF reads of kernel memory, which
   Tetragon and Falco need. Tried on a sandbox control plane, Cilium 1.20
