@@ -3,7 +3,7 @@
 # validator and its Renovate image live in spnngl/.github.
 #
 # It also checks that Renovate picks up every version of the Bake files
-# (containers/**/docker-bake.hcl): their one custom manager reads a
+# (**/docker-bake.hcl, containers/ and bootc/): their one custom manager reads a
 # `# renovate:` comment before each version, and a mistyped comment is
 # silently ignored, which freezes that version for good.
 name: renovate
@@ -12,14 +12,14 @@ on:
   pull_request:
     paths:
       - renovate.json5
-      - "containers/**/docker-bake.hcl"
+      - "**/docker-bake.hcl"
       - .github/workflows/renovate.yml
   push:
     branches:
       - main
     paths:
       - renovate.json5
-      - "containers/**/docker-bake.hcl"
+      - "**/docker-bake.hcl"
       - .github/workflows/renovate.yml
 
 concurrency:

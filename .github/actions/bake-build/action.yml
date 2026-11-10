@@ -19,9 +19,15 @@ inputs:
   push:
     description: >-
       "true" pushes the image by digest, to the first repository of the
-      target's tags, and uploads the digest as the artifact <id>_<arch>;
+      target's tags, and uploads the digest as the artifact digest_<id>_<arch>;
       otherwise an OCI layout goes to `oci-dir`.
     default: "false"
+  also:
+    description: >-
+      Space-separated Bake targets to build in the same call, so that they
+      share the image's stages: their own `output`, from the Bake files,
+      is theirs to say (a folder of reports, for the caller to read).
+    default: ""
   oci-dir:
     description: Where the OCI layout goes when not pushing.
     default: ${{ runner.temp }}/oci
@@ -106,7 +112,7 @@ runs:
       with:
         source: .
         files: ${{ inputs.files }}
-        targets: ${{ fromJSON(inputs.item).id }}
+        targets: ${{ fromJSON(inputs.item).id }} ${{ inputs.also }}
         allow: ${{ fromJSON(inputs.item).allow }}
         no-cache: ${{ inputs.no-cache }}
         provenance: mode=max,version=v1
@@ -115,7 +121,7 @@ runs:
           ${{ fromJSON(inputs.item).id }}.tags=
           ${{ fromJSON(inputs.item).id }}.platform=linux/${{ inputs.arch }}
           ${{ fromJSON(inputs.item).epoch != '' && format('{0}.args.SOURCE_DATE_EPOCH={1}', fromJSON(inputs.item).id, fromJSON(inputs.item).epoch) || '' }}
-          ${{ fromJSON(inputs.item).id }}.cache-from=type=gha,scope=${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
+          *.cache-from=type=gha,scope=${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
           ${{ fromJSON(inputs.item).id }}.cache-to=type=gha,scope=${{ fromJSON(inputs.item).id }}_${{ inputs.arch }},mode=max,ignore-error=true
           ${{ inputs.push == 'true' && format('{0}.output=type=image,name={1},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp={2}', fromJSON(inputs.item).id, fromJSON(inputs.item).repositories[0], fromJSON(inputs.item).rewritetimestamp) || format('{0}.output=type=oci,dest={1},tar=false,rewrite-timestamp={2}', fromJSON(inputs.item).id, inputs.oci-dir, fromJSON(inputs.item).rewritetimestamp) }}
 
@@ -136,7 +142,7 @@ runs:
     - if: inputs.push == 'true'
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       with:
-        name: ${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
+        name: digest_${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
         path: ${{ runner.temp }}/digests/${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}
         overwrite: true
         if-no-files-found: error

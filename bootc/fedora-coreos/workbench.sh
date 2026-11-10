@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Workbench of bootc/fedora-coreos: a privileged Fedora container, of the
-# image's Fedora release, that builds the disk images (build.sh) and runs
+# image's Fedora release, that builds the disk images (disk-images.sh) and runs
 # the test VM (vm.sh, test.sh, test-greenboot.sh). Its files are in /work.
 #
 # Usage: bootc/fedora-coreos/workbench.sh up|down|exec [command...]
@@ -39,8 +39,8 @@ packages=(
 # disk images, and the pin can't drift.
 release() {
     local release
-    release=$(sed -n -E 's/^ARG BASE_VERSION="?([0-9]+)\..*/\1/p' bootc/fedora-coreos/Containerfile)
-    [[ -n ${release} ]] || die "no ARG BASE_VERSION in bootc/fedora-coreos/Containerfile"
+    release=$(sed -n -E '/^variable "BASE"/,/^}/s/^ *default = "([0-9]+)\..*/\1/p' bootc/fedora-coreos/docker-bake.hcl)
+    [[ -n ${release} ]] || die "no BASE default in bootc/fedora-coreos/docker-bake.hcl"
     echo "${release}"
 }
 

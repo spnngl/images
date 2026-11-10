@@ -47,6 +47,7 @@ docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.225.0 re
 docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/rhysd/actionlint:1.7.12 -color
 docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/zizmorcore/zizmor:1.31.1 --offline --min-severity medium .github
 f=(-f docker-bake.hcl -f containers/docker-bake.hcl); for x in containers/*/docker-bake.hcl; do f+=(-f "${x}"); done; docker buildx bake "${f[@]}" --print '*' > /dev/null
+f=(-f docker-bake.hcl -f bootc/docker-bake.hcl); for x in bootc/*/docker-bake.hcl; do f+=(-f "${x}"); done; docker buildx bake "${f[@]}" --print '*' > /dev/null
 ```
 
 Then the build check of the image's guide. Report each check as run or

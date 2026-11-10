@@ -7,17 +7,18 @@ each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- **One image, not the three of `bootc/AGENTS.md`**: kubeadm nodes
+- **One image, not the two of `bootc/AGENTS.md`**: kubeadm nodes
   only, no k3s, no Docker. Its stages are its layers, each `FROM` the one
   before: `system`, `kube` (Kubernetes' packages and files, so that a
   Kubernetes release rebuilds it alone), `image` (the `vm` and `metal`
   files, then what reads the whole tree). The stages after `image` scan
   it (OpenSCAP, grype) and check its files (goss, `test/build.yaml`);
-  `image` is the default target. Tag `<major>-v<minor>` of `BASE_VERSION` and
-  `KUBERNETES_VERSION`, the Containerfile's `ARG`s, written by
-  `versions.sh` for `build.sh` and CI: a patch release keeps the tag.
+  `image` is the default stage. Tag `<major>-v<minor>` of `BASE_VERSION` and
+  `KUBERNETES_VERSION`, the `docker-bake.hcl`'s `BASE` and `KUBERNETES`
+  variables, which set the Containerfile's `ARG`s: a patch release keeps
+  the tag.
 - **A second image, `fedora-coreos-nvidia`, for the GPU nodes:** the same
-  Containerfile with `--build-arg IMAGE_BASE=nvidia`, which puts the
+  Containerfile with the build arg `IMAGE_BASE=nvidia`, which puts the
   `nvidia` stage (NVIDIA's driver and toolkit, `sysroot/nvidia/`) under
   `image`. Same tag, amd64 only, built and pushed by CI
   (`REFERENCES.md`, "GPU image"). `fedora-coreos` never builds that stage.
@@ -47,26 +48,27 @@ each choice: [REFERENCES.md](REFERENCES.md).
   as symlinks (`../<unit>`) in the unit's layer, never by `systemctl
   enable` or a preset: FCOS runs `systemctl preset-all` at first boot,
   which drops the `/etc` links no preset names.
-- **CI** (`.github/workflows/build-bootc.yml`) builds it with BuildKit,
-  as `build.sh` (podman's `/run/.containerenv` turns OpenSCAP's machine
-  rules off), for amd64 and arm64; scans amd64; on `main`, pushes and
-  signs `ghcr.io/spnngl/images/fedora-coreos:<major>-v<minor>` and
-  releases the OpenStack qcow2 (`disk-images.sh`) when a file of this
-  folder changed, keeping the newest 3 releases. The GPU image's qcow2 is
-  an asset of the same release.
+- **CI** (`.github/workflows/build-bootc.yml`) builds it with BuildKit
+  (podman's `/run/.containerenv` would turn OpenSCAP's machine rules
+  off), for amd64 and arm64, when a file of this folder or its
+  `docker-bake.hcl` changed; the `check` stage scans amd64; on `main`,
+  pushes and signs `ghcr.io/spnngl/images/fedora-coreos:<major>-v<minor>`
+  once the VM tests of its line passed, and releases the OpenStack qcow2
+  (`disk-images.sh`), keeping the newest 3 releases of each line. The GPU
+  image's qcow2 is an asset of the same release.
 - **OpenSCAP** checks the image at build and the nodes against
   scap-security-guide's `cis` profile (CIS level 2), tailored in
   `sysroot/system/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
   image doesn't follow is turned off there, with its reason beside it.
-  `check-reports.sh` fails `build.sh` and CI on a failed rule, after
-  exporting the report. The
+  The `check` stage fails CI on a failed rule, after exporting the
+  report. The
   nodes scan daily (`openscap.timer`, results in `/var/lib/openscap`), and
   list `/etc`'s drift hourly (`etc-diff.timer`, `/var/lib/etc-diff`); the
   paths the node writes on purpose are in `usr/libexec/etc-diff`.
 - **grype** lists the CVEs of `/usr` and `/etc`, at build and daily on
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;
-  `check-reports.sh` fails on a fixable Critical. One
+  the `check` stage fails on a fixable Critical. One
   the image can't fix is ignored in `sysroot/system/usr/share/grype/ignore.yaml`,
   at the package's exact version, with its reason.
 - **Checks:** in the layer that ships what they check: what holds for
@@ -74,26 +76,23 @@ each choice: [REFERENCES.md](REFERENCES.md).
   CI included), what needs the booted node in
   `test/<layer>/<suite>.yaml` (goss, `test.sh`). A Containerfile `grep` only guards the
   `sed` before it.
-- **Renovate** proposes `BASE_VERSION`, `KUBERNETES_VERSION`, the Cilium
-  of `vm.sh` and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
+- **Renovate** proposes `BASE` and `KUBERNETES`, the Cilium of `vm.sh`
+  and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
   automerged once every check is green (`vm-test` runs the build check)
   but for a new `BASE_VERSION` major, a Kubernetes minor (both new tags)
   or a Cilium major: review those by hand. The GPU image's
-  `NVIDIA_VERSION` and `NVIDIA_CONTAINER_TOOLKIT_VERSION` (`REFERENCES.md`,
+  `NVIDIA_DRIVER` and `NVIDIA_CONTAINER_TOOLKIT` (`REFERENCES.md`,
   "GPU image") are never automerged: only a GPU node runs them.
 
 ## Layout
 
 - `Containerfile`, `sysroot/<layer>/`: the image (`system`, `kube`,
   `vm`, `metal`).
-- `build.sh`: container image and its scan reports
-  (`output/fedora-coreos/reports/`) on the cluster's BuildKit, then disk
-  images (`qemu`, `openstack`, `metal`) in the workbench
-  (`workbench.sh`: a pod of the build cluster, from the local, git-ignored
-  `workbench.yaml`, or with `WORKBENCH=podman` a container on an x86_64
-  host with KVM, as CI's `vm-test` job).
-- `versions.sh`, `check-reports.sh`, `disk-images.sh`: the tag, the scan
-  gate and the disk images, shared by `build.sh` and CI.
+- `docker-bake.hcl`: the targets (one pair per Kubernetes line), their
+  versions and tags, the `vm-test` and `disk-image` groups.
+- `workbench.sh`: a rootful podman container on an x86_64 host with KVM,
+  where the disk images (`disk-images.sh`: `qemu`, `openstack`, `metal`)
+  and the test VM are made, as in CI's `vm-test` job.
 - `test/build.yaml`, `test/<layer>/build.yaml`, `test/<IMAGE_BASE>-build.yaml`:
   the goss checks of the build; the last picks one image's.
 - `vm.sh`, `test.sh`, `test/<suite>.yaml`, `test/<layer>/<suite>.yaml`,
@@ -105,13 +104,16 @@ each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Build check
 
-`BUILD_KUBE_CONTEXT` is the kube context of the build cluster, which runs the BuildKit and the workbench.
-CI's `vm-test` job runs the same commands from `vm.sh up` on, on the
-build job's image.
+CI's `vm-test` job runs these commands on the build job's amd64 image,
+on every pull request; they need an x86_64 host with KVM and rootful
+podman, the workbench's.
 
 ```sh
-export BUILD_KUBE_CONTEXT=<context>
-bootc/fedora-coreos/build.sh qemu,openstack,metal
+docker buildx bake -f docker-bake.hcl -f bootc/docker-bake.hcl -f bootc/fedora-coreos/docker-bake.hcl \
+  --set 'fedora-coreos-1-36.platform=linux/amd64' --set 'fedora-coreos-1-36.output=type=oci,dest=/tmp/fedora-coreos.ociarchive' fedora-coreos-1-36
+WORKBENCH=podman bootc/fedora-coreos/workbench.sh up
+WORKBENCH=podman bootc/fedora-coreos/workbench.sh exec bash -c 'cat > /work/fedora-coreos.ociarchive' < /tmp/fedora-coreos.ociarchive
+WORKBENCH=podman bootc/fedora-coreos/workbench.sh exec bash -s -- /work qemu ostree-image-signed:docker://ghcr.io/spnngl/images/fedora-coreos:44-v1.36 < bootc/fedora-coreos/disk-images.sh
 bootc/fedora-coreos/vm.sh up
 bootc/fedora-coreos/test.sh node      # kernel, users, live sshd, units' state, sysctls, OpenSCAP, grype
 bootc/fedora-coreos/vm.sh cluster     # kubeadm init + Cilium

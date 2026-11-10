@@ -68,7 +68,9 @@ def commits:
 . as $log
 | ($log | commits) as $commits
 | $head[0] as $head
-| ($head.target | map(.context | sub("/+$"; "")) | unique) as $contexts
+| ($head.target
+    | map((.context | sub("/+$"; "")) + "/" + (.dockerfile // "Dockerfile") | sub("/[^/]*$"; ""))
+    | unique) as $dirs
 | ($head.target
     | to_entries
     | map(
@@ -81,14 +83,16 @@ def commits:
             dockerfile: ($target.dockerfile // "Dockerfile"),
             patterns: ($ign[$id] // [] | compile),
             target: $target,
-            # Shared bake files, and the target's own.
+            # Shared bake files, and those beside the target's Containerfile:
+            # a context may be shared (bootc/), a folder is one image's.
             bake: (
-              $bakefiles
+              ($context + "/" + ($target.dockerfile // "Dockerfile") | sub("/[^/]*$"; "")) as $dir
+              | $bakefiles
               | map(
                   select(
                     . as $file
-                    | startswith($context + "/")
-                      or all($contexts[]; . as $c | $file | startswith($c + "/") | not)
+                    | startswith($dir + "/")
+                      or all($dirs[]; . as $d | $file | startswith($d + "/") | not)
                   )
                 )
             )
@@ -101,6 +105,7 @@ def commits:
 | $all_targets
 | map(
     . as $t
+    | select(($t.target.tags // []) | length > 0)
     | select(
         $everything
         or ($base[0].target[$t.id] != $t.target)
@@ -110,6 +115,8 @@ def commits:
         id: $t.id,
         context: $t.context,
         file: ($t.context + "/" + $t.dockerfile),
+        args: ($t.target.args // {}),
+        arches: ($t.target.platforms // ["linux/amd64", "linux/arm64"] | map(ltrimstr("linux/"))),
         target: ($t.target.target // ""),
         tags: ($t.target.tags // []),
         repositories: (
@@ -133,6 +140,15 @@ def commits:
   ) as $targets
 | {
     targets: $targets,
+    # One build job per target and platform, each on a runner of that platform.
+    builds: {
+      include: [
+        $targets[]
+        | . as $t
+        | .arches[]
+        | {target: $t, platform: {arch: ., runner: (if . == "arm64" then "ubuntu-26.04-arm" else "ubuntu-26.04" end)}}
+      ]
+    },
     groups: (
       $head.group
       | map_values(.targets | map(select(. as $id | $targets | any(.id == $id))))

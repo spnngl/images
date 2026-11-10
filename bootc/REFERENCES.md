@@ -19,12 +19,13 @@
 
 ## Decisions
 
-- **Shared build context `bootc/`:** `build.sh` passes `-f
-  bootc/<name>/Containerfile` with context `bootc/`, so almalinux
-  reuses `fedora/sysroot/common/` instead of duplicating it. One
-  `.containerignore` per context is enough: buildah reads it only from
-  the context root (or `--ignorefile`). fedora-coreos builds from its
-  own folder (`fedora-coreos/REFERENCES.md`, "Own build context").
+- **Shared build context `bootc/`:** the Bake targets of fedora and
+  almalinux have context `bootc/` and `dockerfile` `<name>/Containerfile`,
+  so almalinux reuses `fedora/sysroot/common/` instead of duplicating
+  it. A `Containerfile.dockerignore` beside each Containerfile (BuildKit
+  reads it before the context's `.dockerignore`) lists what that image
+  reads, so `bake-discover` rebuilds only the images a change touches.
+  fedora-coreos builds from its own folder (`fedora-coreos/REFERENCES.md`, "Own build context").
 - **`sysroot/<BASE_VERSION>/` after `sysroot/common/`:** almalinux
   builds 9 and 10 from one Containerfile, and a base upgrade adds a
   folder instead of editing the one the running release uses.
@@ -115,7 +116,7 @@ installed from one upgrades from CI's signed images.
   spnngl/images`. The action reads only Docker's credential file, so CI
   logs podman in with `REGISTRY_AUTH_FILE=~/.docker/config.json`.
 
-## Disk images: `build.sh`
+## Disk images: `build.sh <id>`
 
 `bootc/build.sh` runs a pinned `ghcr.io/osbuild/image-builder-cli`:
 
@@ -130,16 +131,18 @@ installed from one upgrades from CI's signed images.
 - **`--blueprint /config.toml`:** users and SSH keys go into the disk
   image only. It holds credentials: git-ignored, template
   `bootc/config.example.toml`.
-- **`--output-dir <name> --output-name <name>`:** a fixed path,
-  `output/<name>/<name>.qcow2`.
-- Tag `ghcr.io/spnngl/images/<name>:<BASE_VERSION>`, CI's for the
-  default target, so an installed host upgrades from CI's images.
-  Default target only, never pushed.
+- **`--output-dir <id> --output-name <id>`:** a fixed path,
+  `output/<id>/<id>.qcow2`.
+- The image is built by `docker buildx bake` (`<id>` is a Bake target),
+  as CI does, for the host's platform, and loaded into podman through a
+  tar file: image-builder reads podman's storage. Its tag is the
+  target's first, CI's, so an installed host upgrades from CI's images.
+  Never pushed.
 
 ## Known limits
 
 - Only qcow2 is built: other formats change the image type in
   `build.sh` (`anaconda-iso`, `raw`, `vmdk`).
 - `build.sh` builds for the host architecture only. x86_64 on an arm
-  Mac needs `podman build --platform linux/amd64` and image-builder's
+  Mac needs a `--platform linux/amd64` build and image-builder's
   target architecture option: experimental, emulated, slow.
