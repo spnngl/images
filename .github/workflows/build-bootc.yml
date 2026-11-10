@@ -226,7 +226,6 @@ jobs:
       matrix:
         id: ${{ fromJSON(needs.discover.outputs.groups)['vm-test'] }}
     env:
-      WORKBENCH: podman
       ID: ${{ matrix.id }}
       TARGETS: ${{ needs.discover.outputs.targets }}
     steps:
@@ -254,37 +253,25 @@ jobs:
       # the release job's: the runner's 145 GB disk is enough (df at the
       # end of the job).
       - run: sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
-      # The qemu disk image: in the workbench, from the OCI archive, which
-      # test-greenboot.sh also reads there.
+      # The qemu disk image, in the workbench, from the OCI archive, which
+      # `test.sh greenboot` also reads there; then the whole build check
+      # (bootc/fedora-coreos/AGENTS.md, "Build check").
       - env:
           EVENT: ${{ github.event_name }}
           GITHUB_TOKEN: ${{ github.token }}
         run: |-
-          archive="oci-archive:${RUNNER_TEMP}/fedora-coreos.ociarchive"
+          archive="${RUNNER_TEMP}/fedora-coreos.ociarchive"
           if [[ ${EVENT} == pull_request ]]; then
-            skopeo copy --quiet --override-arch amd64 "oci:${RUNNER_TEMP}/image" "${archive}"
+            skopeo copy --quiet --override-arch amd64 "oci:${RUNNER_TEMP}/image" "oci-archive:${archive}"
           else
-            skopeo copy --quiet --override-arch amd64 --src-creds "${GITHUB_ACTOR}:${GITHUB_TOKEN}" "docker://${TAG%:*}@$(< "${RUNNER_TEMP}/image/digest_${ID}_amd64")" "${archive}"
+            skopeo copy --quiet --override-arch amd64 --src-creds "${GITHUB_ACTOR}:${GITHUB_TOKEN}" "docker://${TAG%:*}@$(< "${RUNNER_TEMP}/image/digest_${ID}_amd64")" "oci-archive:${archive}"
           fi
           rm -rf "${RUNNER_TEMP}/image"
           bootc/fedora-coreos/workbench.sh up
-          bootc/fedora-coreos/workbench.sh exec bash -c 'cat > /work/fedora-coreos.ociarchive' < "${RUNNER_TEMP}/fedora-coreos.ociarchive"
-          rm "${RUNNER_TEMP}/fedora-coreos.ociarchive"
-          bootc/fedora-coreos/workbench.sh exec bash -s -- /work qemu "ostree-image-signed:docker://${TAG}" \
-            < bootc/fedora-coreos/disk-images.sh
+          bootc/fedora-coreos/workbench.sh disks "${archive}" qemu "ostree-image-signed:docker://${TAG}"
+          rm "${archive}"
       - id: vm
-        run: bootc/fedora-coreos/vm.sh up
-      - run: bootc/fedora-coreos/test.sh node
-      - run: bootc/fedora-coreos/test.sh wx
-      - run: bootc/fedora-coreos/vm.sh cluster
-      - run: bootc/fedora-coreos/test.sh cluster
-      # W^X's remounts again, after a boot of a node with a cluster, and
-      # the cluster back.
-      - run: |-
-          bootc/fedora-coreos/vm.sh reboot
-          bootc/fedora-coreos/test.sh wx
-          bootc/fedora-coreos/test.sh cluster
-      - run: bootc/fedora-coreos/test-greenboot.sh
+        run: bootc/fedora-coreos/vm.sh check
       - if: always()
         run: df -h /
       # The serial console: boot and Ignition errors, the reboots. Only once

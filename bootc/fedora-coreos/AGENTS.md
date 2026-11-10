@@ -107,9 +107,9 @@ with `bootc switch`.
   and the test VM are made, as in CI's `vm-test` job.
 - `test/build.yaml`, `test/<layer>/build.yaml`, `test/<IMAGE_BASE>-build.yaml`:
   the goss checks of the build; the last picks one image's.
-- `vm.sh`, `test.sh`, `test/<suite>.yaml`, `test/<layer>/<suite>.yaml`,
-  `test-greenboot.sh`: a test VM in the workbench (an NVMe disk), and the
-  goss suites run on it (`node`, `wx`, `cluster`), split by layer.
+- `vm.sh`, `test.sh`, `test/<suite>.yaml`, `test/<layer>/<suite>.yaml`:
+  a test VM in the workbench (an NVMe disk), and the goss suites run on
+  it (`node`, `wx`, `cluster`), split by layer, and the greenboot test.
   `test/nvidia.yaml` is the GPU image's suite, run on a node with a GPU
   (`test.sh nvidia <user>@<host>`, with the workbench up for goss's
   binary), never on the test VM.
@@ -123,23 +123,23 @@ podman, the workbench's.
 ```sh
 docker buildx bake -f docker-bake.hcl -f bootc/docker-bake.hcl -f bootc/fedora-coreos/docker-bake.hcl \
   --set 'fedora-coreos-1-36.platform=linux/amd64' --set 'fedora-coreos-1-36.output=type=oci,dest=/tmp/fedora-coreos.ociarchive' fedora-coreos-1-36
-WORKBENCH=podman bootc/fedora-coreos/workbench.sh up
-WORKBENCH=podman bootc/fedora-coreos/workbench.sh exec bash -c 'cat > /work/fedora-coreos.ociarchive' < /tmp/fedora-coreos.ociarchive
-WORKBENCH=podman bootc/fedora-coreos/workbench.sh exec bash -s -- /work qemu ostree-image-signed:docker://ghcr.io/spnngl/images/fedora-coreos:44-v1.36 < bootc/fedora-coreos/disk-images.sh
-bootc/fedora-coreos/vm.sh up
-bootc/fedora-coreos/test.sh node      # kernel, users, live sshd, units' state, sysctls, OpenSCAP, grype
-bootc/fedora-coreos/vm.sh cluster     # kubeadm init + Cilium
-bootc/fedora-coreos/test.sh cluster   # node Ready, pod runs scripts from emptyDir and configMap
-bootc/fedora-coreos/test.sh wx        # noexec everywhere but the exceptions
-bootc/fedora-coreos/vm.sh reboot
-bootc/fedora-coreos/test.sh wx        # again, after a boot with a cluster
-bootc/fedora-coreos/test.sh cluster   # the cluster comes back
-bootc/fedora-coreos/test-greenboot.sh # good update kept, bad one rolled back
+bootc/fedora-coreos/workbench.sh up
+bootc/fedora-coreos/workbench.sh disks /tmp/fedora-coreos.ociarchive qemu ostree-image-signed:docker://ghcr.io/spnngl/images/fedora-coreos:44-v1.36
+bootc/fedora-coreos/vm.sh check
 bootc/fedora-coreos/vm.sh down
 bootc/fedora-coreos/workbench.sh down
 ```
 
-Done when each command exits 0. Run `test.sh wx` again after a reboot.
+`vm.sh check` boots the VM and runs, in this order: `test.sh node` (kernel,
+users, live sshd, units' state, sysctls, OpenSCAP, grype), `test.sh wx`
+(noexec everywhere but the exceptions), `vm.sh cluster` (kubeadm init and
+Cilium), `test.sh cluster` (node Ready, a pod runs scripts from an emptyDir
+and a configMap), a reboot, `test.sh wx` and `test.sh cluster` again (a boot
+with a cluster; the cluster comes back), then `test.sh greenboot` (a good
+update is kept, a bad one rolled back).
+
+Done when each command exits 0. A host without x86_64 and KVM has no
+workbench: push the branch, and CI's `vm-test` job runs the same.
 
 The GPU image (`IMAGE_BASE=nvidia`) has one more check, on a node with a
 GPU that runs it (`REFERENCES.md`, "GPU image"):
