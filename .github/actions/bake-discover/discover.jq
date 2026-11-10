@@ -99,6 +99,10 @@ def commits:
           }
       )
   ) as $all_targets
+# A sample name no target has fails: a line dropped or a target renamed
+# would otherwise leave its kind untested, silently.
+| ([($sample // [])[] | select($head.target[.] == null)] as $unknown
+    | if $unknown == [] then . else error("sample: no such target: " + ($unknown | join(", "))) end)
 # A change to the workflow or an action: every target, or the sample's.
 | ($changed != null
     and any($changed[]; . == (".github/workflows/" + $workflow) or startswith(".github/actions/bake-"))

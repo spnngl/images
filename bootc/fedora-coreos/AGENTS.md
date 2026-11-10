@@ -92,7 +92,8 @@ and 1.37): an entry of `KUBERNETES` in `docker-bake.hcl`, behind its own
 keeps Renovate on that minor). It gives the line a pair of Bake targets
 (`fedora-coreos-<minor>`, `fedora-coreos-nvidia-<minor>`), tags
 `<major>-v<minor>`, VM tests and a release series of its own. Add a line by
-copying the last entry; drop one by deleting its entry once upstream ends
+copying the last entry, and name its GPU target in the `sample` of
+`.github/workflows/build-bootc.yml`; drop one by deleting its entry once upstream ends
 its support: its tags stay in the registry, and its hosts move by hand
 with `bootc switch`.
 

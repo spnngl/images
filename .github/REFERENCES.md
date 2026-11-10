@@ -102,8 +102,12 @@ Dalec, and one way to build, attest and sign is simpler.
   (`sample` of `bake-discover`): `build-apps.yml`'s 67 images take hours
   on the runners, while a CI change breaks by kind of image (a
   Containerfile, a Dalec spec, an entitlement), not by image. The push
-  that merges it builds every image, as a change of the workflow. The
-  bootc images have no sample: four kinds, four images.
+  that merges it builds every image, as a change of the workflow.
+  `build-bootc.yml`'s sample, the newest line's GPU image and almalinux
+  10, covers both contexts and both platforms but runs no VM test (no
+  fedora-coreos image): the merge's run tests it. A sample name no
+  target has fails `discover`, so a dropped line can't empty it
+  silently.
 - **`discover.jq` has tests** (`.github/actions/bake-discover/test.sh`,
   run by `shellcheck.yml`): what a target reads decides every build, and
   a `.dockerignore` rule is easy to get wrong.

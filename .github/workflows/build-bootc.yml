@@ -90,6 +90,16 @@ jobs:
             bootc/docker-bake.hcl
             bootc/*/docker-bake.hcl
           workflow: build-bootc.yml
+          # A pull request changing this workflow or a bake-* action builds
+          # two images, not all nine: the GPU image of the newest line (the
+          # fedora-coreos context and stages, and the nvidia ones, amd64),
+          # and almalinux 10 (the shared bootc context, both platforms). No
+          # VM test runs: fedora-coreos isn't built. The push that merges it
+          # builds every image, and runs it. A line dropped fails discover:
+          # name the newest one here.
+          sample: |-
+            fedora-coreos-nvidia-1-37
+            almalinux-10
 
       # One release per fedora-coreos line, when it or its GPU image
       # changed: the ids of the images that are not the GPU's; and one per
