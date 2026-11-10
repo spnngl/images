@@ -556,20 +556,18 @@ Read each at the version this repository pins.
   `pkg/cmd/release/create/create.go`, `draftWhileUploading`), and only
   published releases count as the newest one: a failed upload makes no
   release without a disk.
-- **Container image on a cluster's BuildKit** (`BUILD_KUBE_CONTEXT`,
-  `kubectl port-forward` to a free local port, a `docker buildx` remote
-  builder, `--output type=oci`): the workstation is arm64 and the targets
-  are x86_64.
+- **Container image by Bake on GitHub's runners** (`docker buildx bake`,
+  `--output type=oci` for a test): the workstation is arm64 and the
+  targets are x86_64; no cluster of ours is involved.
 - **Disk images in a privileged container, the workbench**
   (`workbench.sh`): the BuildKit is rootless and can't run osbuild; the
   tool names its output after the host architecture, so it runs on
-  x86_64. Two backends, one interface (`up`, `down`, `exec`) and one
-  package list: `kube`, a pod on the build cluster (`workbench.yaml`,
-  git-ignored: it names the cluster; its namespace must allow privileged
-  pods, `activeDeadlineSeconds` bounds its life), and `podman`, a
-  rootful container on an x86_64 host with KVM (CI's `vm-test` job;
-  `--init` reaps the daemonized qemu and swtpm, as the pod's
-  `shareProcessNamespace`).
+  x86_64. A rootful podman container on an x86_64 host with KVM (CI's
+  `vm-test` job, or a Linux machine); `--init` reaps the daemonized qemu
+  and swtpm. One interface: `up`, `down`, `exec`, and `disks`, which
+  copies an OCI archive in and builds its disk images. A single backend:
+  a second one (a pod on a build cluster) was kept alive for a laptop
+  that can't run KVM, and only CI is the reference.
 - **Test VM: `qemu-system-x86_64` with KVM in the workbench:** the
   cluster's bare-metal node and GitHub's runners expose `/dev/kvm`. Ignition goes through `fw_cfg`, a throwaway SSH key
   comes from Butane. Its disk is NVMe, as a dedicated server's.
@@ -618,12 +616,12 @@ Read each at the version this repository pins.
   the unit or drop-in. `systemctl show` needs a running systemd.
 - **VM tests in CI, and by hand** (`build-bootc.yml`, job `vm-test`):
   the job boots the build job's image, on pull requests too, and runs
-  every suite of the Build check (`AGENTS.md`), `test-greenboot.sh`
-  included. A public repository's `ubuntu-26.04` runner has 4 vCPUs,
+  every suite of the Build check (`AGENTS.md`: `vm.sh check`),
+  `test.sh greenboot` included. A public repository's `ubuntu-26.04` runner has 4 vCPUs,
   16 GB and `/dev/kvm`: room for the VM (4 CPUs, 8 GB). The `push` job
   pushes fedora-coreos only if it passed: nodes follow the tag with
   `bootc upgrade`, and greenboot rolls back only on its required
-  checks. By hand, the same scripts run in the cluster's workbench.
+  checks. By hand, the same scripts run in a workbench on an x86_64 Linux host with KVM.
 - **VM tests as goss suites** (`test.sh node|wx|cluster`), like the
   build's: `test/<suite>.yaml` includes every layer's `<suite>.yaml`
   (`system/`, `vm/`, `metal/`, `kube/`), so a check lives in the layer
@@ -696,7 +694,7 @@ Read each at the version this repository pins.
   joined has no running kubelet. Ordered after containerd and kubelet
   (`greenboot-healthcheck.service.d/10-ordering.conf`).
 - **`GREENBOOT_MAX_BOOT_ATTEMPTS` is greenboot's default (3):** tested by
-  `test-greenboot.sh`: three failed boots, then rollback. greenboot
+  `test.sh greenboot`: three failed boots, then rollback. greenboot
   remounts `/boot` read-write for the operation and restores it, which
   W^X doesn't prevent.
 

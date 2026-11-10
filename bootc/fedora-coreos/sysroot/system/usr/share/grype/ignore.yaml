@@ -1,6 +1,6 @@
 # grype's ignore rules for the image (build) and the nodes (grype.timer), read
 # by usr/libexec/grype-scan: the fixable Critical vulnerabilities this image
-# can't fix itself, which would otherwise fail build.sh.
+# can't fix itself, which would otherwise fail the build's check stage.
 #
 # Each rule names the package's exact version: an update of the package ends
 # the rule, and the vulnerability comes back if the update doesn't fix it.

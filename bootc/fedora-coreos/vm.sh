@@ -3,6 +3,7 @@
 # made, inside the workbench (workbench.sh), with KVM.
 #
 # Usage: bootc/fedora-coreos/vm.sh up [ignition.ign]
+#        bootc/fedora-coreos/vm.sh check [ignition.ign]
 #        bootc/fedora-coreos/vm.sh cluster
 #        bootc/fedora-coreos/vm.sh ssh [command...]
 #        bootc/fedora-coreos/vm.sh reboot
@@ -11,6 +12,9 @@
 #   up    boot a fresh VM from the disk image (replaces a running one). The
 #         optional Ignition config is merged into the one that gives the
 #         `rootless` user a throwaway SSH key.
+#   check boot a fresh VM and run the whole build check on it (AGENTS.md,
+#         "Build check"): test.sh node, wx, cluster, a reboot, wx and cluster
+#         again, then greenboot. What CI's vm-test job runs.
 #   cluster  run kubeadm init in the VM, then install Cilium from the
 #         workbench, through the forwarded API port
 #   ssh   run a command on the VM, or a script read from stdin
@@ -18,7 +22,6 @@
 #   reboot  reboot the VM, wait until it answers over SSH again
 #   log   print the VM's serial console
 #   down  stop the VM and delete its disk
-# Env:    WORKBENCH, BUILD_KUBE_CONTEXT  the workbench (workbench.sh)
 # In the workbench, the VM answers on 127.0.0.1: SSH on 2222, the Kubernetes
 # API on 6443. Files are in /work/vm. Its disk is NVMe, as on the dedicated
 # servers.
@@ -169,6 +172,21 @@ EOF
 }
 
 case "${1:-}" in
+check)
+    shift
+    test=bootc/fedora-coreos/test.sh
+    up "$@"
+    "${test}" node
+    "${test}" wx
+    cluster
+    "${test}" cluster
+    # W^X's remounts again, after a boot of a node with a cluster, and the
+    # cluster back.
+    "${self}" reboot
+    "${test}" wx
+    "${test}" cluster
+    "${test}" greenboot
+    ;;
 cluster) cluster ;;
 up)
     shift
@@ -178,7 +196,7 @@ ssh)
     shift
     # Timeouts: QEMU's port forward accepts the connection even while the
     # VM reboots, and a session the reboot cuts never closes. Without
-    # them, a wait for the VM (reboot, test-greenboot.sh) can hang.
+    # them, a wait for the VM (reboot, test.sh greenboot) can hang.
     "${workbench}" exec ssh -i /work/vm/key -p 2222 -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes \
         -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
@@ -204,5 +222,5 @@ down)
         if [[ -f /work/vm/qemu.pid ]]; then kill "$(cat /work/vm/qemu.pid)" 2>/dev/null || true; fi
         rm -rf /work/vm'
     ;;
-*) die "usage: $0 up [ignition.ign]|cluster|ssh [command...]|reboot|log|down" ;;
+*) die "usage: $0 up|check [ignition.ign]|cluster|ssh [command...]|reboot|log|down" ;;
 esac
