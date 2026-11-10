@@ -11,14 +11,20 @@ ignore:
   # Kubernetes' rpms (pkgs.k8s.io): fixed by a Kubernetes or cri-tools
   # release, through KUBERNETES_VERSION.
   - vulnerability: CVE-2026-78663
-    reason: x/net of crictl; next cri-tools release
+    reason: x/net of crictl 1.36; next cri-tools release
     package: {name: golang.org/x/net, version: v0.51.0}
+  - vulnerability: CVE-2026-78663
+    reason: x/net of crictl 1.37 (v1.37.0, the latest); next cri-tools release
+    package: {name: golang.org/x/net, version: v0.58.0}
   - vulnerability: CVE-2026-78663
     reason: x/net of kubelet, kubeadm and kubectl; next Kubernetes release
     package: {name: golang.org/x/net, version: v0.56.0}
   - vulnerability: CVE-2026-78663
-    reason: Go 1.26.2 of crictl; next cri-tools release
+    reason: Go 1.26.2 of crictl 1.36; next cri-tools release
     package: {name: stdlib, version: go1.26.2}
+  - vulnerability: CVE-2026-78663
+    reason: Go 1.26.6 of crictl 1.37 (v1.37.0, the latest); next cri-tools release
+    package: {name: stdlib, version: go1.26.6}
 
   # Fedora's packages: fixed by a FCOS release, through BASE_VERSION, or a
   # Fedora update.
