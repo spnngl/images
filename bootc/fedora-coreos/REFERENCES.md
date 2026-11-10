@@ -264,6 +264,25 @@ Read each at the version this repository pins.
   ("unknown provider 'qemu'") and leaves `systemctl --failed` non-empty;
   one shell, because systemd reads an `EnvironmentFile` before
   `ExecStartPre` writes it.
+- **Default hostname `node-????-????` in `/etc/hostname`:** a node that
+  nothing names gets a unique, stable name instead of `localhost`.
+  systemd (FCOS's 259) replaces each `?` with a hex digit of a keyed
+  hash of `/etc/machine-id`, which it sets up first: the machine ID
+  never reaches the network (systemd
+  `src/shared/hostname-setup.c:257-299`, `src/core/main.c:2471-2475`).
+  - `hostnamectl hostname` (`openstack-hostname.service`) and Ignition
+    replace it; bootc's `/etc` merge then keeps the node's. An Ignition
+    file at `/etc/hostname` needs `overwrite: true`, else Ignition fails
+    ("A file exists there already and overwrite is false", ignition
+    `internal/exec/stages/files/filesystemEntries.go:300`). CABPK writes
+    none.
+  - It's a static hostname: a DHCP one no longer applies. None is used:
+    VMs are named by `openstack-hostname.service`, dedicated servers by
+    Ignition.
+  - Not `DEFAULT_HOSTNAME=` in `os-release`: systemd uses it only when
+    the kernel has no hostname, and the initrd has most likely set
+    `localhost` by then (`hostname-setup.c:208-215`); and `os-release`
+    is Fedora's.
 - **The data array and the public bond's MAC come with bare-metal
   installs** (Later): RAID10, its LUKS bound to the TPM with no PCR, since PCR 4
   changes with each bootc update.
