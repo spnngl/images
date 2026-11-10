@@ -46,3 +46,14 @@ command:
         grep -q "^extra/nvidia/${m}\.ko" /usr/lib/modules/*/modules.dep || { echo "missing: ${m}"; exit 1; }
       done
     exit-status: 0
+
+  # containerd ignores a mistyped plugin key: check the merged config.
+  containerd, merged config has the nvidia runtime and CDI:
+    exec: containerd --config /usr/lib/containerd/config.toml config dump
+    exit-status: 0
+    timeout: 60000
+    stdout:
+      - runtimes.nvidia.options]
+      - BinaryName = '/usr/bin/nvidia-container-runtime'
+      - enable_cdi = true
+      - default_runtime_name = 'runc'
