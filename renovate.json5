@@ -461,6 +461,14 @@
             "allowedVersions": "/^\\d+\\.\\d{8}\\.3\\.\\d+$/"
         },
         {
+            "description": "A new Fedora major of fedora-coreos: the GPU image's NVIDIA repository URLs hold it (the Containerfile derives it from BASE_VERSION, but renovate.json5's registryUrl for the driver is literal).",
+            "matchDepNames": ["quay.io/fedora/fedora-coreos"],
+            "matchUpdateTypes": ["major"],
+            "prBodyNotes": [
+                "Change `fedora<major>` in the `registryUrlTemplate` of the `nvidia-driver` custom manager (`renovate.json5`) to the new major, and check that NVIDIA's repository for it holds an R620 driver (`bootc/fedora-coreos/REFERENCES.md`, \"GPU image\")."
+            ]
+        },
+        {
             "description": "Kubernetes of bootc/fedora-coreos: a PR per patch release of the current minor too, as k3s's, and one per minor release: kubeadm upgrades one minor at a time.",
             "matchDepNames": ["kubernetes"],
             "separateMinorPatch": true,

@@ -404,7 +404,10 @@ depmod -a "${kver}"
 # The build tools stay in nvidia-kmod: a node has no use for them, and their
 # presence means a package pulled them in.
 for p in dkms gcc kernel-devel; do
-    ! rpm -q --quiet "${p}"
+    if rpm -q --quiet "${p}"; then
+        echo "${p} is installed" >&2
+        exit 1
+    fi
 done
 
 # /var ships empty (as the kube stage).
@@ -479,7 +482,7 @@ FROM system AS goss-bin
 RUN dnf -yq install goss
 
 # Checks of the image's files (test/build.yaml, which includes each
-# layer's; the GPU image's, test/nvidia-build.yaml, includes that one).
+# layer's; test/<IMAGE_BASE>-build.yaml includes that one and adds the image's).
 # Exit 1: checks failed, the report is written; build.sh fails on it after
 # exporting the reports.
 FROM image AS goss
@@ -493,9 +496,7 @@ RUN --network=none \
     --mount=type=bind,source=test,target=/run/goss/test \
     <<EORUN
 mkdir -p /reports/goss
-gossfile="${IMAGE_BASE}-build.yaml"
-[[ ${IMAGE_BASE} != kube ]] || gossfile=build.yaml
-/run/goss/goss --gossfile "/run/goss/test/${gossfile}" validate --format tap \
+/run/goss/goss --gossfile "/run/goss/test/${IMAGE_BASE}-build.yaml" validate --format tap \
     > /reports/goss/build.tap || [[ $? == 1 ]]
 EORUN
 

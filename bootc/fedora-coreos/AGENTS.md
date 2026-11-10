@@ -94,13 +94,14 @@ each choice: [REFERENCES.md](REFERENCES.md).
   host with KVM, as CI's `vm-test` job).
 - `versions.sh`, `check-reports.sh`, `disk-images.sh`: the tag, the scan
   gate and the disk images, shared by `build.sh` and CI.
-- `test/build.yaml`, `test/<layer>/build.yaml`: the goss checks of the
-  build.
+- `test/build.yaml`, `test/<layer>/build.yaml`, `test/<IMAGE_BASE>-build.yaml`:
+  the goss checks of the build; the last picks one image's.
 - `vm.sh`, `test.sh`, `test/<suite>.yaml`, `test/<layer>/<suite>.yaml`,
   `test-greenboot.sh`: a test VM in the workbench (an NVMe disk), and the
   goss suites run on it (`node`, `wx`, `cluster`), split by layer.
   `test/nvidia.yaml` is the GPU image's suite, run on a node with a GPU
-  (`test.sh nvidia <user>@<host>`), never on the test VM.
+  (`test.sh nvidia <user>@<host>`, with the workbench up for goss's
+  binary), never on the test VM.
 
 ## Build check
 

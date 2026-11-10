@@ -836,10 +836,14 @@ the workloads' images, never on the host.
   list a GPU within 60 s, or the update is rolled back, as for
   containerd and kubelet: a node without its driver takes GPU pods and
   fails them.
-- **The build's goss checks for the GPU image are
-  `test/nvidia-build.yaml`:** it includes `build.yaml` and sits outside
-  `*/build.yaml`, which `fedora-coreos` runs (the Containerfile's goss
-  stage picks the file from `IMAGE_BASE`).
+- **The build's goss checks of each image are `test/<IMAGE_BASE>-build.yaml`:**
+  `kube-build.yaml` for `fedora-coreos`, `nvidia-build.yaml` for the GPU
+  image. Each includes `build.yaml`, which runs every layer's
+  `*/build.yaml`, and adds what only its image has: the lockdown file for
+  `fedora-coreos` (the node test derives its expected lockdown from the
+  image's kernel arguments, so only this tells a lost file), the driver for
+  the GPU image. They sit outside `*/build.yaml`, which would run them in
+  both.
 
 - **containerd: a runtime `nvidia` next to `runc`, which stays the
   default** (`sysroot/nvidia/usr/lib/containerd/conf.d/60-nvidia.toml`):

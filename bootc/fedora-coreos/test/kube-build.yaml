@@ -1,0 +1,11 @@
+# fedora-coreos's checks, at build time (the Containerfile's goss stage when
+# IMAGE_BASE=kube): every layer's, and what only the default image has.
+gossfile:
+  build.yaml: {}
+
+file:
+  # lockdown=integrity: test/system/node.yaml derives the expected lockdown
+  # from the image's kernel arguments, so only this tells a lost file.
+  /usr/lib/bootc/kargs.d/10-lockdown.toml:
+    exists: true
+    contents: ["/^kargs = \\[\"lockdown=integrity\"\\]$/"]
