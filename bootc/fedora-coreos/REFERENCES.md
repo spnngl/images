@@ -803,3 +803,40 @@ the workloads' images, never on the host.
   the Containerfile and `sysroot/` up to `nvidia`, not the GPU image's
   bytes (its leg runs `dnf` on its own, in the same run); no VM test
   has a GPU.
+
+- **The driver's compute userspace and the Container Toolkit's base
+  package, nothing more** (`nvidia-driver-cuda`,
+  `nvidia-container-toolkit-base`): `nvidia-smi`, NVML, the CUDA driver
+  library, `nvidia-persistenced`, `nvidia-container-runtime`,
+  `nvidia-ctk`. No graphics, no CUDA toolkit: the workloads' images carry
+  their CUDA, and the GPU Operator's toolkit pod (which writes to
+  `/usr/local` and the read-only containerd config) stays disabled. The
+  Container Toolkit repository is signed at the metadata level
+  (`repo_gpgcheck=1`, `gpgcheck=0` in NVIDIA's own `.repo` file); both
+  repositories are written, then removed, in the one RUN. The RUN
+  fails if `dkms`, `gcc` or `kernel-devel` came in.
+- **`python3` is in the image after all:** `nvidia-driver-common`
+  requires `/usr/bin/python3`, and `nvidia-driver-selinux` (required with
+  `selinux-policy-targeted`) pulls the policy tools that need it. Expect
+  grype findings on it.
+- **Two units enabled, by links in `/usr/lib` like every unit of the
+  image:** `nvidia-persistenced.service` (keeps the driver's state
+  loaded, so a container's start does not pay for it) and
+  `nvidia-cdi-refresh.service`, which creates the device nodes and
+  writes the CDI spec `/var/run/cdi/nvidia.yaml` before containerd
+  starts (the package's drop-in orders it `Before=containerd.service`,
+  with a 90 s timeout). The service, not `nvidia-cdi-refresh.path`: a
+  path unit watches `/usr`, read-only at runtime, which never changes.
+- **Kernel arguments `rd.driver.blacklist=nouveau`,
+  `rd.driver.blacklist=nova-core`** (`kargs.d/30-nvidia.toml`): what
+  `nvidia-kmod-common`'s `nvidia-boot-update` would write, which bootc
+  nodes do not run. Its `modprobe.d` file blacklists both again for
+  the running system.
+- **A greenboot check, `30-nvidia.sh`:** `nvidia-smi --list-gpus` must
+  list a GPU within 60 s, or the update is rolled back, as for
+  containerd and kubelet: a node without its driver takes GPU pods and
+  fails them.
+- **The build's goss checks for the GPU image are
+  `test/nvidia-build.yaml`:** it includes `build.yaml` and sits outside
+  `*/build.yaml`, which `fedora-coreos` runs (the Containerfile's goss
+  stage picks the file from `IMAGE_BASE`).

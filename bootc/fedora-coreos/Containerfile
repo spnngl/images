@@ -361,17 +361,61 @@ RUN <<EORUN
 rm /usr/lib/bootc/kargs.d/10-lockdown.toml
 EORUN
 
-# The modules of the nvidia-kmod stage. A bind mount, not COPY: the RPM
-# stays out of the layers.
+ARG BASE_VERSION
+ARG NVIDIA_VERSION
+ARG NVIDIA_CONTAINER_TOOLKIT_VERSION
+
+# The modules of the nvidia-kmod stage (a bind mount, not COPY: the RPM stays
+# out of the layers), the driver's compute userspace (nvidia-smi, the NVML and
+# CUDA driver libraries, nvidia-persistenced) and the Container Toolkit's
+# runtime and CDI tools. No graphics, no CUDA toolkit: the workloads' images
+# carry their CUDA.
 RUN --mount=type=bind,from=nvidia-kmod,source=/rpms,target=/run/rpms <<EORUN
 kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
-dnf -yq install --setopt=install_weak_deps=False /run/rpms/nvidia-kmod-open-*.rpm
+
+# The repositories, removed after the install. NVIDIA signs the toolkit's
+# repository metadata, not each package, hence repo_gpgcheck.
+repo="https://developer.download.nvidia.com/compute/cuda/repos/fedora${BASE_VERSION%%.*}/x86_64"
+cat > /etc/yum.repos.d/nvidia.repo <<EOF
+[cuda]
+name=NVIDIA CUDA
+baseurl=${repo}
+enabled=1
+gpgcheck=1
+gpgkey=${repo}/73CD9B30.pub
+
+[nvidia-container-toolkit]
+name=NVIDIA Container Toolkit
+baseurl=https://nvidia.github.io/libnvidia-container/stable/rpm/\$basearch
+enabled=1
+gpgcheck=0
+repo_gpgcheck=1
+gpgkey=https://nvidia.github.io/libnvidia-container/gpgkey
+EOF
+
+# The modules first: the driver's packages require nvidia-kmod, which only the
+# stub RPM provides.
+dnf -yq install --setopt=install_weak_deps=False \
+    /run/rpms/nvidia-kmod-open-*.rpm \
+    "nvidia-driver-cuda-3:${NVIDIA_VERSION}" \
+    "nvidia-container-toolkit-base-${NVIDIA_CONTAINER_TOOLKIT_VERSION}"
 depmod -a "${kver}"
 
+# The build tools stay in nvidia-kmod: a node has no use for them, and their
+# presence means a package pulled them in.
+for p in dkms gcc kernel-devel; do
+    ! rpm -q --quiet "${p}"
+done
+
 # /var ships empty (as the kube stage).
+rm /etc/yum.repos.d/nvidia.repo
 dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /var/lib/rpm-state /var/lib/systemd/migrated
 EORUN
+
+COPY --link ./sysroot/nvidia/ /
+
+RUN chmod 0755 /usr/lib/greenboot/check/required.d/30-nvidia.sh
 
 FROM ${IMAGE_BASE} AS image
 
@@ -435,15 +479,23 @@ FROM system AS goss-bin
 RUN dnf -yq install goss
 
 # Checks of the image's files (test/build.yaml, which includes each
-# layer's). Exit 1: checks failed, the report is written; build.sh fails on
-# it after exporting the reports.
+# layer's; the GPU image's, test/nvidia-build.yaml, includes that one).
+# Exit 1: checks failed, the report is written; build.sh fails on it after
+# exporting the reports.
 FROM image AS goss
+ARG IMAGE_BASE
+
+# Inherited; repeated for hadolint, which loses it at an ARG.
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
 RUN --network=none \
     --mount=type=bind,from=goss-bin,source=/usr/bin/goss,target=/run/goss/goss \
     --mount=type=bind,source=test,target=/run/goss/test \
     <<EORUN
 mkdir -p /reports/goss
-/run/goss/goss --gossfile /run/goss/test/build.yaml validate --format tap \
+gossfile="${IMAGE_BASE}-build.yaml"
+[[ ${IMAGE_BASE} != kube ]] || gossfile=build.yaml
+/run/goss/goss --gossfile "/run/goss/test/${gossfile}" validate --format tap \
     > /reports/goss/build.tap || [[ $? == 1 ]]
 EORUN
 

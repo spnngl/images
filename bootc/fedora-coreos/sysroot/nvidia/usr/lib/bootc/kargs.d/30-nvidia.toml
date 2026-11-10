@@ -1,0 +1,4 @@
+# The initramfs and the kernel leave a GPU to NVIDIA's driver: nouveau and
+# nova-core would claim it first (nvidia-kmod-common's kargs, the ones its
+# nvidia-boot-update would write, which bootc nodes do not run).
+kargs = ["rd.driver.blacklist=nouveau", "rd.driver.blacklist=nova-core"]
