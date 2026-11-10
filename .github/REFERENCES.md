@@ -78,7 +78,8 @@ Dalec, and one way to build, attest and sign is simpler.
   build arguments go to `docker/build-push-action`, plus
   `SOURCE_DATE_EPOCH`: the time of the last commit of the target's
   folder or of `containers/docker-bake.hcl` (the Debian snapshot), docs
-  excepted. Per image, not per commit as `build-bootc.yml`: the
+  excepted. Per image, not per commit as `build-bootc.yml`'s podman
+  images: the
   Containerfiles set it as `ENV` before their first `RUN`, so each new
   value misses the build cache. Bake can't read git history.
 - **`rewrite-timestamp` from the target's `output`, on by default:**
@@ -108,7 +109,12 @@ Dalec, and one way to build, attest and sign is simpler.
   and Alpine's packages follow their archive (`containers/AGENTS.md`),
   and a cached step keeps the old ones. Hits are mostly re-runs and
   rebuilds of unchanged images: a version or snapshot bump changes build
-  arguments every `RUN` reads.
+  arguments every `RUN` reads. `build-bootc.yml` caches fedora-coreos
+  the same way, for smaller node downloads
+  (`bootc/fedora-coreos/REFERENCES.md`, "Layers"), one scope per
+  platform. Its Sunday and manual runs drop `cache-from`, not
+  `no-cache`: the image step must reuse the reports step's build, the
+  one scanned.
 - **BuildKit attestations** in each platform's index: SLSA provenance
   (`mode=max`, `version=v1`, no secrets) and an SPDX SBOM by syft on the
   final image (dpkg database, `dist-info`, Go modules). Read with

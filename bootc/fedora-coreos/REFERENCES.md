@@ -279,11 +279,22 @@ Read each at the version this repository pins.
   `KUBERNETES_VERSION`: every `system` step `CACHED`). In the source,
   `sysroot/<layer>/` and `test/<layer>/` show what each part of the node
   needs.
-- **Not for smaller downloads:** CI builds without a cache and with
-  `SOURCE_DATE_EPOCH` the commit's time, so every layer's digest changes
-  at every build and a node downloads them all, as before. The split
-  costs about 10 MB (1.256 GB against 1.247): `kube`'s `dnf install`
-  writes the rpm and dnf databases again.
+- **Smaller downloads, from CI's build cache:** a node downloads only
+  the layers whose digest changed. CI keeps the BuildKit cache in the
+  Actions cache (`build-bootc.yml`), and passes no `SOURCE_DATE_EPOCH`:
+  the Containerfile's `0`, as `build.sh`. A Kubernetes-only change then
+  rebuilds `kube` and `image`, and the `system` stage's layers keep
+  their digests: the same tars, and podman's gzip gives the same bytes
+  from the same tar. Checked on PR #281: two CI runs gave the same 77
+  layer digests; a rebuilt `kube` stage changed 3, and a VM's `bootc
+  switch` to it fetched "3 (114.1 MB)" where a switch between uncached
+  builds fetched "9 (325.9 MB)". The
+  price: the `system` packages refresh only on a base or `system`
+  change, and on the Sunday and manual runs, which read no cache; the
+  nodes' daily grype scan reports what is fixable meanwhile. The image's
+  `created` is the build's time. The split costs about 10 MB (1.256 GB
+  against 1.247): `kube`'s `dnf install` writes the rpm and dnf
+  databases again.
 - **A file's layer:** `vm` or `metal` if only that platform uses it,
   else `kube` if only Kubernetes does, else `system`. `vm` and `metal` are
   folders of the `image` stage, not images: one image for VMs and
