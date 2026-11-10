@@ -25,7 +25,7 @@
 # GeoLite2, for the last layer and the server test's lookup. Its digest,
 # which Renovate moves, sets the databases the image ships
 # (containers/cs-haproxy-spoa-bouncer/AGENTS.md, Updates).
-FROM ghcr.io/spnngl/images/datalists:latest@sha256:b249a4822a791b238105e842199b0c5e284e7076adc21800ee88e801222c4e15 AS lists
+FROM ghcr.io/spnngl/images/datalists:latest@sha256:a80afd839a426dc4d2312be210cb6a276464787dae3b66c4ddbd9c114dac8e2b AS lists
 
 # Debian trixie: its ca-certificates is the CA bundle copied below.
 FROM docker.io/library/golang:1.27-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS build
