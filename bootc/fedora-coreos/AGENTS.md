@@ -72,7 +72,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
   of `vm.sh` and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
   automerged once every check is green (`vm-test` runs the build check)
   but for a new `BASE_VERSION` major, a Kubernetes minor (both new tags)
-  or a Cilium major: review those by hand.
+  or a Cilium major: review those by hand. The GPU image's
+  `NVIDIA_VERSION` and `NVIDIA_CONTAINER_TOOLKIT_VERSION` (`REFERENCES.md`,
+  "GPU image") are never automerged: only a GPU node runs them.
 
 ## Layout
 

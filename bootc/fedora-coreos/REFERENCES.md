@@ -44,6 +44,13 @@ Read each at the version this repository pins.
   `grype/match/ignore.go`, `grype/vulnerability_matcher.go`: ignore rules),
   its database's Fedora data: `github.com/anchore/vunnel`
   (`src/vunnel/providers/fedora/`), at the version of Fedora's package
+- The GPU image: NVIDIA's repositories
+  (`https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64/`,
+  `https://nvidia.github.io/libnvidia-container/stable/rpm/`: the packages'
+  requirements are in each `repodata/*-primary.xml.gz`),
+  `github.com/NVIDIA/gpu-operator`, `github.com/NVIDIA/nvidia-container-toolkit`,
+  `github.com/NVIDIA/open-gpu-kernel-modules`, and
+  `github.com/coreos/fedora-bootc-nvidia`
 - Shared bootc sources: `bootc/REFERENCES.md`
 
 ## Decisions
@@ -721,3 +728,30 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
   mounted and unmounted by `test.sh`): `noexec` refuses `execve` and the
   exec `mmap` of its libraries' loader. A temporary mount leaves no
   exception on the node.
+
+### GPU image
+
+`fedora-coreos-nvidia`: this image plus NVIDIA's open kernel modules,
+the driver's compute userspace and the Container Toolkit, for the OVH
+Scale-GPU-3 dedicated servers (NVIDIA L4). The GPU Operator runs on it
+with `driver.enabled=false` and `toolkit.enabled=false`; CUDA comes with
+the workloads' images, never on the host.
+
+- **Driver and toolkit pinned in the Containerfile, Renovate proposes
+  them, a person merges** (`ARG NVIDIA_VERSION`,
+  `ARG NVIDIA_CONTAINER_TOOLKIT_VERSION`): CI builds the modules but
+  runs no GPU, so only a node of the GPU image tells a driver that
+  loads from one that doesn't. Renovate reads each RPM repository's
+  `repodata/` through its `rpm` datasource (`registryUrl` is the
+  folder holding `repomd.xml`, `lib/modules/datasource/rpm/repomd.ts`),
+  which returns `<version>-<release>` (`620.70.06-1.fc44`): `extractVersion`
+  drops the release, as the Containerfile pins the version, and
+  every package of the driver is installed at it (NVIDIA's RPMs
+  require each other at one version, epoch 3).
+- **Driver branch R620 only** (`allowedVersions: "/^620\\./"`): NVIDIA's
+  Long Term Support Branch, supported until September 2029
+  (<https://docs.nvidia.com/datacenter/tesla/drivers/supported-drivers-and-cuda-toolkit-versions.html>).
+  NVIDIA's `fedora44` repository only holds branches released during Fedora 44's life
+  (610 to 620; the fleet's R580 is in `fedora42` and `rhel10`); a new
+  branch changes the kernel module and the CUDA the workloads run
+  against: a person moves to it.

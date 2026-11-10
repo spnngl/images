@@ -239,6 +239,11 @@ timezone, labels, semantic commits, action digests and automerge under
   `crates-io-date` the same releases' publish dates, as the
   versions of the Rust nightly built with them (`containers/rapx/REFERENCES.md`);
   both are in the 3-day rule.
+- **NVIDIA's driver and Container Toolkit, in `bootc/fedora-coreos/Containerfile`:**
+  two custom managers on the `rpm` datasource, read from each repository's
+  `repodata/`; the driver stays on one branch (`allowedVersions`), and
+  neither is automerged (CI runs no GPU:
+  `bootc/fedora-coreos/REFERENCES.md`, "GPU image").
 - **Renovate's image, one version:** `renovate.yml`'s `extract` job
   and the validator of `AGENTS.md`'s checks. The workflow holds it in
   `RENOVATE_VERSION`, after a `# renovate:` comment: the shared preset's

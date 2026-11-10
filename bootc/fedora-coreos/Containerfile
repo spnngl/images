@@ -6,6 +6,13 @@
 # Available tags: https://quay.io/repository/fedora/fedora-coreos?tab=tags
 ARG BASE_VERSION="44.20261023.3.1"
 
+# NVIDIA's driver branch and Container Toolkit of the GPU image (target
+# nvidia): the stages that install them redeclare these, so that one
+# value serves both. Renovate proposes them, never automerged
+# (REFERENCES.md, "GPU image").
+ARG NVIDIA_VERSION="620.70.06"
+ARG NVIDIA_CONTAINER_TOOLKIT_VERSION="1.20.2"
+
 # Layers, each stage FROM the one before (REFERENCES.md, "Layers"):
 # - system: the node's own packages and sysroot/system/;
 # - kube: Kubernetes and sysroot/kube/, so that a Kubernetes release
