@@ -17,11 +17,11 @@ target "nzbget" {
     ]
     par2 = [
       # renovate: datasource=github-tags depName=nzbgetcom/par2cmdline-turbo versioning=regex:^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)-(?<build>\d+)$ extractVersion=^v(?<version>.+)$
-      { version = "1.4.0-20260803", checksum = "333913c529dbaae07c88dcdd690564cb680a59ae" },
+      { version = "1.5.0-20261005", checksum = "4aa390514d0236c00810f2a74f4435b6fff5df37" },
     ]
     rapidyenc = [
       # renovate: datasource=github-tags depName=nzbgetcom/rapidyenc versioning=regex:^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)-(?<build>\d+)$ extractVersion=^v(?<version>.+)$
-      { version = "1.1.1-20260821", checksum = "61e1a5147ae546c8c84859faea416d9403135752" },
+      { version = "1.1.1-20261021", checksum = "1b87fcde18a544fe44b694d6ffcfe6f1a82e962b" },
     ]
   }
   args = {
