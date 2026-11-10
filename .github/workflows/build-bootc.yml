@@ -206,11 +206,14 @@ jobs:
       # The scans first, as bootc/fedora-coreos/build.sh: a failed OpenSCAP
       # rule, a fixable Critical vulnerability or a failed goss check
       # (test/*/build.yaml) stops here. amd64 only: the nodes are x86_64.
-      # The reports are kept either way.
+      # The reports are kept either way. The image step's SOURCE_DATE_EPOCH:
+      # an ENV before the first RUN, so another value rebuilds the whole
+      # image, and the scans would check another build than the one pushed.
       - id: reports
         if: matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64'
         run: |-
-          docker buildx build --platform "linux/${ARCH}" --target reports --output "type=local,dest=${RUNNER_TEMP}/reports" -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
+          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
+          docker buildx build --platform "linux/${ARCH}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --target reports --output "type=local,dest=${RUNNER_TEMP}/reports" -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
           bootc/fedora-coreos/check-reports.sh "${RUNNER_TEMP}/reports"
       - if: ${{ !cancelled() && steps.reports.outcome != 'skipped' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
