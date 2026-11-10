@@ -176,8 +176,12 @@ up)
     ;;
 ssh)
     shift
+    # Timeouts: QEMU's port forward accepts the connection even while the
+    # VM reboots, and a session the reboot cuts never closes. Without
+    # them, a wait for the VM (reboot, test-greenboot.sh) can hang.
     "${workbench}" exec ssh -i /work/vm/key -p 2222 -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes \
+        -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
         rootless@127.0.0.1 "$@"
     ;;
 reboot)
