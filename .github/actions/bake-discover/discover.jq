@@ -99,15 +99,18 @@ def commits:
           }
       )
   ) as $all_targets
-| ($changed == null
-    or any($changed[]; . == (".github/workflows/" + $workflow) or startswith(".github/actions/bake-"))
-  ) as $everything
+# A change to the workflow or an action: every target, or the sample's.
+| ($changed != null
+    and any($changed[]; . == (".github/workflows/" + $workflow) or startswith(".github/actions/bake-"))
+  ) as $ci
+| ($changed == null or ($ci and $sample == null)) as $everything
 | $all_targets
 | map(
     . as $t
     | select(($t.target.tags // []) | length > 0)
     | select(
         $everything
+        or ($ci and IN($t.id; ($sample // [])[]))
         or ($base[0].target[$t.id] != $t.target)
         or any($changed[]; read_by($t))
       )

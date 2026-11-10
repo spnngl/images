@@ -10,10 +10,17 @@ variable "K3S" {
   default = "v1.37.2+k3s1"
 }
 
+# Appended to every tag by a test run of build-bootc.yml (its manual
+# input `test`): it pushes and releases without moving the tags hosts
+# follow. Empty otherwise.
+variable "TAG_SUFFIX" {
+  default = ""
+}
+
 # Pushed to ghcr.io alone, hosts pull there (bootc/REFERENCES.md, "Signing").
 function "tags" {
   params = [name, versions]
-  result = [for v in versions : "ghcr.io/spnngl/images/${name}:${v}"]
+  result = [for v in versions : "ghcr.io/spnngl/images/${name}:${v}${TAG_SUFFIX}"]
 }
 
 # What every bootc image is: the label links the ghcr.io package to this

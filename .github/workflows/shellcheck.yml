@@ -1,6 +1,8 @@
 # Lint every shell script, with the rules of .shellcheckrc. The scripts
 # run locally only (bootc/build.sh, a lock script): nothing else would
-# catch a broken one before someone runs it.
+# catch a broken one before someone runs it. Also runs discover.jq's
+# tests, a script too: the build workflows only run discover.jq on the
+# repository's changes, which seldom reach its edge cases.
 name: shellcheck
 
 on:
@@ -9,6 +11,7 @@ on:
       - "**.sh"
       - .shellcheckrc
       - .github/workflows/shellcheck.yml
+      - .github/actions/bake-discover/**
   push:
     branches:
       - main
@@ -34,3 +37,6 @@ jobs:
 
       - name: Run shellcheck
         run: git ls-files -z '*.sh' | xargs -0 shellcheck
+
+      - name: Test discover.jq
+        run: .github/actions/bake-discover/test.sh
