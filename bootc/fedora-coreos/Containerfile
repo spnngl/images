@@ -19,6 +19,10 @@ ARG NVIDIA_CONTAINER_TOOLKIT_VERSION="1.20.2"
 #   rebuilds this stage alone;
 # - image: the platforms' files (sysroot/vm/, sysroot/metal/), then what
 #   reads the whole tree.
+# The GPU image's stage, nvidia, sits between kube and image: the build
+# arg IMAGE_BASE=nvidia puts it under image, and fedora-coreos's build
+# never reaches it.
+ARG IMAGE_BASE="kube"
 FROM quay.io/fedora/fedora-coreos:${BASE_VERSION} AS system
 
 ARG SOURCE_DATE_EPOCH=0
@@ -263,7 +267,20 @@ EOF
 rm -rf /tmp/*
 EORUN
 
-FROM kube AS image
+# The GPU image (REFERENCES.md, "GPU image"): built with
+# --build-arg IMAGE_BASE=nvidia.
+FROM kube AS nvidia
+
+# Inherited; repeated for hadolint.
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+RUN <<EORUN
+# Its kernel modules are unsigned, which lockdown=integrity refuses to
+# load: the GPU image has no lockdown (REFERENCES.md, "GPU image").
+rm /usr/lib/bootc/kargs.d/10-lockdown.toml
+EORUN
+
+FROM ${IMAGE_BASE} AS image
 
 # Inherited; repeated for hadolint.
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]

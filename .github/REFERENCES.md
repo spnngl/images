@@ -44,6 +44,14 @@
   `if` can't read the matrix, so `push` needs `vm-test` and runs anyway;
   its first step fails the fedora-coreos entry alone unless `vm-test`
   passed.
+- **A second matrix entry, `fedora-coreos-nvidia`, from fedora-coreos's
+  folder:** the GPU image is one Containerfile stage away from
+  fedora-coreos (`bootc/fedora-coreos/REFERENCES.md`, "GPU image"), so
+  the entry names that folder (`dir`) and the stage its own builds on
+  (`image_base`, the build arg `IMAGE_BASE`). Its arm64 leg is
+  `exclude`d (matched on the nested `image.name` and `platform.arch`):
+  NVIDIA's repository has no arm64 driver. Its amd64 job builds the
+  same scan reports (artifact `fedora-coreos-nvidia_reports`).
 - **`build.sh`'s flags** (`--format=docker`, context `bootc/`), plus an
   `org.opencontainers.image.source` label linking the package to the
   repository, and `--platform` the runner's own. Rootless podman.

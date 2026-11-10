@@ -118,6 +118,10 @@ jobs:
         # (default: bootc/fedora/sysroot/common, shared).
         # policy: the policy.json the image ships (default:
         # bootc/<name>/sysroot/<version>/etc/containers/policy.json).
+        # dir: the image's folder in bootc/ (default: its name), when
+        # another image builds from it. image_base: the Containerfile's
+        # build arg IMAGE_BASE, the stage the image's own stage builds on.
+        # arches: the platforms the push job merges (default: both).
         # The push job reuses this list (YAML anchor).
         image: &images
           - name: fedora
@@ -164,16 +168,37 @@ jobs:
             context: bootc/fedora-coreos/
             signing: bootc/fedora-coreos/sysroot/system
             policy: bootc/fedora-coreos/sysroot/system/etc/containers/policy.json
-        # Every image is built for every platform. Keep the push job's
-        # ARCHES in sync.
+          # The GPU nodes' image: fedora-coreos's Containerfile, built up to
+          # its nvidia stage (REFERENCES.md, "GPU image"). Same tag as
+          # fedora-coreos, from its versions.sh. amd64 only: the exclude
+          # below, and `arches` for the push job.
+          - name: fedora-coreos-nvidia
+            dir: fedora-coreos
+            image_base: nvidia
+            arches: amd64
+            builder: buildkit
+            context: bootc/fedora-coreos/
+            signing: bootc/fedora-coreos/sysroot/system
+            policy: bootc/fedora-coreos/sysroot/system/etc/containers/policy.json
+        # Every image is built for every platform, but for the exclude.
+        # Keep the push job's ARCHES in sync.
         platform:
           - arch: amd64
             runner: ubuntu-26.04
           - arch: arm64
             runner: ubuntu-26.04-arm
+        exclude:
+          - image:
+              name: fedora-coreos-nvidia
+            platform:
+              arch: arm64
     env:
       K3S: ${{ matrix.image.k3s }}
       NAME: ${{ matrix.image.name }}
+      DIR: ${{ matrix.image.dir || matrix.image.name }}
+      # build-push-action's: the GPU image's IMAGE_BASE, none for the others
+      # (an empty IMAGE_BASE= would replace the Containerfile's default).
+      BUILD_ARGS: ${{ matrix.image.image_base && format('IMAGE_BASE={0}', matrix.image.image_base) || '' }}
       VERSION: ${{ matrix.image.version }}
       SUFFIX: ${{ matrix.image.suffix }}
       TARGET: ${{ matrix.image.target }}
@@ -188,7 +213,7 @@ jobs:
       - run: |-
           tag="${VERSION}${SUFFIX}"
           if [[ -z ${VERSION} ]]; then
-            tag="$(bootc/"${NAME}"/versions.sh | sed -n 's/^IMAGE_TAG=//p')"
+            tag="$(bootc/"${DIR}"/versions.sh | sed -n 's/^IMAGE_TAG=//p')"
           fi
           echo "TAG=ghcr.io/spnngl/images/${NAME}:${tag}" >> "${GITHUB_ENV}"
           echo "ARTIFACT=${NAME}_${tag}_${ARCH}" >> "${GITHUB_ENV}"
@@ -202,7 +227,7 @@ jobs:
       - if: matrix.image.builder != 'buildkit'
         run: |-
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" ${VERSION:+--build-arg "BASE_VERSION=${VERSION}"} ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
+          podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" ${VERSION:+--build-arg "BASE_VERSION=${VERSION}"} ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${DIR}/Containerfile" "${CONTEXT}"
       # BuildKit images: a docker-container builder, the default docker
       # driver can't export a build cache. Its image from mirror.gcr.io, as
       # build-apps.yml, outside Docker Hub's pull rate limit.
@@ -231,12 +256,13 @@ jobs:
       # No attestations: the reports are files, and nodes don't read the
       # image's (bootc/REFERENCES.md, "Signing").
       - id: reports
-        if: matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64'
+        if: startsWith(matrix.image.name, 'fedora-coreos') && matrix.platform.arch == 'amd64'
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: ${{ env.CONTEXT }}
-          file: bootc/${{ env.NAME }}/Containerfile
+          file: bootc/${{ env.DIR }}/Containerfile
           target: reports
+          build-args: ${{ env.BUILD_ARGS }}
           platforms: linux/${{ env.ARCH }}
           provenance: false
           sbom: false
@@ -257,8 +283,9 @@ jobs:
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
           context: ${{ env.CONTEXT }}
-          file: bootc/${{ env.NAME }}/Containerfile
+          file: bootc/${{ env.DIR }}/Containerfile
           target: ${{ env.TARGET }}
+          build-args: ${{ env.BUILD_ARGS }}
           platforms: linux/${{ env.ARCH }}
           tags: ${{ env.TAG }}
           labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

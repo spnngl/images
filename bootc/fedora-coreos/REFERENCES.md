@@ -755,3 +755,35 @@ the workloads' images, never on the host.
   (610 to 620; the fleet's R580 is in `fedora42` and `rhel10`); a new
   branch changes the kernel module and the CUDA the workloads run
   against: a person moves to it.
+
+- **A stage of its own, `nvidia`, between `kube` and `image`; the
+  build arg `IMAGE_BASE` picks what `image` builds on** (`kube` by
+  default): `fedora-coreos` never builds `nvidia`, the GPU image's
+  build (`IMAGE_BASE=nvidia`) runs the same `image`, scan and goss
+  stages on top of it. One Containerfile, so a change to the node
+  reaches both images in the same commit; a second Containerfile
+  would copy its stages.
+- **No `lockdown=integrity`:** the modules are unsigned and
+  lockdown refuses them. `nvidia` deletes `kargs.d/10-lockdown.toml`
+  (its own file for this), and bootc removes the argument from a node
+  that switches to the image. The modules load because
+  `CONFIG_MODULE_SIG_FORCE` is unset and Secure Boot is off on the GPU
+  nodes; Fedora's kernel locks down again under Secure Boot
+  (`CONFIG_LOCK_DOWN_IN_EFI_SECURE_BOOT=y`), and the modules stop
+  loading: enabling Secure Boot on a GPU node needs a signing key
+  and its enrollment first.
+- **No `kernel.modules_disabled=1` to make up for it:** it forbids every
+  module load until reboot, and a Kubernetes node loads modules on
+  demand all its life, through `request_module` (`/sbin/modprobe`):
+  Cilium creates `veth`, `vxlan`/`geneve`, `clsact` and WireGuard
+  devices as pods and features come (`pkg/datapath/loader/netlink.go`,
+  `pkg/wireguard/agent/agent.go`) and counts on the kernel loading
+  `dummy` for it (`pkg/datapath/linux/probes/managed_neighbors.go`);
+  containerd needs `overlay` and the pods' volumes their filesystem's
+  module; the GPU stack loads `nvidia-uvm` lazily. No moment exists
+  after which the set is complete: a missed module fails a pod or the
+  network at runtime, and only a reboot fixes it.
+- **The GPU build's VM tests are the fedora-coreos ones:** they cover
+  the Containerfile and `sysroot/` up to `nvidia`, not the GPU image's
+  bytes (its leg runs `dnf` on its own, in the same run); no VM test
+  has a GPU.
