@@ -264,7 +264,7 @@ jobs:
           if [[ ${EVENT} == pull_request ]]; then
             skopeo copy --quiet --override-arch amd64 "oci:${RUNNER_TEMP}/image" "oci-archive:${archive}"
           else
-            skopeo copy --quiet --override-arch amd64 --src-creds "${GITHUB_ACTOR}:${GITHUB_TOKEN}" "docker://${TAG%:*}@$(< "${RUNNER_TEMP}/image/digest_${ID}_amd64")" "oci-archive:${archive}"
+            skopeo copy --quiet --override-arch amd64 --src-creds "${GITHUB_ACTOR}:${GITHUB_TOKEN}" "docker://${TAG%:*}@$(< "${RUNNER_TEMP}/image/${ID}_amd64")" "oci-archive:${archive}"
           fi
           rm -rf "${RUNNER_TEMP}/image"
           bootc/fedora-coreos/workbench.sh up
@@ -364,8 +364,9 @@ jobs:
       - if: steps.tested.outputs.id != '' && steps.vm.outcome != 'success'
         env:
           ID: ${{ fromJSON(env.ITEM).id }}
+          TESTED_ID: ${{ steps.tested.outputs.id }}
         run: |-
-          echo "::error::the VM tests of ${{ steps.tested.outputs.id }} didn't pass: ${ID} is not pushed"
+          echo "::error::the VM tests of ${TESTED_ID} didn't pass: ${ID} is not pushed"
           exit 1
 
       - id: push
@@ -395,10 +396,13 @@ jobs:
             podman pull --platform "linux/${arch}" --signature-policy "${policy}" "${tag}"
           done < <(jq -r '.arches[]' <<< "${ITEM}")
 
-      # What the release job waits for: this image is pushed.
-      - run: |-
+      # What the release jobs wait for: this image is pushed, and its
+      # digest, which they build the disk from (the tag may move since).
+      - env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |-
           mkdir "${RUNNER_TEMP}/pushed"
-          touch "${RUNNER_TEMP}/pushed/pushed_$(jq -r .id <<< "${ITEM}")"
+          printf '%s\n' "${DIGEST}" > "${RUNNER_TEMP}/pushed/pushed_$(jq -r .id <<< "${ITEM}")"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pushed_${{ matrix.target.id }}
@@ -480,7 +484,8 @@ jobs:
           df -h /
       # The signed images, checked with the policy.json they ship, as the push
       # job checks them; registries.d and the key at the paths it names. By
-      # digest: the tag may have moved since. The disk's origin stays the tag
+      # the digest the push job pushed (its marker): the tag may have moved
+      # since, to another run's image. The disk's origin stays the tag
       # (disk-images.sh below), which nodes follow. --remove-signatures: an
       # oci-archive can't hold them; the policy check still runs on the
       # source (containers/image copy/single.go).
@@ -505,10 +510,17 @@ jobs:
           disk() {
             local image="$1" work="${RUNNER_TEMP}/work-$1"
             # The image's repository: its id without the line.
-            local repository="ghcr.io/spnngl/images/${image%-*-*}"
+            local repository="ghcr.io/spnngl/images/${image%-*-*}" digest
+            # Unchanged in this run (only the other image of the line
+            # changed): no marker, its tag's image.
+            if [[ -s ${RUNNER_TEMP}/pushed/pushed_${image} ]]; then
+              digest="$(< "${RUNNER_TEMP}/pushed/pushed_${image}")"
+            else
+              digest="$(docker buildx imagetools inspect --format '{{ json .Manifest }}' "${repository}:${IMAGE_TAG}" | jq -r .digest)"
+            fi
             mkdir "${work}"
             skopeo copy --override-arch amd64 --remove-signatures --policy bootc/fedora-coreos/sysroot/system/etc/containers/policy.json \
-              "docker://${repository}@$(docker buildx imagetools inspect --format '{{ json .Manifest }}' "${repository}:${IMAGE_TAG}" | jq -r .digest)" "oci-archive:${work}/fedora-coreos.ociarchive"
+              "docker://${repository}@${digest}" "oci-archive:${work}/fedora-coreos.ociarchive"
             sudo podman run --rm --privileged -v /dev:/dev -v "${work}:/work" \
               -v "${PWD}/bootc/fedora-coreos/disk-images.sh:/disk-images.sh:ro" \
               "registry.fedoraproject.org/fedora:${BASE_VERSION%%.*}" \
@@ -636,7 +648,8 @@ jobs:
           sudo udevadm trigger --name-match=kvm
           df -h /
 
-      # The pushed image, by digest (the tag may have moved) and checked with
+      # The pushed image, by the digest of the push job's marker (the tag may
+      # have moved to another run's image), checked with
       # the policy.json it ships, as the push job does, into rootful
       # podman's storage under its tag: build.sh builds the disk from there,
       # and its origin stays the tag, which hosts follow.
@@ -647,7 +660,7 @@ jobs:
           policy="${dir}/sysroot/$(jq -r .args.BASE_VERSION <<< "${ITEM}")/etc/containers/policy.json"
           sudo install -D -m 0644 -t /etc/containers/registries.d/ "${signing}/etc/containers/registries.d/spnngl-images.yaml"
           sudo install -D -m 0644 -t /usr/share/pki/containers/ "${signing}/usr/share/pki/containers/spnngl-images.pub"
-          digest="$(docker buildx imagetools inspect --format '{{ json .Manifest }}' "${tag}" | jq -r .digest)"
+          digest="$(< "${RUNNER_TEMP}/pushed/pushed_${ID}")"
           sudo podman pull --platform linux/amd64 --signature-policy "${policy}" "${tag%:*}@${digest}"
           sudo podman tag "${tag%:*}@${digest}" "${tag}"
       - run: |-

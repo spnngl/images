@@ -210,7 +210,7 @@ FROM base AS kubeenv
 ARG INSTALL_K3S_VERSION
 
 # Bind-mounted, not copied: the script stays out of the image.
-RUN --mount=type=bind,source=k3s,target=/k3s \
+RUN --mount=type=bind,source=k3s/install.sh,target=/k3s/install.sh \
     bash /k3s/install.sh
 
 # After the install, so that editing sysroot/ doesn't rerun it.

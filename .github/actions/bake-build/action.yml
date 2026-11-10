@@ -24,9 +24,9 @@ inputs:
     default: "false"
   also:
     description: >-
-      Bake targets, one per line, to build in the same call, so that they
-      share the image's stages: their own `output`, from the Bake files,
-      is theirs to say (a folder of reports, for the caller to read).
+      A Bake target to build in the same call, so that it shares the
+      image's stages: its own `output`, from the Bake files, is its to say
+      (a folder of reports, for the caller to read).
     default: ""
   oci-dir:
     description: Where the OCI layout goes when not pushing.
@@ -102,6 +102,11 @@ runs:
     # - sbom: BuildKit scans the final image for any frontend, Dalec
     #   included: the Debian packages (dpkg database), the Python ones
     #   (dist-info), a Go binary's modules.
+    # The image's only: `also` inherits the image's target, so its
+    # attestations and cache export, which would write the image's scope
+    # twice and put attestation files among its reports, are cleared.
+    # BUILDX_NO_DEFAULT_ATTESTATIONS: bake-action and buildx add none of
+    # their own to it.
     # allow: the entitlements the target asks for (buildkit's smoke test
     # runs a daemon: security.insecure); setup-buildx's builder permits
     # security.insecure and network.host by default, so a target gets
@@ -109,6 +114,8 @@ runs:
     # source: the checkout, not the Git context bake-action defaults to.
     - id: bake
       uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+      env:
+        BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
       with:
         source: .
         files: ${{ inputs.files }}
@@ -117,10 +124,12 @@ runs:
           ${{ inputs.also }}
         allow: ${{ fromJSON(inputs.item).allow }}
         no-cache: ${{ inputs.no-cache }}
-        provenance: mode=max,version=v1
-        sbom: true
         set: |
           ${{ fromJSON(inputs.item).id }}.tags=
+          ${{ fromJSON(inputs.item).id }}.attest=type=provenance,mode=max,version=v1
+          ${{ fromJSON(inputs.item).id }}.attest=type=sbom
+          ${{ inputs.also != '' && format('{0}.attest=', inputs.also) || '' }}
+          ${{ inputs.also != '' && format('{0}.cache-to=', inputs.also) || '' }}
           ${{ fromJSON(inputs.item).id }}.platform=linux/${{ inputs.arch }}
           ${{ fromJSON(inputs.item).epoch != '' && format('{0}.args.SOURCE_DATE_EPOCH={1}', fromJSON(inputs.item).id, fromJSON(inputs.item).epoch) || '' }}
           *.cache-from=type=gha,scope=${{ fromJSON(inputs.item).id }}_${{ inputs.arch }}

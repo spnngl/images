@@ -160,6 +160,10 @@ in a public asset.
   released is the file tested, unchanged.
 - **The test is `bootc status` over SSH on 42022**: the guest booted, its
   network and firewall let sshd answer, and bootc reads its deployment.
+- **Checked on fedora 45 and AlmaLinux 9** (systemd 252 applies the
+  credential), in a spike of the job. AlmaLinux 10's VM booted but
+  sshd never answered over qemu's user network (`Connection timed out
+  during banner exchange`), cause unknown: the job is its first test.
 - **The disk is built from the pushed digest**, pulled with the
   `policy.json` the image ships, then tagged: the disk's origin is the
   tag hosts follow, not the digest.
@@ -167,6 +171,11 @@ in a public asset.
   release limit), the newest 3 per tag kept, as fedora-coreos's.
 
 ## Known limits
+
+- The `dockerenv` image (Docker, no k3s) is gone: its tags
+  (`fedora:45`, `almalinux:10`, `almalinux:9`) were deleted from ghcr.io
+  with it, so that no host keeps pulling an image nothing rebuilds. Hosts
+  on it move with `bootc switch` to the k3s image or another one.
 
 - Only qcow2 is built: other formats change the image type in
   `build.sh` (`anaconda-iso`, `raw`, `vmdk`).

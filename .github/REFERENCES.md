@@ -44,7 +44,10 @@ jobs `discover`, `hadolint`, `build` and `push` run `bake-discover`,
   so `push` runs for every target, and its `tested` step fails the
   fedora-coreos entries alone unless their line's `vm-passed_<id>`
   artifact exists. The GPU image follows its line's tests: it differs
-  from fedora-coreos by one stage.
+  from fedora-coreos by one stage. When only the GPU image changed (an
+  NVIDIA version), its line's image isn't built, so no VM test runs and
+  the GPU image is pushed after its build's scans and goss checks alone:
+  its nvidia stage is what changed, and no VM test has a GPU.
 - **`release-os`, one release per fedora and almalinux image** that
   changed: its qcow2 from the pushed digest, booted in qemu with a
   throwaway key before it is published (`bootc/REFERENCES.md`, "Disks
@@ -204,13 +207,13 @@ Dalec, and one way to build, attest and sign is simpler.
 The shared `scan-image` action runs Grype and Trivy: Trivy has no Fedora
 data, and their sources differ.
 
-- **Pull requests, bootc:** not scanned. The steps are commented out in
-  `build-bootc.yml`: the almalinux:9 amd64 runners shut down mid-scan,
-  most likely out of disk or memory. Pushed images are scanned daily.
-  fedora-coreos is the exception: its own grype scan fails every build
-  (pull request, push, weekly) on a fixable Critical, as
-  `bootc/fedora-coreos/build.sh` does; an image the build can't fix is
-  ignored at its exact version (`bootc/fedora-coreos/REFERENCES.md`).
+- **Pull requests, bootc:** each build job scans its image as the
+  applications' do, but never fails (`fail: false`): a bootc image holds
+  a whole distribution, whose fixes come with the base's next release.
+  fedora-coreos's own scans fail every build instead (pull request,
+  push, weekly) on a fixable Critical: its `check` stage writes
+  `reports/failed`, which fails the build job; an image the build can't
+  fix is ignored at its exact version (`bootc/fedora-coreos/REFERENCES.md`).
 - **Pull requests, applications:** each build job scans its image (OCI
   layout) and fails on a Critical vulnerability with a fix that the pushed image of
   the same tag and platform lacks. The rest is reported: without a fix,
@@ -221,8 +224,9 @@ data, and their sources differ.
   last 8 days, every platform, and uploads High and Critical findings to
   code scanning. It never fails, nor do pushes and weekly rebuilds:
   failing would keep the older, more vulnerable image on hosts. Its
-  packages are found as the builds find their images (`build-bootc.yml`'s
-  matrix, the Bake files' folders): a new image needs no edit.
+  packages are found as the builds find their images (the repositories
+  of the bootc Bake targets' tags, the application Bake files' folders):
+  a new image needs no edit.
 
 ## Updates: `renovate.json5`
 
@@ -235,7 +239,8 @@ timezone, labels, semantic commits, action digests and automerge under
 - **One PR per dependency, every file at once:** an unmatched pin goes
   stale silently.
 - **Major base releases only:** the weekly rebuild follows point
-  releases of `BASE_VERSION`, the base's major tag.
+  releases of a bootc base's major tag (the `base` matrix of
+  `bootc/fedora/docker-bake.hcl` and `bootc/almalinux/docker-bake.hcl`).
 - **3 days before a GitHub release or tag, an *arr app's release, an
   npm package or a crate** (`minimumReleaseAge`): time for a broken or
   malicious release to be pulled, and for CRI-O to publish a Kubernetes
@@ -245,7 +250,7 @@ timezone, labels, semantic commits, action digests and automerge under
   only, and holds an update without one.
 - **Digests on actions and application images' `FROM`**, tags on bootc
   bases: a digest there would freeze the base between rebuilds, and land
-  in `ARG BASE_VERSION`, the tag. An application image's version is in
+  in the Bake variable that holds the tag (`BASE_VERSION`'s value). An application image's version is in
   its Bake file, so a digest costs nothing: its updates are grouped with
   the Debian snapshot, automerged (the images' build and smoke test run
   on the pull request).
