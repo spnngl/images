@@ -15,11 +15,11 @@ target "datalists" {
     # (Updates).
     geolite2 = [{
       # renovate: datasource=github-release-attachments depName=P3TERX/GeoLite.mmdb versioning=loose
-      asn = { version = "2026.11.07", checksum = "21a6903ecc285ce3d187cb7f688b4f7ac52fee425c479c8e377d5b1c0127537a" },
+      asn = { version = "2026.11.10", checksum = "d5ee74c863271bed7066e731c880f38020bbe68f4cdd21d60a33f57195c30785" },
       # renovate: datasource=github-release-attachments depName=P3TERX/GeoLite.mmdb versioning=loose
-      city = { version = "2026.11.07", checksum = "9db04e8a4441ec54183537d8774c08e42720f2243137dd42e9cc7f78ea2b927b" },
+      city = { version = "2026.11.10", checksum = "9db04e8a4441ec54183537d8774c08e42720f2243137dd42e9cc7f78ea2b927b" },
       # renovate: datasource=github-release-attachments depName=P3TERX/GeoLite.mmdb versioning=loose
-      country = { version = "2026.11.07", checksum = "2c2d05c474baeb669298cce912a6236b5ecc4e50f0316a93e01ba5cf22183600" },
+      country = { version = "2026.11.10", checksum = "2c2d05c474baeb669298cce912a6236b5ecc4e50f0316a93e01ba5cf22183600" },
     }]
   }
   args = {
