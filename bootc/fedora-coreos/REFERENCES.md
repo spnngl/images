@@ -811,6 +811,12 @@ the workloads' images, never on the host.
   module; the GPU stack loads `nvidia-uvm` lazily. No moment exists
   after which the set is complete: a missed module fails a pod or the
   network at runtime, and only a reboot fixes it.
+- **The GPU build has a cache scope of its own** (`fedora-coreos-nvidia_amd64`,
+  "Smaller downloads" above): its `nvidia-kmod` stage (the dkms build)
+  and `nvidia` layer stay cached, so a GPU node downloads the driver's
+  layer again only when the driver, the toolkit or a stage below
+  changes, or after the Sunday rebuild. `IMAGE_BASE` goes to build-push-action only for the GPU
+  image: an empty value would replace the Containerfile's default.
 - **The GPU build's VM tests are the fedora-coreos ones:** they cover
   the Containerfile and `sysroot/` up to `nvidia`, not the GPU image's
   bytes (its leg runs `dnf` on its own, in the same run); no VM test
