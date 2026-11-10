@@ -461,7 +461,7 @@
             "allowedVersions": "/^\\d+\\.\\d{8}\\.3\\.\\d+$/"
         },
         {
-            "description": "A new Fedora major of fedora-coreos: the GPU image's NVIDIA repository URLs hold it (the Containerfile derives it from BASE_VERSION, but renovate.json5's registryUrl for the driver is literal).",
+            "description": "A new Fedora major of fedora-coreos: the GPU image's NVIDIA repository URLs hold it (bootc/fedora-coreos/nvidia.repo takes it from the base, $releasever, but renovate.json5's registryUrl for the driver is literal).",
             "matchDepNames": ["quay.io/fedora/fedora-coreos"],
             "matchUpdateTypes": ["major"],
             "prBodyNotes": [

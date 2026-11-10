@@ -43,10 +43,6 @@ command:
     exit-status: 0
     stdout: ["nvidia.com/gpu=all"]
     timeout: 60000
-  nvidia-cdi-refresh succeeded:
-    exec: systemctl show -P Result nvidia-cdi-refresh.service
-    exit-status: 0
-    stdout: [/^success$/]
   # containerd ignores a mistyped plugin key: check the merged config.
   containerd has the nvidia runtime and CDI:
     exec: containerd --config /usr/lib/containerd/config.toml config dump

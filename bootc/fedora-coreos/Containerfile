@@ -269,39 +269,31 @@ EORUN
 
 # NVIDIA's open kernel modules, built for the base's kernel, as an RPM: the
 # compiler and kernel headers stay in this stage, out of the GPU image
-# (REFERENCES.md, "GPU image"). FROM system: a Kubernetes release keeps
-# it cached.
-FROM system AS nvidia-kmod
+# (REFERENCES.md, "GPU image"). FROM the base, not system: the system stage
+# leaves the kernel as it is, and BuildKit builds this stage alongside
+# system and kube.
+FROM quay.io/fedora/fedora-coreos:${BASE_VERSION} AS nvidia-kmod
 
-# Inherited; repeated for hadolint.
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
-ARG BASE_VERSION
 ARG NVIDIA_VERSION
 
-# A throwaway stage: no dnf clean, only /rpms is used.
+# A throwaway stage: no dnf clean, only /rpms is used. NVIDIA's repositories
+# (nvidia.repo): the DKMS package is the driver's source, which dkms builds
+# below.
 # hadolint ignore=DL3040
-RUN <<EORUN
+RUN --mount=type=bind,source=nvidia.repo,target=/etc/yum.repos.d/nvidia.repo \
+    <<EORUN
 kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
 
-# NVIDIA's repository for the base's Fedora major (the base version's first
-# number; renovate.json5's URL for the driver's version follows it by hand).
-# Its DKMS package is the driver's source, which dkms builds below.
-# https://docs.nvidia.com/datacenter/tesla/driver-installation-guide/fedora.html
-repo="https://developer.download.nvidia.com/compute/cuda/repos/fedora${BASE_VERSION%%.*}/x86_64"
-cat > /etc/yum.repos.d/cuda.repo <<EOF
-[cuda]
-name=NVIDIA CUDA
-baseurl=${repo}
-enabled=1
-gpgcheck=1
-gpgkey=${repo}/73CD9B30.pub
-EOF
-
 # kernel-devel of the base's kernel: Fedora's updates, or their archive when
-# the kernel is no longer the newest. The base has no kernel-devel.
+# the kernel is no longer the newest; Koji when FCOS ships a kernel before
+# it reaches them (a fast-tracked fix). The base has no kernel-devel.
+dnf -yq install --setopt=install_weak_deps=False "kernel-devel-${kver}" ||
+    dnf -yq install --setopt=install_weak_deps=False \
+        "https://kojipkgs.fedoraproject.org/packages/kernel/$(rpm -q --qf '%{VERSION}/%{RELEASE}/%{ARCH}' kernel-core)/kernel-devel-${kver}.rpm"
 dnf -yq install --setopt=install_weak_deps=False \
-    "kernel-devel-${kver}" dkms make rpm-build "kmod-nvidia-open-dkms-3:${NVIDIA_VERSION}"
+    dkms make rpm-build "kmod-nvidia-open-dkms-3:${NVIDIA_VERSION}"
 
 dkms build -m nvidia -v "${NVIDIA_VERSION}" -k "${kver}"
 
@@ -334,7 +326,7 @@ Epoch: 3
 Version: ${NVIDIA_VERSION}
 Release: 1
 Summary: NVIDIA open kernel modules, built for the image's kernel
-License: GPL-2.0-only OR MIT
+License: (MIT OR GPL-2.0-only) AND (BSD-2-Clause OR GPL-2.0-only)
 Provides: nvidia-kmod = 3:${NVIDIA_VERSION}
 Requires: kernel-core-uname-r = ${kver}
 %description
@@ -355,13 +347,6 @@ FROM kube AS nvidia
 # Inherited; repeated for hadolint.
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
-RUN <<EORUN
-# Its kernel modules are unsigned, which lockdown=integrity refuses to
-# load: the GPU image has no lockdown (REFERENCES.md, "GPU image").
-rm /usr/lib/bootc/kargs.d/10-lockdown.toml
-EORUN
-
-ARG BASE_VERSION
 ARG NVIDIA_VERSION
 ARG NVIDIA_CONTAINER_TOOLKIT_VERSION
 
@@ -369,29 +354,16 @@ ARG NVIDIA_CONTAINER_TOOLKIT_VERSION
 # out of the layers), the driver's compute userspace (nvidia-smi, the NVML and
 # CUDA driver libraries, nvidia-persistenced) and the Container Toolkit's
 # runtime and CDI tools. No graphics, no CUDA toolkit: the workloads' images
-# carry their CUDA.
-RUN --mount=type=bind,from=nvidia-kmod,source=/rpms,target=/run/rpms <<EORUN
+# carry their CUDA. NVIDIA's repositories: nvidia.repo, bind-mounted.
+RUN --mount=type=bind,from=nvidia-kmod,source=/rpms,target=/run/rpms \
+    --mount=type=bind,source=nvidia.repo,target=/etc/yum.repos.d/nvidia.repo \
+    <<EORUN
 kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
 
-# The repositories, removed after the install. NVIDIA signs the toolkit's
-# repository metadata, not each package, hence repo_gpgcheck.
-repo="https://developer.download.nvidia.com/compute/cuda/repos/fedora${BASE_VERSION%%.*}/x86_64"
-cat > /etc/yum.repos.d/nvidia.repo <<EOF
-[cuda]
-name=NVIDIA CUDA
-baseurl=${repo}
-enabled=1
-gpgcheck=1
-gpgkey=${repo}/73CD9B30.pub
-
-[nvidia-container-toolkit]
-name=NVIDIA Container Toolkit
-baseurl=https://nvidia.github.io/libnvidia-container/stable/rpm/\$basearch
-enabled=1
-gpgcheck=0
-repo_gpgcheck=1
-gpgkey=https://nvidia.github.io/libnvidia-container/gpgkey
-EOF
+# Its kernel modules are signed with a key nothing trusts, which
+# lockdown=integrity refuses to load: the GPU image has no lockdown
+# (REFERENCES.md, "GPU image").
+rm /usr/lib/bootc/kargs.d/10-lockdown.toml
 
 # The modules first: the driver's packages require nvidia-kmod, which only the
 # stub RPM provides.
@@ -410,10 +382,11 @@ for p in dkms gcc kernel-devel; do
     fi
 done
 
-# /var ships empty (as the kube stage).
-rm /etc/yum.repos.d/nvidia.repo
+# /var ships empty (as the kube stage); nvidia-driver-selinux's policy
+# install leaves its state in /run and semanage's locks in /etc.
 dnf -yq clean all
-rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /var/lib/rpm-state /var/lib/systemd/migrated
+rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /var/lib/rpm-state /var/lib/systemd/migrated \
+    /run/selinux-policy /etc/selinux/targeted/semanage.*.LOCK
 EORUN
 
 COPY --link ./sysroot/nvidia/ /
