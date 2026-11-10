@@ -134,6 +134,30 @@
         },
         {
             "customType": "regex",
+            "description": "NVIDIA's driver of the GPU image of bootc/fedora-coreos: the Containerfile's ARG NVIDIA_VERSION, the version of the kmod-nvidia-open-dkms RPM in NVIDIA's CUDA repository for Fedora 44 (the rpm datasource gives <version>-<release>: the release is dropped). One branch only (allowedVersions below): a new branch is chosen by hand.",
+            "managerFilePatterns": ["/^bootc/fedora-coreos/Containerfile$/"],
+            "matchStrings": ["ARG NVIDIA_VERSION=\"(?<currentValue>[^\"]+)\""],
+            "depNameTemplate": "nvidia-driver",
+            "packageNameTemplate": "kmod-nvidia-open-dkms",
+            "registryUrlTemplate": "https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64/repodata/",
+            "datasourceTemplate": "rpm",
+            "extractVersionTemplate": "^(?<version>[^-]+)-",
+            "versioningTemplate": "loose"
+        },
+        {
+            "customType": "regex",
+            "description": "NVIDIA Container Toolkit of the GPU image of bootc/fedora-coreos: the Containerfile's ARG NVIDIA_CONTAINER_TOOLKIT_VERSION, the version of the nvidia-container-toolkit-base RPM in NVIDIA's stable repository (the release is dropped, as above).",
+            "managerFilePatterns": ["/^bootc/fedora-coreos/Containerfile$/"],
+            "matchStrings": ["ARG NVIDIA_CONTAINER_TOOLKIT_VERSION=\"(?<currentValue>[^\"]+)\""],
+            "depNameTemplate": "nvidia-container-toolkit",
+            "packageNameTemplate": "nvidia-container-toolkit-base",
+            "registryUrlTemplate": "https://nvidia.github.io/libnvidia-container/stable/rpm/x86_64/repodata/",
+            "datasourceTemplate": "rpm",
+            "extractVersionTemplate": "^(?<version>[^-]+)-",
+            "versioningTemplate": "loose"
+        },
+        {
+            "customType": "regex",
             "description": "Cilium chart of bootc/fedora-coreos's test cluster (vm.sh cluster).",
             "managerFilePatterns": ["/^bootc/fedora-coreos/vm\\.sh$/"],
             "matchStrings": ["cilium/cilium --version (?<currentValue>\\S+)"],
@@ -441,6 +465,11 @@
             "matchDepNames": ["kubernetes"],
             "separateMinorPatch": true,
             "separateMultipleMinor": true
+        },
+        {
+            "description": "NVIDIA's driver of the GPU image: the R620 branch (long-term support until September 2029) only; a new branch changes the kernel module and the CUDA the nodes' workloads run against. Its PR is never automerged (the rule for bootc/fedora-coreos below), and the toolkit's: the node's GPUs and the operator's pods depend on them.",
+            "matchDepNames": ["nvidia-driver"],
+            "allowedVersions": "/^620\\./"
         },
         {
             "description": "custom-coreos-disk-images, pinned to a commit of its main branch: weekly, on Saturday between midnight and 5am like the pins above. The note keeps what changed.",
