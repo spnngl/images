@@ -12,7 +12,7 @@ target "git" {
   matrix = {
     base = [
       # renovate: datasource=github-tags depName=git/git extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "2.56.0", checksum = "a018953688f1b10bddf91bff8747068f5f4746a4" },
+      { version = "2.56.1", checksum = "03b41523c576f26ad34085378717a0c1b287470f" },
     ]
     openssh = [
       # renovate: datasource=github-tags depName=openssh/openssh-portable versioning=regex:^V_(?<major>\d+)_(?<minor>\d+)_P(?<patch>\d+)$ depType=automerge
