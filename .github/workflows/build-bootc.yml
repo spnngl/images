@@ -471,7 +471,9 @@ jobs:
           echo "TAG=ghcr.io/spnngl/images/${NAME}:${tag}" >> "${GITHUB_ENV}"
           echo "ARTIFACT_PREFIX=${NAME}_${tag}" >> "${GITHUB_ENV}"
 
-      # One folder per artifact, named after it: <prefix>_<arch>.
+      # One folder per artifact, named after it: <prefix>_<arch>. Except for a
+      # lone match, extracted into path itself (src/download-artifact.ts:
+      # `artifacts.length === 1`): the GPU image, amd64 only.
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: ${{ env.ARTIFACT_PREFIX }}_*
@@ -483,7 +485,9 @@ jobs:
           read -r -a arches <<< "${ARCHES}"
           podman manifest create "${TAG}"
           for arch in "${arches[@]}"; do
-            podman manifest add "${TAG}" "dir:${RUNNER_TEMP}/images/${ARTIFACT_PREFIX}_${arch}"
+            dir="${RUNNER_TEMP}/images/${ARTIFACT_PREFIX}_${arch}"
+            (( ${#arches[@]} > 1 )) || dir="${RUNNER_TEMP}/images"
+            podman manifest add "${TAG}" "dir:${dir}"
           done
       # Install the files hosts get from the image, at the same paths: the
       # push only writes sigstore signatures where registries.d enables them,
