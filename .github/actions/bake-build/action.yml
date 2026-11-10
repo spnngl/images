@@ -24,7 +24,7 @@ inputs:
     default: "false"
   also:
     description: >-
-      Space-separated Bake targets to build in the same call, so that they
+      Bake targets, one per line, to build in the same call, so that they
       share the image's stages: their own `output`, from the Bake files,
       is theirs to say (a folder of reports, for the caller to read).
     default: ""
@@ -112,7 +112,9 @@ runs:
       with:
         source: .
         files: ${{ inputs.files }}
-        targets: ${{ fromJSON(inputs.item).id }} ${{ inputs.also }}
+        targets: |-
+          ${{ fromJSON(inputs.item).id }}
+          ${{ inputs.also }}
         allow: ${{ fromJSON(inputs.item).allow }}
         no-cache: ${{ inputs.no-cache }}
         provenance: mode=max,version=v1
