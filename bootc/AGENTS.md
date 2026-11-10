@@ -55,14 +55,15 @@ Before a change, read:
   its targets.
 - `RUN bootc container lint` is the last instruction of each stage.
 - Users and SSH keys go in `config.toml` (repo root, git-ignored,
-  template `bootc/config.example.toml`): added to the disk image only.
+  template `bootc/config.example.toml`): added to the disk image only,
+  and optional: CI's release disks have none.
 - `firewall-offline-cmd` removes a service from a zone with
   `--remove-service-from-zone=<service>` (REFERENCES.md, "Firewalld").
 
 ## Build check
 
 ```sh
-bootc/build.sh <id>   # id: a Bake target, e.g. fedora-45; builds it and a qcow2; needs docker buildx, rootful podman and ./config.toml
+bootc/build.sh <id>   # id: a Bake target, e.g. fedora-45; builds it and a qcow2; needs docker buildx and rootful podman
 bootc/run.sh <id>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
 ```
 

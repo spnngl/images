@@ -11,9 +11,9 @@
 # one job per target and platform; the VM tests of fedora-coreos pass before
 # any of its tags is pushed.
 #
-# Disk images stay local (bootc/build.sh): they need config.toml, which
-# holds credentials. fedora-coreos's has none: its OpenStack qcow2 is a
-# release (release job).
+# Disk images (bootc/build.sh) carry no user: fedora-coreos's OpenStack qcow2
+# and fedora's and almalinux's are releases (release jobs), the latter after
+# a boot test.
 name: build-bootc
 
 on:
@@ -57,6 +57,7 @@ jobs:
       containerfiles: ${{ steps.discover.outputs.containerfiles }}
       groups: ${{ steps.discover.outputs.groups }}
       releases: ${{ steps.releases.outputs.releases }}
+      disks: ${{ steps.releases.outputs.disks }}
     steps:
       # The action's own files: a local action needs the checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -74,12 +75,15 @@ jobs:
           workflow: build-bootc.yml
 
       # One release per fedora-coreos line, when it or its GPU image
-      # changed: the ids of the images that are not the GPU's.
+      # changed: the ids of the images that are not the GPU's; and one per
+      # changed fedora or almalinux image: their targets.
       - id: releases
         env:
           GROUPS_JSON: ${{ steps.discover.outputs.groups }}
+          TARGETS: ${{ steps.discover.outputs.targets }}
         run: |-
           echo "releases=$(jq -c '.["disk-image"] | map(sub("^fedora-coreos-nvidia-"; "fedora-coreos-")) | unique' <<< "${GROUPS_JSON}")" >> "${GITHUB_OUTPUT}"
+          echo "disks=$(jq -c '[.[] | select(.file | test("^bootc/(fedora|almalinux)/"))]' <<< "${TARGETS}")" >> "${GITHUB_OUTPUT}"
 
   # Same as build-apps.yml's, for the Containerfiles to build only: code
   # scanning keeps the others' alerts, from their last analysis.
@@ -591,3 +595,150 @@ jobs:
       # Last: the line's release is out, the GPU disk's failure shows.
       - if: env.GPU_DISK == 'failed'
         run: exit 1
+
+  # The qcow2 of each fedora and almalinux image that changed, from the
+  # signed image just pushed: booted in qemu with a throwaway SSH key before
+  # it is released, so that no disk that doesn't boot is published. One
+  # release per image and push, the newest 3 per tag kept. amd64 only, like
+  # the nodes. The disk carries no user: the test hands the VM its key as a
+  # systemd credential (bootc/REFERENCES.md, "Disks carry no user").
+  release-os:
+    name: release ${{ matrix.target.id }}
+    needs:
+      - discover
+      - push
+    if: >-
+      !cancelled() && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+      && needs.push.result != 'skipped' && needs.discover.outputs.disks != '[]'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: write
+      # The qcow2's build provenance attestation, as the push job's.
+      id-token: write
+      attestations: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJSON(needs.discover.outputs.disks) }}
+    env:
+      ITEM: ${{ toJSON(matrix.target) }}
+      ID: ${{ matrix.target.id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      # The push job's marker: a release of an image that wasn't pushed would
+      # build a disk of the previous one.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: pushed_${{ matrix.target.id }}
+          path: ${{ runner.temp }}/pushed
+
+      # osbuild keeps a raw disk and two trees of the image: room from the
+      # runner's preinstalled SDKs, unused here. Ubuntu's AppArmor profile
+      # bwrap-userns-restrict denies capabilities to osbuild's stages inside
+      # the privileged container (bootc/fedora-coreos/REFERENCES.md): unloaded
+      # on this throwaway runner. KVM for every user, as the VM tests do.
+      - run: |-
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache
+          sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
+          sudo apt-get install -y --no-install-recommends qemu-system-x86 qemu-utils
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          df -h /
+
+      # The pushed image, by digest (the tag may have moved) and checked with
+      # the policy.json it ships, as the push job does, into rootful
+      # podman's storage under its tag: build.sh builds the disk from there,
+      # and its origin stays the tag, which hosts follow.
+      - run: |-
+          tag="$(jq -r '.tags[0]' <<< "${ITEM}")"
+          dir="$(jq -r '.file | sub("/[^/]*$"; "")' <<< "${ITEM}")"
+          signing=bootc/fedora/sysroot/common
+          policy="${dir}/sysroot/$(jq -r .args.BASE_VERSION <<< "${ITEM}")/etc/containers/policy.json"
+          sudo install -D -m 0644 -t /etc/containers/registries.d/ "${signing}/etc/containers/registries.d/spnngl-images.yaml"
+          sudo install -D -m 0644 -t /usr/share/pki/containers/ "${signing}/usr/share/pki/containers/spnngl-images.pub"
+          digest="$(docker buildx imagetools inspect --format '{{ json .Manifest }}' "${tag}" | jq -r .digest)"
+          sudo podman pull --platform linux/amd64 --signature-policy "${policy}" "${tag%:*}@${digest}"
+          sudo podman tag "${tag%:*}@${digest}" "${tag}"
+      - run: |-
+          sudo SKIP_BUILD=1 bootc/build.sh "${ID}"
+          sudo chown -R "$(id -u):$(id -g)" output
+          ls -lh "output/${ID}"
+          df -h /
+
+      # Boot test: the VM's sshd listens on 42022 and reads one fixed file
+      # (bootc/fedora/sysroot/common/etc/ssh/sshd_config.d/10-myssh.conf), so
+      # the credential tmpfiles.extra writes the key and a drop-in named before
+      # it, whose value wins. The key is per run and the disk has none.
+      - run: |-
+          ssh-keygen -q -t ed25519 -N '' -C release-test -f "${RUNNER_TEMP}/key"
+          tmpfiles="d /root/.ssh 0700 root root -
+          f+ /root/.ssh/authorized_keys 0600 root root - $(< "${RUNNER_TEMP}/key.pub")
+          f+ /etc/ssh/sshd_config.d/05-test.conf 0644 root root - AuthorizedKeysFile /root/.ssh/authorized_keys"
+          qemu-system-x86_64 -enable-kvm -cpu host -m 4096 -smp 2 -display none -daemonize \
+            -serial "file:${RUNNER_TEMP}/console.log" \
+            -drive "file=output/${ID}/${ID}.qcow2,if=virtio,format=qcow2,snapshot=on" \
+            -netdev user,id=n,hostfwd=tcp::2222-:42022 -device virtio-net-pci,netdev=n \
+            -smbios "type=11,value=io.systemd.credential.binary:tmpfiles.extra=$(base64 -w0 <<< "${tmpfiles}")"
+          for _ in $(seq 1 60); do
+            if ssh -i "${RUNNER_TEMP}/key" -p 2222 -o BatchMode=yes -o ConnectTimeout=5 \
+              -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null root@127.0.0.1 bootc status; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::${ID}: no SSH login in the booted disk"
+          tail -n 80 "${RUNNER_TEMP}/console.log"
+          exit 1
+
+      # Provenance of the qcow2 (workflow, commit, run): check it with
+      # gh attestation verify <file> -R <owner>/<repo>.
+      - run: |-
+          mkdir "${RUNNER_TEMP}/disk"
+          mv "output/${ID}/${ID}.qcow2" "${RUNNER_TEMP}/disk/"
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
+        with:
+          subject-path: ${{ runner.temp }}/disk/*.qcow2
+          create-storage-record: false
+
+      # A release asset must be under 2 GiB. gh creates a release as a draft,
+      # uploads, then publishes it: a published release always has its disk.
+      # A re-run replaces the asset, or publishes the draft a killed run left.
+      # Outside the checkout, gh finds no repository: GH_REPO names it.
+      # The newest 3 releases of the image's tag stay, older ones go with
+      # their tags, and drafts killed runs left.
+      - working-directory: ${{ runner.temp }}/disk
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |-
+          tag="$(jq -r '.tags[0]' <<< "${ITEM}")"
+          name="$(sed 's|^.*/||; s|:|-|' <<< "${tag}")"
+          release="${name}-${GITHUB_SHA::7}"
+          asset="${ID}.qcow2"
+          size="$(stat -c %s "${asset}")"
+          if ((size >= 2 * 1024 ** 3)); then
+            echo "::error::${asset} is ${size} bytes, a release asset must be under 2 GiB"
+            exit 1
+          fi
+          sha256sum "${asset}" > "${asset}.sha256"
+          if gh release view "${release}" > /dev/null 2>&1; then
+            gh release upload --clobber "${release}" "${asset}" "${asset}.sha256"
+            gh release edit "${release}" --draft=false
+          else
+            gh release create "${release}" --target "${GITHUB_SHA}" --title "${release}" "${asset}" "${asset}.sha256" \
+              --notes "qcow2 disk image of \`${tag}\`, commit ${GITHUB_SHA}, booted in a test VM before this release. It has no user and no SSH key: give them at first boot (bootc/REFERENCES.md, \"Disks carry no user\"). A host made from it follows the tag with \`bootc upgrade\`. Check the download with \`sha256sum -c ${asset}.sha256\` and \`gh attestation verify ${asset} -R ${GITHUB_REPOSITORY}\`."
+          fi
+          releases="$(gh release list --limit 100 --json tagName,createdAt,isDraft |
+            jq -c --arg name "${name}" '[.[] | select(.tagName | startswith($name + "-"))]')"
+          jq -r '[.[] | select(.isDraft | not)] | sort_by(.createdAt) | reverse | .[3:][].tagName' <<< "${releases}" |
+            while read -r old; do
+              gh release delete "${old}" --cleanup-tag --yes
+            done
+          jq -r '.[] | select(.isDraft).tagName' <<< "${releases}" |
+            while read -r draft; do
+              gh release delete "${draft}" --yes
+            done
