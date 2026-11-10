@@ -139,6 +139,32 @@ installed from one upgrades from CI's signed images.
   target's first, CI's, so an installed host upgrades from CI's images.
   Never pushed.
 
+## Disks carry no user
+
+CI releases a qcow2 of every fedora and almalinux image
+(`build-bootc.yml`, job `release-os`), built by `build.sh` without a
+blueprint: a published disk with a user or a key would be a credential
+in a public asset.
+
+- **The boot test hands the VM a key as a systemd credential.** qemu's
+  `-smbios type=11,value=io.systemd.credential.binary:tmpfiles.extra=<base64>`
+  reaches systemd in the guest, which applies the tmpfiles lines:
+  `/root/.ssh/authorized_keys` with a per-run key, and
+  `/etc/ssh/sshd_config.d/05-test.conf`. The second is needed because
+  `sshd_config.d/10-myssh.conf` sets `AuthorizedKeysFile` to
+  `/usr/ssh/authorized_keys.d/keys`, a path inside the image, so the
+  credential `ssh.authorized_keys.root` is ignored (spike: `Permission
+  denied (publickey)`); the first value wins, and `05` sorts before `10`.
+- **The VM is booted from a snapshot** (`snapshot=on`): the file
+  released is the file tested, unchanged.
+- **The test is `bootc status` over SSH on 42022**: the guest booted, its
+  network and firewall let sshd answer, and bootc reads its deployment.
+- **The disk is built from the pushed digest**, pulled with the
+  `policy.json` the image ships, then tagged: the disk's origin is the
+  tag hosts follow, not the digest.
+- **Release `<name>-<tag>-<sha7>`, assets under 2 GiB** (a GitHub
+  release limit), the newest 3 per tag kept, as fedora-coreos's.
+
 ## Known limits
 
 - Only qcow2 is built: other formats change the image type in

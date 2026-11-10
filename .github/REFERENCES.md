@@ -45,6 +45,12 @@ jobs `discover`, `hadolint`, `build` and `push` run `bake-discover`,
   fedora-coreos entries alone unless their line's `vm-passed_<id>`
   artifact exists. The GPU image follows its line's tests: it differs
   from fedora-coreos by one stage.
+- **`release-os`, one release per fedora and almalinux image** that
+  changed: its qcow2 from the pushed digest, booted in qemu with a
+  throwaway key before it is published (`bootc/REFERENCES.md`, "Disks
+  carry no user"). Found in `discover`'s targets (their Containerfiles'
+  folders), not in a Bake group: a group is one name in one file, and
+  each file would replace the other's.
 - **The `release` job** makes one GitHub release per fedora-coreos line
   when it or its GPU image changed (group `disk-image`): the OpenStack
   qcow2 of each, built from the pushed digest, the newest 3 of a line
