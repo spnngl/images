@@ -10,24 +10,14 @@
 ignore:
   # Kubernetes' rpms (pkgs.k8s.io): fixed by a Kubernetes or cri-tools
   # release, through KUBERNETES_VERSION.
-  - vulnerability: CVE-2026-33186
-    reason: grpc of kubelet and kubeadm; next Kubernetes release
-    package: {name: google.golang.org/grpc, version: v1.72.2}
-  - vulnerability: CVE-2026-33186
-    reason: grpc of crictl; next cri-tools release
-    package: {name: google.golang.org/grpc, version: v1.75.0}
   - vulnerability: CVE-2026-78663
     reason: x/net of crictl; next cri-tools release
-    package: {name: golang.org/x/net, version: v0.47.0}
+    package: {name: golang.org/x/net, version: v0.58.0}
   - vulnerability: CVE-2026-78663
-    reason: x/net of kubelet, kubeadm and kubectl; next Kubernetes release
-    package: {name: golang.org/x/net, version: v0.56.0}
-  - vulnerability: CVE-2025-68121
-    reason: Go 1.25.0 of crictl; next cri-tools release
-    package: {name: stdlib, version: go1.25.0}
-  - vulnerability: CVE-2026-78663
-    reason: Go 1.25.0 of crictl; next cri-tools release
-    package: {name: stdlib, version: go1.25.0}
+    reason: Go 1.26.6 of crictl; next cri-tools release
+    package: {name: stdlib, version: go1.26.6}
+  # kubelet, kubeadm and kubectl's x/net is podman's version: its rule is
+  # below.
 
   # Fedora's packages: fixed by a FCOS release, through BASE_VERSION, or a
   # Fedora update.
@@ -38,8 +28,13 @@ ignore:
     reason: x/net of containerd; next FCOS release
     package: {name: golang.org/x/net, version: v0.55.0}
   - vulnerability: CVE-2026-78663
-    reason: x/net of podman, ignition and grype; next FCOS release or Fedora update
+    reason: >-
+      x/net of podman, ignition and grype, and of kubelet, kubeadm and kubectl; next FCOS release,
+      Fedora update or Kubernetes release
     package: {name: golang.org/x/net, version: v0.57.0}
+  - vulnerability: CVE-2026-33186
+    reason: grpc of podman; next FCOS release
+    package: {name: google.golang.org/grpc, version: v1.72.2}
   - vulnerability: CVE-2026-111497
     reason: >-
       brotli of grype (0.117.0-2.fc44, Fedora's latest): a crafted stream exhausts the scanner's
