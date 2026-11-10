@@ -309,7 +309,8 @@ Read each at the version this repository pins.
   asking systemd, mounts made at boot (`/tmp`, `/dev/shm`), and sysctls
   (each rule also reads the running kernel, in a build the build host's).
 - **CIS's easy fixes are in the image:** sshd (`00-hardening.conf`,
-  drop-ins 0600), sudo `use_pty`, umask 027, login banners in
+  drop-ins 0600, no SHA-1 nor UMAC MAC), idle shells exit after 15 min
+  (`etc/profile.d/tmout.sh`), sudo `use_pty`, umask 027, login banners in
   `/etc/issue{,.net}`, journald, `atm` and `can` modules off, kernel and
   IPv4 sysctls (`usr/lib/sysctl.d/990-cis.conf`), no `dnsmasq`, `rsync`
   nor `rpcbind` (`rpm -e` fails if a package requires them; `rpcbind`'s
@@ -322,8 +323,14 @@ Read each at the version this repository pins.
   `10-default-yama-scope.conf` (0) is deleted, not masked from `/etc`: its
   package is required by `elfutils-libs`, and the rule reads every
   `sysctl.d` file.
-- **Turned off, still to decide** (grouped last in the tailoring):
-  `accounts_tmout`, CIS's crypto policy, `systemd-journal-remote`.
+- **CIS's crypto policy modules turned off, their sshd part done in
+  `00-hardening.conf`:** `update-crypto-policies` is Python, which the
+  image lacks, and the modules' other effects reach only programs using
+  OpenSSL or GnuTLS: kubelet, containerd and bootc are Go. sshd offers
+  no CBC cipher already; its `MACs` line keeps the policy's but SHA-1
+  and UMAC, and a policy change no longer reaches sshd's MACs.
+- **No `systemd-journal-remote`:** the cluster's log collector, a pod
+  reading the journal, ships the logs off the node.
 - **Content in the image, Fedora's data stream alone** (21 MB of 735):
   the nodes scan with the build's content and tailoring. rpm's
   `%_netsharedpath` (`lib/transaction.cc` of `github.com/rpm-software-management/rpm`,

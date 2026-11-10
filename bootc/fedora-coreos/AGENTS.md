@@ -51,8 +51,7 @@ each choice: [REFERENCES.md](REFERENCES.md).
 - **OpenSCAP** checks the image at build and the nodes against
   scap-security-guide's `cis` profile (CIS level 2), tailored in
   `sysroot/system/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
-  image doesn't follow is turned off there, with its reason beside it;
-  the ones still to decide are grouped last.
+  image doesn't follow is turned off there, with its reason beside it.
   `check-reports.sh` fails `build.sh` and CI on a failed rule, after
   exporting the report. The
   nodes scan daily (`openscap.timer`, results in `/var/lib/openscap`), and
