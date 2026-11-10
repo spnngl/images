@@ -1,0 +1,48 @@
+# The GPU image's checks, at build time (the Containerfile's goss stage when
+# IMAGE_BASE=nvidia): fedora-coreos's, and the nvidia stage's files
+# (sysroot/nvidia/). Outside the */build.yaml pattern: fedora-coreos's build
+# must not run them.
+gossfile:
+  build.yaml: {}
+
+package:
+  nvidia-kmod-open: {installed: true}
+  nvidia-driver-cuda: {installed: true}
+  nvidia-persistenced: {installed: true}
+  nvidia-container-toolkit-base: {installed: true}
+  # The build tools stay in the nvidia-kmod stage.
+  dkms: {installed: false}
+  gcc: {installed: false}
+  kernel-devel: {installed: false}
+  # The workloads' images carry their CUDA.
+  cuda-toolkit: {installed: false}
+
+file:
+  # The modules are unsigned: lockdown refuses them.
+  /usr/lib/bootc/kargs.d/10-lockdown.toml: {exists: false}
+  /usr/lib/bootc/kargs.d/30-nvidia.toml:
+    exists: true
+    contents:
+      - "/^kargs = \\[\"rd.driver.blacklist=nouveau\", \"rd.driver.blacklist=nova-core\"\\]$/"
+  /usr/lib/greenboot/check/required.d/30-nvidia.sh: {exists: true, filetype: file, mode: "0755"}
+
+  # Units are enabled by links in /usr/lib (Containerfile): `systemctl
+  # is-enabled` would call them disabled. The CDI one is the service, not
+  # its .path: /usr is read-only at runtime, a path unit on it never fires.
+  /usr/lib/systemd/system/multi-user.target.wants/nvidia-persistenced.service: {exists: true, filetype: symlink, linked-to: ../nvidia-persistenced.service}
+  /usr/lib/systemd/system/multi-user.target.wants/nvidia-cdi-refresh.service: {exists: true, filetype: symlink, linked-to: ../nvidia-cdi-refresh.service}
+  /usr/lib/systemd/system/multi-user.target.wants/nvidia-cdi-refresh.path: {exists: false}
+
+  # Where depmod finds the modules (the base's kernel: one directory).
+  /usr/bin/nvidia-smi: {exists: true, filetype: file}
+  /usr/bin/nvidia-ctk: {exists: true, filetype: file}
+  /usr/bin/nvidia-container-runtime: {exists: true, filetype: file}
+
+command:
+  # Each module is in the base's kernel's module index, which modprobe reads.
+  the five modules are in modules.dep:
+    exec: |
+      for m in nvidia nvidia-drm nvidia-modeset nvidia-peermem nvidia-uvm; do
+        grep -q "^extra/nvidia/${m}\.ko" /usr/lib/modules/*/modules.dep || { echo "missing: ${m}"; exit 1; }
+      done
+    exit-status: 0
