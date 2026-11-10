@@ -36,9 +36,16 @@ jobs:
       - id: find
         run: |-
           shopt -s nullglob
+          # bootc: the repositories of the Bake targets' tags, the GPU
+          # image's included.
+          bake=(-f docker-bake.hcl -f bootc/docker-bake.hcl)
+          for file in bootc/*/docker-bake.hcl; do
+            bake+=(-f "${file}")
+          done
           packages="$(
             {
-              yq '.jobs.build.strategy.matrix.image[].name' .github/workflows/build-bootc.yml
+              docker buildx bake "${bake[@]}" --print '*' |
+                jq -r '.target[].tags[]? | select(startswith("ghcr.io/spnngl/images/")) | sub(":.*"; "") | sub("^ghcr.io/spnngl/images/"; "")'
               for file in containers/*/docker-bake.hcl; do
                 basename "$(dirname "${file}")"
               done

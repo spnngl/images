@@ -63,7 +63,9 @@ runs:
         persist-credentials: false
 
     # The commit to compare with, or nothing to build every target:
-    # - pull request: its base.
+    # - pull request: the first parent of the merge commit checked out, the
+    #   base branch it merges into: only the pull request's changes, even
+    #   when the base branch moved since its event's base.sha.
     # - push: the workflow's last successful run on the branch, not the
     #   previous push: a cancelled or failed run never pushed its images, so
     #   the next one builds its changes too. Pull requests' runs are
@@ -77,13 +79,12 @@ runs:
       env:
         GH_TOKEN: ${{ inputs.github-token }}
         GH_REPO: ${{ github.repository }}
-        PR_BASE: ${{ github.event.pull_request.base.sha }}
         WORKFLOW: ${{ inputs.workflow }}
       run: |-
         base=""
         case "${GITHUB_EVENT_NAME}" in
           pull_request)
-            base="${PR_BASE}"
+            base="$(git rev-parse HEAD^1)"
             ;;
           push)
             base="$(gh run list --workflow "${WORKFLOW}" --branch "${GITHUB_REF_NAME}" --status success --limit 20 --json headSha,event --jq 'map(select(.event != "pull_request"))[0].headSha // empty')"

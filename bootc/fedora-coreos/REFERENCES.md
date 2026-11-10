@@ -380,9 +380,8 @@ Read each at the version this repository pins.
 - **Scan in stages after the image** (`scan`, then `reports` from
   `scratch`): the reports stay out of the image, and the image stays the
   default stage. CI exports them (the `-reports` Bake target).
-- **Built with BuildKit, in CI too** (`builder: buildkit` in
-  `build-bootc.yml`, then `podman load` for the signing): podman and
-  buildah mount `/run/.containerenv` in every `RUN`, and SSG's
+- **Built with BuildKit** (`docker buildx bake`, every bootc image):
+  podman and buildah mount `/run/.containerenv` in every `RUN`, and SSG's
   `installed_env_is_a_container` check turns the rules of a machine off
   when it exists. `OSCAP_PROBE_ROOT` on a mount of the image gave
   unstable results, and `chroot` lacks `/proc`.
@@ -641,12 +640,13 @@ Read each at the version this repository pins.
 - **The test VM's sshd drop-in is `0600`** (`vm.sh`):
   OpenSCAP's `file_permissions_sshd_drop_in_config` fails on `0644`, and
   `test.sh node` fails on any failed rule.
-- **Renovate** (`renovate.json5`): `BASE_VERSION` through
-  the dockerfile manager; `KUBERNETES_VERSION` (GitHub releases of
-  `kubernetes/kubernetes`, one PR per patch and per minor release: kubeadm
-  upgrades one minor at a time), Cilium (its Helm
-  repository) and `disk_images_commit` (weekly, no release upstream)
-  through custom managers.
+- **Renovate** (`renovate.json5`): the `# renovate:` comments of
+  `docker-bake.hcl` for `BASE`, the NVIDIA versions and `KUBERNETES`
+  (GitHub tags of `kubernetes/kubernetes`, one dependency per line,
+  `kubernetes-<minor>`, whose `extractVersion` keeps its patch releases:
+  a new minor is a new line, by hand, as kubeadm upgrades one minor at a
+  time); Cilium (its Helm repository) and `disk_images_commit` (weekly,
+  no release upstream) through custom managers.
 - **Automerged once every check is green**, the build, scans and
   `vm-test` of `build-bootc.yml` included: a Fedora CoreOS release of the
   same major and a Kubernetes patch release (the tag stays, nodes take

@@ -3,8 +3,10 @@
 # image with image-builder.
 #
 # Usage: bootc/build.sh [id]    (default: fedora-45)
-# id:     a target of bootc/*/docker-bake.hcl: `docker buildx bake -f
-#         docker-bake.hcl -f bootc/docker-bake.hcl ... --list` names them.
+# id:     a target of bootc/fedora or bootc/almalinux's docker-bake.hcl
+#         (fedora-coreos's disks come from its own disk-images.sh): `docker
+#         buildx bake -f docker-bake.hcl -f bootc/docker-bake.hcl ... --list`
+#         names them.
 # Image:  the target's first tag, ghcr.io/spnngl/images/<name>:<tag>: the
 #         one CI pushes (.github/workflows/build-bootc.yml). Not pushed.
 # Output: output/<id>/<id>.qcow2
@@ -26,6 +28,8 @@ die() {
     exit 1
 }
 
+command -v docker > /dev/null || die "docker not found: install docker with its buildx plugin"
+command -v jq > /dev/null || die "jq not found: install jq"
 command -v podman > /dev/null || die "podman not found: install podman"
 [[ "$(podman info --format '{{.Host.Security.Rootless}}')" == false ]] ||
     die "podman is rootless, on macOS run: podman machine stop; podman machine set --rootful; podman machine start"
@@ -34,9 +38,9 @@ bake=(docker buildx bake -f docker-bake.hcl -f bootc/docker-bake.hcl)
 for file in bootc/*/docker-bake.hcl; do
     bake+=(-f "${file}")
 done
-command -v docker > /dev/null || die "docker not found: install docker with its buildx plugin"
-tag="$("${bake[@]}" --print "${id}" 2> /dev/null | jq -r --arg id "${id}" '.target[$id].tags[0] // empty')"
-[[ -n ${tag} ]] || die "${id} is not an image of bootc/*/docker-bake.hcl"
+tag="$("${bake[@]}" --print --progress=quiet "${id}" |
+    jq -r --arg id "${id}" '.target[$id] | select(.context == "bootc") | .tags[0] // empty')"
+[[ -n ${tag} ]] || die "${id} is not an image of bootc/fedora or bootc/almalinux"
 
 if [[ -z ${SKIP_BUILD:-} ]]; then
     # The host's platform only: image-builder builds a disk for it. Through

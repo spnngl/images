@@ -46,8 +46,8 @@ Rules of the actions, so a workflow stays a list of `uses:`:
 
 ## Rules
 
-- Runners are `ubuntu-26.04` and `ubuntu-26.04-arm`: `COPY --link`
-  needs buildah 1.41+.
+- Runners are `ubuntu-26.04` and `ubuntu-26.04-arm`: GitHub's newest,
+  with the newest kernel for BuildKit and KVM for the bootc VM tests.
 - Values derived from a pinned version are rewritten with it, in the
   same Renovate replacement (`autoReplaceStringTemplate`).
 - An application image needs no `renovate.json5` entry

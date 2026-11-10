@@ -60,9 +60,9 @@ EORUN
 # (containers-policy.json(5)).
 # After the packages, so that editing sysroot/ keeps their layer cached.
 ARG BASE_VERSION
-RUN --mount=type=bind,source=fedora,target=/tmp/fedora \
-    jq -e --slurpfile ours "/tmp/fedora/sysroot/${BASE_VERSION}/etc/containers/policy.json" \
-    -f /tmp/fedora/policy.jq /usr/share/containers/policy.json
+RUN --mount=type=bind,source=fedora/policy.jq,target=/tmp/policy.jq \
+    --mount=type=bind,source=fedora/sysroot/${BASE_VERSION}/etc/containers/policy.json,target=/tmp/ours.json \
+    jq -e --slurpfile ours /tmp/ours.json -f /tmp/policy.jq /usr/share/containers/policy.json
 
 # Shared files, then the release's (policy.json).
 COPY --link ./fedora/sysroot/common/ /
@@ -78,7 +78,7 @@ FROM base AS kubeenv
 ARG INSTALL_K3S_VERSION
 
 # Bind-mounted, not copied: the script stays out of the image.
-RUN --mount=type=bind,source=k3s,target=/k3s \
+RUN --mount=type=bind,source=k3s/install.sh,target=/k3s/install.sh \
     bash /k3s/install.sh
 
 # After the install, so that editing sysroot/ doesn't rerun it.

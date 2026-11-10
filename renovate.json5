@@ -397,7 +397,7 @@
             "automerge": true
         },
         {
-            "description": "What only the vm-test job of bootc/fedora-coreos runs, automerged as the rules above: the test cluster's Cilium chart (vm.sh cluster; a major release by hand), and custom-coreos-disk-images (the qemu disk image the job boots; the disk-image job's OpenStack one runs no test).",
+            "description": "What only the vm-test job of bootc/fedora-coreos runs, automerged as the rules above: the test cluster's Cilium chart (vm.sh cluster; a major release by hand), and custom-coreos-disk-images (the qemu disk image the job boots; the release job's OpenStack one runs no test).",
             "matchDepNames": ["cilium", "coreos/custom-coreos-disk-images"],
             "matchUpdateTypes": ["minor", "patch", "digest"],
             "automerge": true

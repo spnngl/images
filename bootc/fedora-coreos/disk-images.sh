@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Turn the image's OCI archive into disk images with custom-coreos-disk-images.
 # Runs as root in a privileged container of the image's Fedora release:
-# the workbench (from stdin, `bash -s --`) and build-bootc.yml's
-# disk-image job (mounted).
+# the workbench (workbench.sh disks) and build-bootc.yml's release job
+# (mounted).
 #
 # Usage: disk-images.sh <dir> <platforms> <imgref>
 #   dir        holds fedora-coreos.ociarchive, and gets the disk images:
