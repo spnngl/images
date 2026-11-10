@@ -632,18 +632,16 @@ jobs:
       # it runs: osbuild's stages. Unloaded on this throwaway runner.
       # One image after the other, each in a folder of its own that goes once
       # its qcow2 is out: osbuild's trees and raw disk take the room the next
-      # needs. The GPU image's disk-images.sh run names its file after
-      # --osname, as fedora-coreos's: renamed on the way out.
+      # needs. disk-images.sh names the file after --osname, fedora-coreos for
+      # both: renamed on the way out. fedora-coreos's disk first, and its
+      # failure fails the job; the GPU image's runs in a shell of its own, so
+      # that its failure only warns and the release goes without its disk.
       - env:
           GPU: ${{ steps.gpu.outcome }}
         run: |-
           sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
-          images=(fedora-coreos)
-          if [[ ${GPU} == success ]]; then
-            images+=(fedora-coreos-nvidia)
-          fi
-          for image in "${images[@]}"; do
-            work="${RUNNER_TEMP}/work-${image}"
+          disk() {
+            local image="$1" work="${RUNNER_TEMP}/work-$1"
             mkdir "${work}"
             skopeo copy --override-arch amd64 --remove-signatures --policy bootc/fedora-coreos/sysroot/system/etc/containers/policy.json \
               "docker://ghcr.io/spnngl/images/${image}@$(< "${RUNNER_TEMP}/${image}/digest")" "oci-archive:${work}/fedora-coreos.ociarchive"
@@ -653,7 +651,12 @@ jobs:
               bash /disk-images.sh /work openstack "ostree-image-signed:docker://ghcr.io/spnngl/images/${image}:${IMAGE_TAG}"
             sudo mv "${work}/fedora-coreos-openstack.x86_64.qcow2" "${RUNNER_TEMP}/disk/${image}-openstack.x86_64.qcow2"
             sudo rm -rf "${work}"
-          done
+          }
+          disk fedora-coreos
+          if [[ ${GPU} == success ]]; then
+            bash -euo pipefail -c "$(declare -f disk); disk fedora-coreos-nvidia" ||
+              echo "::warning::the fedora-coreos-nvidia disk image failed: this release has no GPU disk image"
+          fi
           sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/disk"
       # Provenance of the qcow2 files (workflow, commit, run): check it with
       # gh attestation verify <file> -R <owner>/<repo>.
@@ -676,6 +679,11 @@ jobs:
           for asset in *.qcow2; do
             size="$(stat -c %s "${asset}")"
             if ((size >= 2 * 1024 ** 3)); then
+              # Only fedora-coreos's disk is required: the GPU one is left out.
+              if [[ ${asset} == fedora-coreos-nvidia-* ]]; then
+                echo "::warning::${asset} is ${size} bytes, a release asset must be under 2 GiB: left out"
+                continue
+              fi
               echo "::error::${asset} is ${size} bytes, a release asset must be under 2 GiB"
               exit 1
             fi
