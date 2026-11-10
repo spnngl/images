@@ -84,6 +84,18 @@ each choice: [REFERENCES.md](REFERENCES.md).
   `NVIDIA_DRIVER` and `NVIDIA_CONTAINER_TOOLKIT` (`REFERENCES.md`,
   "GPU image") are never automerged: only a GPU node runs them.
 
+## Kubernetes lines
+
+One line is one Kubernetes minor release, supported upstream (today 1.36
+and 1.37): an entry of `KUBERNETES` in `docker-bake.hcl`, behind its own
+`# renovate:` comment (depName `kubernetes-<minor>`, whose `extractVersion`
+keeps Renovate on that minor). It gives the line a pair of Bake targets
+(`fedora-coreos-<minor>`, `fedora-coreos-nvidia-<minor>`), tags
+`<major>-v<minor>`, VM tests and a release series of its own. Add a line by
+copying the last entry; drop one by deleting its entry once upstream ends
+its support: its tags stay in the registry, and its hosts move by hand
+with `bootc switch`.
+
 ## Layout
 
 - `Containerfile`, `sysroot/<layer>/`: the image (`system`, `kube`,

@@ -13,6 +13,8 @@ variable "KUBERNETES" {
   default = [
     # renovate: datasource=github-tags depName=kubernetes-1.36 packageName=kubernetes/kubernetes versioning=semver extractVersion=^v(?<version>1\.36\.\d+)$
     "1.36.6",
+    # renovate: datasource=github-tags depName=kubernetes-1.37 packageName=kubernetes/kubernetes versioning=semver extractVersion=^v(?<version>1\.37\.\d+)$
+    "1.37.2",
   ]
 }
 
