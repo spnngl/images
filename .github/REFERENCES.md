@@ -36,7 +36,8 @@
   amd64 job also builds the scan reports (artifact
   `fedora-coreos_reports`), failing on a failed rule, a fixable
   Critical or a failed goss check, and on `main` the `disk-image` job releases its OpenStack
-  qcow2 when `bootc/fedora-coreos/` changed since the newest release.
+  qcow2, and the GPU image's, when `bootc/fedora-coreos/` changed since
+  the newest release.
 - **fedora-coreos's VM tests gate its push** (job `vm-test`, on pull
   requests too): the build job uploads its amd64 image on pull requests
   too, `vm-test` boots it in a test VM and runs the goss suites

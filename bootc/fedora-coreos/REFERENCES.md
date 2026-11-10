@@ -852,3 +852,17 @@ the workloads' images, never on the host.
   setting, and no extra unit for the management spec (the runtime's
   `auto` mode makes the spec it needs). `test/nvidia-build.yaml` checks
   the merged config, as containerd ignores a mistyped key.
+
+- **Pushed and released with fedora-coreos, failing alone** (`push` and
+  `disk-image` jobs of `build-bootc.yml`): the GPU image has its own
+  digest artifact and manifest list, signed as the others, under
+  `ghcr.io/spnngl/images/fedora-coreos-nvidia:<tag>` (fedora-coreos's tag:
+  same Containerfile, same versions). Its OpenStack qcow2,
+  `fedora-coreos-nvidia-openstack.x86_64.qcow2`, is an asset of the
+  same release as fedora-coreos's, built after it and not instead of it:
+  the `disk-image` job no longer waits for every push to succeed, only
+  for fedora-coreos's digest, and warns when the GPU image's is missing.
+  A GPU image that fails to build or push never holds back the other
+  nodes' release. The OpenStack image, not a metal one: OVH's
+  bring-your-own-image installs it with an OpenStack config drive,
+  as the Flatcar GPU nodes boot today (`flatcar.oem.id=openstack`).
