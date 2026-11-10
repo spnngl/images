@@ -635,7 +635,8 @@ jobs:
       # needs. disk-images.sh names the file after --osname, fedora-coreos for
       # both: renamed on the way out. fedora-coreos's disk first, and its
       # failure fails the job; the GPU image's runs in a shell of its own, so
-      # that its failure only warns and the release goes without its disk.
+      # that the release goes without its disk, and the job fails at its end
+      # (GPU_DISK): a re-run of the failed job adds it to the release.
       - env:
           GPU: ${{ steps.gpu.outcome }}
         run: |-
@@ -654,8 +655,10 @@ jobs:
           }
           disk fedora-coreos
           if [[ ${GPU} == success ]]; then
-            bash -euo pipefail -c "$(declare -f disk); disk fedora-coreos-nvidia" ||
-              echo "::warning::the fedora-coreos-nvidia disk image failed: this release has no GPU disk image"
+            if ! bash -euo pipefail -c "$(declare -f disk); disk fedora-coreos-nvidia"; then
+              echo "::error::the fedora-coreos-nvidia disk image failed: this release has no GPU disk image"
+              echo GPU_DISK=failed >> "${GITHUB_ENV}"
+            fi
           fi
           sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/disk"
       # Provenance of the qcow2 files (workflow, commit, run): check it with
@@ -681,7 +684,8 @@ jobs:
             if ((size >= 2 * 1024 ** 3)); then
               # Only fedora-coreos's disk is required: the GPU one is left out.
               if [[ ${asset} == fedora-coreos-nvidia-* ]]; then
-                echo "::warning::${asset} is ${size} bytes, a release asset must be under 2 GiB: left out"
+                echo "::error::${asset} is ${size} bytes, a release asset must be under 2 GiB: left out"
+                echo GPU_DISK=failed >> "${GITHUB_ENV}"
                 continue
               fi
               echo "::error::${asset} is ${size} bytes, a release asset must be under 2 GiB"
@@ -712,3 +716,6 @@ jobs:
             while read -r draft; do
               gh release delete "${draft}" --yes
             done
+      # Last: fedora-coreos's release is out, the GPU disk's failure shows.
+      - if: env.GPU_DISK == 'failed'
+        run: exit 1

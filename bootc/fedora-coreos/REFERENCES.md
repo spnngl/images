@@ -755,23 +755,35 @@ the workloads' images, never on the host.
   (610 to 620; the fleet's R580 is in `fedora42` and `rhel10`); a new
   branch changes the kernel module and the CUDA the workloads run
   against: a person moves to it. The repository's URL holds the base's
-  Fedora major, which the Containerfile derives from `BASE_VERSION`;
+  Fedora major, which `nvidia.repo` takes from the base (`$releasever`);
   `renovate.json5`'s URL for the driver is the one literal, a person
-  changes it with a new base major.
+  changes it with a new base major (its PR says so).
+- **`nvidia.repo`, bind-mounted, never written into a layer:** both
+  stages that install from NVIDIA read the one file, and no RUN has to
+  remove it. Both repositories check package signatures: NVIDIA's own
+  Container Toolkit `.repo` file sets `gpgcheck=0`, but its packages are
+  signed with the key of its metadata.
+- **A failed GPU build blocks fedora-coreos's base update PRs:** Renovate
+  automerges them once every check is green, the GPU leg included. A new
+  FCOS kernel the driver doesn't build on is then seen in its PR, before
+  `main`; a person fixes or pins the driver, or merges by hand.
 - **The modules are built from NVIDIA's DKMS package in a stage of
   their own, `nvidia-kmod`, and installed as an RPM:** the compiler and
   the kernel headers stay out of the image (a node has no use for
   them, and bootc nodes have no `dkms` to rebuild at boot). The stage
   takes `kernel-devel` of the base's kernel from Fedora's `updates`
   or `updates-archive` (the base's repositories hold no `kernel-devel`),
-  builds with `dkms build`, and packs the modules in a stub RPM that
+  or from Koji when FCOS ships a kernel before it reaches them, as
+  ublue-os/akmods does (`fetch-kernel.sh`), builds with `dkms build`, and packs the modules in a stub RPM that
   provides `nvidia-kmod = 3:<NVIDIA_VERSION>`, which NVIDIA's
   `nvidia-kmod-common` requires. Its RUN fails unless each of the five
   modules (`nvidia`, `nvidia-drm`, `nvidia-modeset`, `nvidia-peermem`,
   `nvidia-uvm`) exists for the base's kernel (`vermagic`) and is not
   the proprietary one (licence `NVIDIA`; the open ones say
   `Dual MIT/GPL`, peermem `Dual BSD/GPL`). dkms signs them with a key
-  of its own, which nothing trusts (see below).
+  of its own, which nothing trusts (see below). The stage is `FROM` the
+  base, not `system`: the system stage leaves the kernel alone, and
+  BuildKit runs the build alongside `system` and `kube`.
 - **A stage of its own, `nvidia`, between `kube` and `image`; the
   build arg `IMAGE_BASE` picks what `image` builds on** (`kube` by
   default): `fedora-coreos` never builds `nvidia`, the GPU image's
@@ -779,8 +791,8 @@ the workloads' images, never on the host.
   stages on top of it. One Containerfile, so a change to the node
   reaches both images in the same commit; a second Containerfile
   would copy its stages.
-- **No `lockdown=integrity`:** the modules are unsigned and
-  lockdown refuses them. `nvidia` deletes `kargs.d/10-lockdown.toml`
+- **No `lockdown=integrity`:** the modules are signed with a key
+  nothing trusts, and lockdown refuses them. `nvidia` deletes `kargs.d/10-lockdown.toml`
   (its own file for this), and bootc removes the argument from a node
   that switches to the image. The modules load because
   `CONFIG_MODULE_SIG_FORCE` is unset and Secure Boot is off on the GPU
@@ -810,11 +822,10 @@ the workloads' images, never on the host.
   library, `nvidia-persistenced`, `nvidia-container-runtime`,
   `nvidia-ctk`. No graphics, no CUDA toolkit: the workloads' images carry
   their CUDA, and the GPU Operator's toolkit pod (which writes to
-  `/usr/local` and the read-only containerd config) stays disabled. The
-  Container Toolkit repository is signed at the metadata level
-  (`repo_gpgcheck=1`, `gpgcheck=0` in NVIDIA's own `.repo` file); both
-  repositories are written, then removed, in the one RUN. The RUN
-  fails if `dkms`, `gcc` or `kernel-devel` came in.
+  `/usr/local` and the read-only containerd config) stays disabled.
+  The RUN fails if `dkms`, `gcc` or `kernel-devel` came in, and removes
+  what `nvidia-driver-selinux`'s policy install leaves in `/run` and
+  `/etc`.
 - **`python3` is in the image after all:** `nvidia-driver-common`
   requires `/usr/bin/python3`, and `nvidia-driver-selinux` (required with
   `selinux-policy-targeted`) pulls the policy tools that need it. Expect
@@ -825,8 +836,9 @@ the workloads' images, never on the host.
   `nvidia-cdi-refresh.service`, which creates the device nodes and
   writes the CDI spec `/var/run/cdi/nvidia.yaml` before containerd
   starts (the package's drop-in orders it `Before=containerd.service`,
-  with a 90 s timeout). The service, not `nvidia-cdi-refresh.path`: a
-  path unit watches `/usr`, read-only at runtime, which never changes.
+  with a 90 s timeout). The toolkit's preset also enables
+  `nvidia-cdi-refresh.path` on first boot; it watches `modules.dep` and
+  `nvidia-ctk`, read-only at runtime, so it never fires, and is left be.
 - **Kernel arguments `rd.driver.blacklist=nouveau`,
   `rd.driver.blacklist=nova-core`** (`kargs.d/30-nvidia.toml`): what
   `nvidia-kmod-common`'s `nvidia-boot-update` would write, which bootc
@@ -866,6 +878,8 @@ the workloads' images, never on the host.
   same release as fedora-coreos's, built after it and not instead of it:
   the `disk-image` job no longer waits for every push to succeed, only
   for fedora-coreos's digest, and warns when the GPU image's is missing.
+  A GPU disk that fails or passes 2 GiB is left out of the release, and
+  the job fails after it: re-running it adds the disk to the release.
   A GPU image that fails to build or push never holds back the other
   nodes' release. The OpenStack image, not a metal one: OVH's
   bring-your-own-image installs it with an OpenStack config drive,

@@ -18,7 +18,7 @@ package:
   cuda-toolkit: {installed: false}
 
 file:
-  # The modules are unsigned: lockdown refuses them.
+  # The modules are signed with a key nothing trusts: lockdown refuses them.
   /usr/lib/bootc/kargs.d/10-lockdown.toml: {exists: false}
   /usr/lib/bootc/kargs.d/30-nvidia.toml:
     exists: true
@@ -27,13 +27,11 @@ file:
   /usr/lib/greenboot/check/required.d/30-nvidia.sh: {exists: true, filetype: file, mode: "0755"}
 
   # Units are enabled by links in /usr/lib (Containerfile): `systemctl
-  # is-enabled` would call them disabled. The CDI one is the service, not
-  # its .path: /usr is read-only at runtime, a path unit on it never fires.
+  # is-enabled` would call them disabled. The toolkit's preset also enables
+  # nvidia-cdi-refresh.path, harmless: what it watches never changes.
   /usr/lib/systemd/system/multi-user.target.wants/nvidia-persistenced.service: {exists: true, filetype: symlink, linked-to: ../nvidia-persistenced.service}
   /usr/lib/systemd/system/multi-user.target.wants/nvidia-cdi-refresh.service: {exists: true, filetype: symlink, linked-to: ../nvidia-cdi-refresh.service}
-  /usr/lib/systemd/system/multi-user.target.wants/nvidia-cdi-refresh.path: {exists: false}
 
-  # Where depmod finds the modules (the base's kernel: one directory).
   /usr/bin/nvidia-smi: {exists: true, filetype: file}
   /usr/bin/nvidia-ctk: {exists: true, filetype: file}
   /usr/bin/nvidia-container-runtime: {exists: true, filetype: file}
