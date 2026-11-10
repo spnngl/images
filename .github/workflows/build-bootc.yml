@@ -301,10 +301,16 @@ jobs:
 
       # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG: the build job's ARTIFACT.
       - run: bootc/fedora-coreos/versions.sh >> "${GITHUB_ENV}"
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+      - id: artifact
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: fedora-coreos_${{ env.IMAGE_TAG }}_amd64
           path: ${{ runner.temp }}/image
+      - if: steps.artifact.outcome == 'failure'
+        run: |-
+          echo "::error::No image to test: the job build fedora-coreos amd64 failed"
+          exit 1
       # bwrap-userns-restrict: as the disk-image job. No disk clean-up, as
       # the disk-image job's: the runner's 145 GB disk is enough (df at the
       # end of the job).
@@ -319,7 +325,8 @@ jobs:
           rm "${RUNNER_TEMP}/fedora-coreos.ociarchive"
           bootc/fedora-coreos/workbench.sh exec bash -s -- /work qemu "ostree-image-signed:docker://ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}" \
             < bootc/fedora-coreos/disk-images.sh
-      - run: bootc/fedora-coreos/vm.sh up
+      - id: vm
+        run: bootc/fedora-coreos/vm.sh up
       - run: bootc/fedora-coreos/test.sh node
       - run: bootc/fedora-coreos/test.sh wx
       - run: bootc/fedora-coreos/vm.sh cluster
@@ -333,8 +340,9 @@ jobs:
       - run: bootc/fedora-coreos/test-greenboot.sh
       - if: always()
         run: df -h /
-      # The serial console: boot and Ignition errors, the reboots.
-      - if: failure()
+      # The serial console: boot and Ignition errors, the reboots. Only once
+      # the VM was started: before, there is no workbench to read it from.
+      - if: failure() && steps.vm.outcome != 'skipped'
         run: bootc/fedora-coreos/vm.sh log | tail -n 300
 
   # Merge each image's platforms into one manifest list, then sign, push,
