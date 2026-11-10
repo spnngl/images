@@ -99,6 +99,8 @@ each choice: [REFERENCES.md](REFERENCES.md).
 - `vm.sh`, `test.sh`, `test/<suite>.yaml`, `test/<layer>/<suite>.yaml`,
   `test-greenboot.sh`: a test VM in the workbench (an NVMe disk), and the
   goss suites run on it (`node`, `wx`, `cluster`), split by layer.
+  `test/nvidia.yaml` is the GPU image's suite, run on a node with a GPU
+  (`test.sh nvidia <user>@<host>`), never on the test VM.
 
 ## Build check
 
@@ -123,3 +125,10 @@ bootc/fedora-coreos/workbench.sh down
 ```
 
 Done when each command exits 0. Run `test.sh wx` again after a reboot.
+
+The GPU image (`IMAGE_BASE=nvidia`) has one more check, on a node with a
+GPU that runs it (`REFERENCES.md`, "GPU image"):
+
+```sh
+bootc/fedora-coreos/test.sh nvidia <user>@<host>
+```

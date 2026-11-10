@@ -866,3 +866,15 @@ the workloads' images, never on the host.
   nodes' release. The OpenStack image, not a metal one: OVH's
   bring-your-own-image installs it with an OpenStack config drive,
   as the Flatcar GPU nodes boot today (`flatcar.oem.id=openstack`).
+
+- **A suite of its own, `test/nvidia.yaml`, run on a real node over ssh
+  (`test.sh nvidia <user>@<host>`):** the test VM has no GPU, and
+  `test/node.yaml` takes every `*/node.yaml`, which the VM runs: the
+  driver's checks sit in the one file, and the suite takes `system/` and
+  `kube/` node checks only (`metal/` and `vm/` expect a VM). It checks
+  that the five modules resolve, `nvidia` is loaded, `nvidia-smi` lists
+  as many GPUs as the PCI bus has NVIDIA display devices, the driver
+  is this image's, the CDI spec and `/dev/nvidia*` exist, `nvidia-ctk
+  cdi list` has `nvidia.com/gpu=all`, containerd's merged config has
+  the runtime, and nouveau is not loaded. `ctr run` with a CUDA
+  container is not in it: it needs a registry and an image.

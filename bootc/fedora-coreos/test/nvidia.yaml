@@ -1,0 +1,70 @@
+# test.sh nvidia <user>@<host>: a node of the GPU image, with a GPU. Not the
+# test VM's suites as a whole: metal/ and vm/ expect a VM (the dedicated
+# servers' units skipped, qemu-guest-agent), so it takes the layers that hold
+# on a dedicated server, and the driver's checks. Run as root by test.sh. The
+# driver's checks are here, not in a nvidia/node.yaml: test/node.yaml takes
+# every */node.yaml, and the test VM has no GPU.
+gossfile:
+  system/node.yaml: {}
+  kube/node.yaml: {}
+
+command:
+  # nvidia loads for the GPU's PCI id; the others come with the first CUDA
+  # or CDI use, so only their existence is checked.
+  the nvidia module is loaded:
+    exec: grep -q '^nvidia ' /proc/modules
+    exit-status: 0
+  the other modules resolve for this kernel:
+    exec: modprobe --dry-run --show-depends nvidia-uvm nvidia-modeset nvidia-drm nvidia-peermem
+    exit-status: 0
+  # Every NVIDIA display or 3D device on the PCI bus is a GPU the driver
+  # lists (the Scale-GPU-3 servers have one to four).
+  nvidia-smi lists every GPU of the PCI bus:
+    exec: |
+      want=0
+      for d in /sys/bus/pci/devices/*; do
+        [[ $(< "${d}/vendor") == 0x10de && $(< "${d}/class") == 0x03* ]] && want=$((want + 1))
+      done
+      got=$(nvidia-smi --list-gpus | grep -c '^GPU ')
+      echo "pci: ${want}, nvidia-smi: ${got}"
+      ((want >= 1 && want == got))
+    exit-status: 0
+    timeout: 60000
+  # The driver is the open one this image ships, not another's.
+  the driver is the image's version:
+    exec: |
+      [[ $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | sort -u) == "$(rpm -q --qf '%{VERSION}' nvidia-driver-cuda)" ]]
+    exit-status: 0
+    timeout: 60000
+  # Written before containerd starts (nvidia-cdi-refresh), for the runtime's
+  # CDI mode.
+  the CDI spec lists the GPUs:
+    exec: nvidia-ctk cdi list
+    exit-status: 0
+    stdout: ["nvidia.com/gpu=all"]
+    timeout: 60000
+  nvidia-cdi-refresh succeeded:
+    exec: systemctl show -P Result nvidia-cdi-refresh.service
+    exit-status: 0
+    stdout: [/^success$/]
+  # containerd ignores a mistyped plugin key: check the merged config.
+  containerd has the nvidia runtime and CDI:
+    exec: containerd --config /usr/lib/containerd/config.toml config dump
+    exit-status: 0
+    timeout: 60000
+    stdout:
+      - runtimes.nvidia.options]
+      - BinaryName = '/usr/bin/nvidia-container-runtime'
+      - enable_cdi = true
+  # nouveau and nova-core would claim the GPU first.
+  nouveau and nova-core are not loaded:
+    exec: "! grep -qE '^(nouveau|nova_core) ' /proc/modules"
+    exit-status: 0
+
+file:
+  /dev/nvidiactl: {exists: true, filetype: character-device}
+  /dev/nvidia0: {exists: true, filetype: character-device}
+  /var/run/cdi/nvidia.yaml: {exists: true, filetype: file, size: {gt: 0}}
+
+service:
+  nvidia-persistenced: {running: true}
