@@ -44,7 +44,7 @@ that fixes it.
 git ls-files -z '*.sh' | xargs -0 shellcheck
 .github/actions/bake-discover/test.sh
 docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hadolint bootc/*/Containerfile containers/*/Containerfile
-docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.225.0 renovate-config-validator --strict
+docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.227.4 renovate-config-validator --strict
 docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/rhysd/actionlint:1.7.12 -color
 docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/zizmorcore/zizmor:1.31.1 --offline --min-severity medium .github
 f=(-f docker-bake.hcl -f containers/docker-bake.hcl); for x in containers/*/docker-bake.hcl; do f+=(-f "${x}"); done; docker buildx bake "${f[@]}" --print '*' > /dev/null
