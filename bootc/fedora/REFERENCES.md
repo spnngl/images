@@ -9,8 +9,8 @@
 
 - **`50-rootfs.toml` sets `xfs`:** the Fedora base sets no default,
   so `bootc install to-disk` and image-builder would each need a
-  filesystem flag. xfs works on every image: the CentOS kernel has no
-  btrfs.
+  filesystem flag. xfs works on every image: the AlmaLinux kernel has
+  no btrfs.
 - **System config in the image:** bootc disk images don't accept
   hostname, timezone, locale, NTP, DNS or services from the blueprint.
 - **Pull secret outside the image:** it is machine-local, added to the
