@@ -198,7 +198,7 @@ FROM system AS kube
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 # Kubernetes patch release of kubelet, kubeadm and kubectl.
-ARG KUBERNETES_VERSION="1.35.10"
+ARG KUBERNETES_VERSION="1.36.6"
 
 RUN <<EORUN
 # Kubernetes RPMs: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
