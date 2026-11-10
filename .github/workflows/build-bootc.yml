@@ -203,30 +203,72 @@ jobs:
         run: |-
           SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
           podman build --format=docker ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" ${VERSION:+--build-arg "BASE_VERSION=${VERSION}"} ${K3S:+--build-arg "INSTALL_K3S_VERSION=${K3S}"} --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
+      # BuildKit images: a docker-container builder, the default docker
+      # driver can't export a build cache. Its image from mirror.gcr.io, as
+      # build-apps.yml, outside Docker Hub's pull rate limit.
+      - if: matrix.image.builder == 'buildkit'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        with:
+          driver-opts: image=mirror.gcr.io/moby/buildkit:buildx-stable-1
+      # BuildKit images: build cache in the Actions cache, one scope per
+      # image and platform (not per tag: the tag holds the Kubernetes
+      # minor). A cached system stage keeps its layers' digests, so a node
+      # downloads only the layers that changed (bootc/fedora-coreos/
+      # REFERENCES.md, "Layers"). Sunday and manual runs read none, to
+      # refresh the packages; every run writes it (image step). Not
+      # no-cache: the image step reuses the reports step's build.
+      # No SOURCE_DATE_EPOCH build arg: the Containerfile's ENV comes before
+      # every RUN, and a per-commit value would rebuild them all.
+      - if: matrix.image.builder == 'buildkit'
+        run: |-
+          echo "CACHE=type=gha,scope=${NAME}_${ARCH}" >> "${GITHUB_ENV}"
       # The scans first, as bootc/fedora-coreos/build.sh: a failed OpenSCAP
       # rule, a fixable Critical vulnerability or a failed goss check
       # (test/*/build.yaml) stops here. amd64 only: the nodes are x86_64.
-      # The reports are kept either way. The image step's SOURCE_DATE_EPOCH:
-      # an ENV before the first RUN, so another value rebuilds the whole
-      # image, and the scans would check another build than the one pushed.
+      # The reports are kept either way. The scan, goss-bin and goss stages
+      # are never in the cache (not the image target's): the scan always
+      # uses today's grype database.
+      # No attestations: the reports are files, and nodes don't read the
+      # image's (bootc/REFERENCES.md, "Signing").
       - id: reports
         if: matrix.image.name == 'fedora-coreos' && matrix.platform.arch == 'amd64'
-        run: |-
-          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          docker buildx build --platform "linux/${ARCH}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --target reports --output "type=local,dest=${RUNNER_TEMP}/reports" -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
-          bootc/fedora-coreos/check-reports.sh "${RUNNER_TEMP}/reports"
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ env.CONTEXT }}
+          file: bootc/${{ env.NAME }}/Containerfile
+          target: reports
+          platforms: linux/${{ env.ARCH }}
+          provenance: false
+          sbom: false
+          cache-from: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && env.CACHE || '' }}
+          outputs: type=local,dest=${{ runner.temp }}/reports
+      - if: steps.reports.outcome == 'success'
+        run: bootc/fedora-coreos/check-reports.sh "${RUNNER_TEMP}/reports"
       - if: ${{ !cancelled() && steps.reports.outcome != 'skipped' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ${{ matrix.image.name }}_reports
           path: ${{ runner.temp }}/reports
           overwrite: true
-      # The image, from the scans' cache, then into podman's storage, where
-      # the steps below find the others.
+      # The image, from the scans' build, then into podman's storage, where
+      # the steps below find the others. mode=max: the system and kube
+      # stages hold the work. ignore-error: fork pull requests can't write.
+      - if: matrix.image.builder == 'buildkit'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: ${{ env.CONTEXT }}
+          file: bootc/${{ env.NAME }}/Containerfile
+          target: ${{ env.TARGET }}
+          platforms: linux/${{ env.ARCH }}
+          tags: ${{ env.TAG }}
+          labels: org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          provenance: false
+          sbom: false
+          cache-from: ${{ github.event_name != 'schedule' && github.event_name != 'workflow_dispatch' && env.CACHE || '' }}
+          cache-to: ${{ env.CACHE }},mode=max,ignore-error=true
+          load: true
       - if: matrix.image.builder == 'buildkit'
         run: |-
-          SOURCE_DATE_EPOCH="$(git log -1 --format=%ct)"
-          docker buildx build ${TARGET:+--target "${TARGET}"} --platform "linux/${ARCH}" --tag "${TAG}" --build-arg "SOURCE_DATE_EPOCH=${SOURCE_DATE_EPOCH}" --label "org.opencontainers.image.source=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}" --load -f "bootc/${NAME}/Containerfile" "${CONTEXT}"
           docker save "${TAG}" | podman load
           docker image rm "${TAG}"
           docker buildx prune --all --force
