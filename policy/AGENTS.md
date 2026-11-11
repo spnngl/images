@@ -16,7 +16,7 @@ One folder per kind, one file per input, its namespace from its path.
 
 | Namespace | Input | Checks the rules of |
 | --- | --- | --- |
-| `containers.containerfile` | `containers/*/Containerfile` | `containers/AGENTS.md`: FROM digests, versions without a default, shell-less entrypoint, command and health check |
+| `containers.containerfile` | `containers/*/Containerfile` | `containers/AGENTS.md`: FROM digests, versions without a default, shell-less entrypoint, command and health check, no last-stage `RUN` without `--mount` |
 | `containers.dalec` | `containers/*/spec.yml` | `containers/AGENTS.md`: versions without a default, shell-less entrypoint |
 | `containers.bake` | Bake's resolved definition | `containers/AGENTS.md`: `tags()`, one target per tag, `output`, entitlements |
 | `bootc.containerfile` | `bootc/*/Containerfile` | `bootc/AGENTS.md`: `BASE_VERSION`, no digest, the lint last |

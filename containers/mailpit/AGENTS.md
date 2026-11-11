@@ -22,7 +22,7 @@ reason for each choice: [REFERENCES.md](REFERENCES.md).
 The build stage's server test: `mailpit readyz --wait`, a 401 without the
 random UI credentials, `/dist/app.js` served (the UI is embedded), a
 message sent over SMTP and found by its subject through
-`/api/v1/message/latest`. The final stage runs `mailpit version`.
+`/api/v1/message/latest`. The structure test runs `mailpit version`.
 
 ## Updates
 

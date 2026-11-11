@@ -1,0 +1,10 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The binaries run on this platform (the build stage tested
+  # the transports), git finds its exec path and templates at the image's
+  # paths, and the shell runs. `ssh -V` prints its version only.
+  - name: "git, ssh and the shell run"
+    command: /bin/sh
+    args: ["-euc", "git --version && ssh -V && [ \"$(git --exec-path)\" = /usr/libexec/git-core ] && git init -q /tmp/t && rm -r /tmp/t"]

@@ -1,0 +1,9 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # kustomize runs on this platform (the build stage tested
+  # both binaries).
+  - name: "kustomize version"
+    command: /usr/bin/kustomize
+    args: ["version"]

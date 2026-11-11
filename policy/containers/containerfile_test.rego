@@ -72,6 +72,21 @@ test_healthcheck_none if {
 	count(containerfile.deny) == 0 with input as array.concat(ok, [c("healthcheck", ["NONE"], false, 1)])
 }
 
+test_last_stage_run if {
+	containerfile.deny["RUN /usr/bin/app --version in the image's stages has no --mount: a structure test (containers/AGENTS.md, \"Rules\", Tests)"] with input as array.concat(ok, [c("run", ["/usr/bin/app", "--version"], true, 1)])
+}
+
+test_last_stage_run_mount if {
+	count(containerfile.deny) == 0 with input as array.concat(ok, [object.union(c("run", ["/usr/bin/app", "/tmp/x"], true, 1), {"Flags": ["--mount=type=tmpfs,target=/tmp"]})])
+}
+
+test_build_stage_run if {
+	count(containerfile.deny) == 0 with input as array.concat(
+		[from("scratch", 0), c("run", ["make"], false, 0)],
+		array.slice(ok, 4, count(ok)),
+	)
+}
+
 # A build stage's instructions are not the image's.
 test_build_stage_shell_form if {
 	count(containerfile.deny) == 0 with input as array.concat(
@@ -100,4 +115,13 @@ test_version_default_second_name if {
 
 test_from_stage_from_arg if {
 	count(containerfile.deny) == 0 with input as array.concat(ok, [from("natives-${TARGETARCH}", 2), c("entrypoint", ["/x"], true, 2)])
+}
+
+test_parent_stage_run if {
+	containerfile.deny["RUN /bin/x in the image's stages has no --mount: a structure test (containers/AGENTS.md, \"Rules\", Tests)"] with input as array.concat(ok, [
+		c("from", ["scratch", "AS", "base"], false, 2),
+		c("run", ["/bin/x"], true, 2),
+		from("base", 3),
+		c("entrypoint", ["/x"], true, 3),
+	])
 }

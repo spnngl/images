@@ -25,5 +25,5 @@ update feed. Below: what differs.
   Prowlarr's: the text is GPL v3 and the API's metadata says `GPL-3.0`.
 - **ffprobe stays:** the archive's static `ffprobe`, next to the program,
   is the tool Radarr runs for media information (the updater sets its
-  executable flag: `InstallUpdateService.cs`); the final image runs
+  executable flag: `InstallUpdateService.cs`); the structure test runs
   `ffprobe -version`. SQLite is bundled (`libe_sqlite3.so`, libc only).

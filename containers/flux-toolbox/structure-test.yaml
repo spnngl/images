@@ -1,0 +1,10 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # Every program runs on this platform at the image's paths
+  # (the build stage tested them), and the image's user reads every
+  # license.
+  - name: "every program runs, every license reads"
+    command: /bin/sh
+    args: ["-euc", "git --version && flux version --client && flux-operator version --client && kustomize version && kubectl version --client && nu --version && cat /usr/share/doc/*/LICENSE > /dev/null"]

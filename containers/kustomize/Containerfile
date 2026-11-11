@@ -143,7 +143,3 @@ ENV PATH=/usr/bin
 
 # Upstream's entrypoint: arguments are kustomize's.
 ENTRYPOINT ["/usr/bin/kustomize"]
-
-# Smoke test: kustomize runs on this platform (the build stage tested
-# both binaries).
-RUN ["/usr/bin/kustomize", "version"]

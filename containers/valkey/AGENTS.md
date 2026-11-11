@@ -16,7 +16,7 @@ for each choice: [REFERENCES.md](REFERENCES.md).
 - **The build ID** is a patch of `src/mkreleasehdr.sh`, for syft
   (REFERENCES.md): the server test greps the binary for
   `<version>buildkitsandbox-<SOURCE_DATE_EPOCH>`.
-- **Done when** the build passes: the build stage's server test (TCP,
+- **Done when** the build and its structure test pass: the build stage's server test (TCP,
   TLS, Lua, a replica synced over TLS, the RDB and AOF saved on SIGTERM,
   checked by `valkey-check-*` and loaded back), both binaries'
   `--version` in the final image, `/bin/sh` absent from it

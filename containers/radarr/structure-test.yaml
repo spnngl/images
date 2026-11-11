@@ -1,0 +1,8 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The archive's ffprobe, a static binary: it runs on this platform.
+  - name: "ffprobe -version"
+    command: /usr/lib/radarr/bin/ffprobe
+    args: ["-version"]

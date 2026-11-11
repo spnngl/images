@@ -146,7 +146,3 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=2m --start-interval=2s -
 # A global flag, before the command.
 ENTRYPOINT ["/usr/bin/silo", "--certs-dir", "/certs"]
 CMD ["server", "/data"]
-
-# Smoke test: the binary runs on this platform (the build stage tested the
-# server).
-RUN ["/usr/bin/silo", "--version"]

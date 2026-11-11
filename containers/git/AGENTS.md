@@ -23,10 +23,10 @@ for each choice: [REFERENCES.md](REFERENCES.md).
   `ADD` makes the sources root's.
 - **OpenSSH: `--without-pie`:** with configure's `-pie`, `ssh` links
   dynamically and only the final stage notices.
-- **Done when** the build passes: the build stage checks that every
+- **Done when** the build and its structure test pass: the build stage checks that every
   program is static, pushes and clones over ssh (OpenSSH's `sshd`) and
   clones over HTTPS (`openssl s_server`, failing without its
-  certificate); the final stage runs `git`, `ssh` and `git init`.
+  certificate); the structure test runs `git`, `ssh` and `git init`.
 
 ## Updates
 

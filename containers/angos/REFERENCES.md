@@ -43,8 +43,8 @@
 - **Server test in the build stage:** `scratch` has no shell, and the
   binary has no `--version`. The password is hashed with Debian's
   `argon2`, as `angos argon` does (argon2id, 19 MiB, 2 passes): that
-  command reads the password from a terminal. The final stage runs
-  `--help`, which exits 0.
+  command reads the password from a terminal. The structure test
+  runs `--help`, which exits 0.
 - **UID 65532, not upstream's 65534:** the repository's user
   (`containers/AGENTS.md`); every port is above 1024.
 - **`CMD ["-c", "/config/config.toml", "server"]`**, where upstream has

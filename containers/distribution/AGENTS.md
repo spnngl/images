@@ -28,7 +28,7 @@ The build stage's server test runs the image's `config.yml`: a blob and
 an OCI manifest pushed through the API and pulled back byte for byte, a
 manifest delete refused (`405`), a `SIGTERM` stop that exits `0`; then
 `garbage-collect`, which must sweep an unreferenced blob alone, checked
-at its path in the storage layout. The final stage runs
+at its path in the storage layout. The structure test runs
 `registry --version`.
 
 ## Updates

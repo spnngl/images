@@ -26,12 +26,13 @@ Containerfile's header. Upstream sources and the reason for each choice:
 - **Credentials from the runtime:** the API key and the PostgreSQL
   settings come as `Lidarr__<Section>__<Key>` variables; the image
   holds none.
-- **Done when** the build passes: the build stage checks the archive's
+- **Done when** the build and its structure test pass: the build stage checks the archive's
   sha256, starts the server on a throwaway data folder with a random API
   key, finds `/ping` answering and the API reporting `${BASE_VERSION}`,
   writes a tag and reads it back (database migrations, SQLite), and
-  stops it with SIGTERM; the final image runs fpcalc and Lidarr's
-  help mode (its libraries, ICU included) and has no `/bin/sh`
+  stops it with SIGTERM; the final stage runs Lidarr's help
+  mode (its libraries, ICU included), the structure test fpcalc, and
+  the image has no `/bin/sh`
   (`docker create`, then `docker export | tar -t`).
 
 ## Updates

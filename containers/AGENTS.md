@@ -114,6 +114,13 @@ By what the app needs at runtime; name that need in the image's
   `allow`. Locally, the builder must permit it (`containers/buildkit`).
 - **Runtime contract** (ports, volumes, environment) lives in the
   Containerfile's or spec's header, or in the image's `AGENTS.md`.
+- **Tests**: a server test runs in a build stage (the final image has
+  no shell to run it); a command of the shipped image (`--version`, a
+  config check) is a `commandTests` entry of the image's
+  `structure-test.yaml`, not a `RUN` of the image's stages (the last
+  one, and those it is built `FROM`). Such a `RUN` with `--mount`
+  stays: it reads a build stage's file or needs a tmpfs, which
+  container-structure-test can't give.
 
 ## Limits
 

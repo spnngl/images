@@ -198,7 +198,3 @@ HEALTHCHECK --interval=15s --start-period=10s --start-interval=1s \
 
 # Arguments are Miniflux's: `docker run <image> -migrate`.
 ENTRYPOINT ["/usr/bin/miniflux"]
-
-# Smoke test: the binary runs on this platform (the build stage tested the
-# server).
-RUN ["/usr/bin/miniflux", "-version"]

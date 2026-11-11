@@ -187,7 +187,3 @@ VOLUME ["/var/lib/numa"]
 # resolver (src/config.rs, load_config).
 ENTRYPOINT ["/usr/local/bin/numa"]
 CMD ["run", "/root/.config/numa/numa.toml"]
-
-# Smoke test: the binary is static and runs on this platform (the build
-# stage tested the server).
-RUN ["/usr/local/bin/numa", "--version"]

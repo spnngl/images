@@ -176,7 +176,3 @@ EXPOSE 5055
 VOLUME ["/app/config", "/app/.next/cache"]
 ENTRYPOINT ["/nodejs/bin/node"]
 CMD ["dist/index.js"]
-
-# The addons load against this image's libraries, and its Node meets
-# upstream's range.
-RUN ["/nodejs/bin/node", "-e", "require('bcrypt'); require('sqlite3'); require('sharp'); if (!require('semver').satisfies(process.version, require('./package.json').engines.node)) process.exit(1)"]

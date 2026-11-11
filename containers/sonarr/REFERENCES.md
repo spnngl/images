@@ -30,7 +30,7 @@ update feed. Below: what differs.
   build install `sqlite3`). Its only dependency, `libc6`, is distroless'.
 - **ffprobe stays:** the archive's static `ffprobe`, next to the program,
   is the tool Sonarr runs for media information (the updater sets its
-  executable flag: `InstallUpdateService.cs`); the final image runs
+  executable flag: `InstallUpdateService.cs`); the structure test runs
   `ffprobe -version`. `mediainfo`, which upstream's Docker build installs,
   is not used by v4.
 - **The feed needs a `version` parameter:** without it the feed answers

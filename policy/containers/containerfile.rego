@@ -73,6 +73,21 @@ healthcheck_ok(c) if {
 	startswith(c.Value[1], "/")
 }
 
+# A command of the shipped image is a structure test, not a RUN of the
+# last stage or of a stage it is built FROM; one with --mount stays: it
+# reads a build stage's file, or needs a tmpfs.
+deny contains msg if {
+	some c in image_cmds
+	c.Cmd == "run"
+	not mounts(c)
+	msg := sprintf("RUN %s in the image's stages has no --mount: a structure test (containers/AGENTS.md, \"Rules\", Tests)", [concat(" ", c.Value)])
+}
+
+mounts(c) if {
+	some f in c.Flags
+	startswith(f, "--mount=")
+}
+
 image_cmds := [c |
 	some c in cmds
 	c.Stage in dockerfile.image_chain(cmds)

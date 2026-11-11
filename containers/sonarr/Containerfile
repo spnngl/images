@@ -190,6 +190,3 @@ CMD ["-nobrowser", "-data=/config"]
 # folder.
 RUN --mount=type=tmpfs,target=/tmp \
     ["/usr/lib/sonarr/bin/Sonarr", "-nobrowser", "-data=/tmp/smoke-data", "-?"]
-
-# The archive's ffprobe, a static binary: it runs on this platform.
-RUN ["/usr/lib/sonarr/bin/ffprobe", "-version"]

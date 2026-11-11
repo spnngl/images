@@ -238,7 +238,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 
 ENTRYPOINT ["/usr/bin/zot"]
 CMD ["serve", "/etc/zot/config.json"]
-
-# Smoke test: the binary runs on this platform (the build stage tested the
-# server).
-RUN ["/usr/bin/zot", "--version"]

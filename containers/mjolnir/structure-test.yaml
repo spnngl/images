@@ -1,0 +1,9 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The addons load against this image's libraries, and its Node meets
+  # upstream's range (>=<major>.0.0: another form fails, to be read).
+  - name: "addons load, Node in range"
+    command: /nodejs/bin/node
+    args: ["-e", "require('@tensorflow/tfjs-node'); require('@matrix-org/matrix-sdk-crypto-nodejs'); const m = /^>=(\\d+)\\.0\\.0$/.exec(require('./package.json').engines.node); if (!m || Number(process.versions.node.split('.')[0]) < Number(m[1])) process.exit(1)"]

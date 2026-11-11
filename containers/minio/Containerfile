@@ -144,7 +144,3 @@ VOLUME ["/data"]
 # A global flag, before the command.
 ENTRYPOINT ["/usr/bin/minio", "--certs-dir", "/certs"]
 CMD ["server", "/data"]
-
-# Smoke test: the binary runs on this platform (the build stage tested the
-# server).
-RUN ["/usr/bin/minio", "--version"]

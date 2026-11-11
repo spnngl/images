@@ -1,0 +1,9 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The binary runs on this platform and the shipped config parses.
+  # -T, not -t (AGENTS.md, Rules).
+  - name: "shipped config parses"
+    command: /usr/bin/crowdsec-firewall-bouncer
+    args: ["-c", "/etc/crowdsec/bouncers/crowdsec-firewall-bouncer.yaml", "-T"]

@@ -25,5 +25,5 @@ update feed. Below: what differs.
   Prowlarr's: the text is GPL v3 and the API's metadata says `GPL-3.0`.
 - **fpcalc stays:** the archive's static `fpcalc` (Chromaprint), next to
   the program, fingerprints audio (`FpcalcCheck.cs` warns when it is
-  missing); the final image runs `fpcalc -version`. SQLite is bundled
+  missing); the structure test runs `fpcalc -version`. SQLite is bundled
   (`libe_sqlite3.so`, libc only).

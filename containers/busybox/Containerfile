@@ -134,7 +134,3 @@ USER 65532:65532
 # As Docker's busybox image: a shell by default (docker run -it,
 # kubectl debug), any applet or path as the command.
 CMD ["/bin/sh"]
-
-# Smoke test: the binary is static and runs on this platform (the build
-# stage tested the applets), and the image's user has a name.
-RUN ["/bin/sh", "-c", "busybox --version && [ \"$(whoami)\" = nonroot ]"]

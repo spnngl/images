@@ -130,7 +130,3 @@ VOLUME /cache
 # Upstream's entrypoint: arguments are grype's (`docker run <image>
 # registry:<image>`).
 ENTRYPOINT ["/usr/bin/grype"]
-
-# Smoke test: the binary runs on this platform (the build stage tested
-# it).
-RUN ["/usr/bin/grype", "--version"]

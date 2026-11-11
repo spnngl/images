@@ -116,7 +116,3 @@ ENV MC_CONFIG_DIR=/config
 
 # Upstream's entrypoint: arguments are mc's (`docker run <image> ls ...`).
 ENTRYPOINT ["/usr/bin/mc"]
-
-# Smoke test: the binary runs on this platform (the build stage tested
-# it).
-RUN ["/usr/bin/mc", "--version"]

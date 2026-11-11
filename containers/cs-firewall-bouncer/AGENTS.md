@@ -30,7 +30,7 @@ Leave the tables alone while it runs: it doesn't recreate a deleted one.
 ## Rules
 
 - Keep `retry_initial_connect: true`.
-- The smoke test runs `-T`, which only prints the config. `-t` creates
+- The structure test runs `-T`, which only prints the config. `-t` creates
   the tables and deletes them on exit, the running bouncer's included:
   for the same reason the image has no `HEALTHCHECK`.
 
