@@ -10,6 +10,7 @@ the image's own:
   [containers/AGENTS.md](containers/AGENTS.md)
 - `.github/`, `renovate.json5`, or a pinned version:
   [.github/AGENTS.md](.github/AGENTS.md)
+- `policy/`, the conftest policies: [policy/AGENTS.md](policy/AGENTS.md)
 
 Beside each image's `AGENTS.md`, and `bootc/`'s and `.github/`'s, a
 `REFERENCES.md` names the upstream sources and gives the reason for
@@ -47,9 +48,12 @@ docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/hadolint/hadolint:v2.15.1 hado
 docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/renovatebot/renovate:44.227.4 renovate-config-validator --strict
 docker run --rm -v "${PWD}:/w:ro" -w /w docker.io/rhysd/actionlint:1.7.12 -color
 docker run --rm -v "${PWD}:/w:ro" -w /w ghcr.io/zizmorcore/zizmor:1.32.0 --offline --min-severity medium .github
-f=(-f docker-bake.hcl -f containers/docker-bake.hcl); for x in containers/*/docker-bake.hcl; do f+=(-f "${x}"); done; docker buildx bake "${f[@]}" --print '*' > /dev/null
-f=(-f docker-bake.hcl -f bootc/docker-bake.hcl); for x in bootc/*/docker-bake.hcl; do f+=(-f "${x}"); done; docker buildx bake "${f[@]}" --print '*' > /dev/null
+policy/conftest.sh containers
+policy/conftest.sh bootc
 ```
+
+`policy/conftest.sh` also resolves the kind's Bake files (`bake
+--print`): a broken one fails it.
 
 Then the build check of the image's guide. Report each check as run or
 not run, with its result.

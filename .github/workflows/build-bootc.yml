@@ -147,6 +147,30 @@ jobs:
           category: hadolint-${{ matrix.containerfile }}
         if: always()
 
+  # The policies of policy/ on every bootc image's sources
+  # (policy/AGENTS.md): seconds, so on every event and every file, a
+  # policy change reaching them all. Before build, as hadolint: a broken
+  # rule builds nothing.
+  conftest:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: policy/conftest.sh --sarif conftest-results bootc
+
+      - name: Upload conftest results
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          # One file per namespace, each with its category
+          # (runs[].automationDetails.id): conftest-<namespace>.
+          sarif_file: conftest-results
+        if: always()
+
   # One job per target and platform, each on a runner of that platform:
   # native builds and tests, no QEMU. The push job below merges them into
   # one manifest list per target.
@@ -155,8 +179,9 @@ jobs:
     needs:
       - discover
       - hadolint
+      - conftest
     # Also when hadolint is skipped (no Containerfile to build), not when
-    # it failed.
+    # it or conftest failed.
     if: >-
       !cancelled() && !failure() && needs.discover.outputs.targets != '[]'
     runs-on: ${{ matrix.platform.runner }}
@@ -238,11 +263,12 @@ jobs:
     needs:
       - discover
       - hadolint
+      - conftest
       - build
     # As the push job: another image's failed build doesn't stop it. A
     # failed amd64 build leaves no image, and fails here.
     if: >-
-      !cancelled() && needs.hadolint.result != 'failure'
+      !cancelled() && needs.hadolint.result != 'failure' && needs.conftest.result != 'failure'
       && needs.build.result != 'skipped'
       && toJSON(fromJSON(needs.discover.outputs.groups)['vm-test']) != '[]'
     runs-on: ubuntu-26.04
@@ -328,6 +354,7 @@ jobs:
     needs:
       - discover
       - hadolint
+      - conftest
       - build
       - vm-test
     if: always()
@@ -372,7 +399,8 @@ jobs:
       - build
       - vm-test
     # needs: build waits for every build job, and fails if any did. Run
-    # anyway, unless cancelled or hadolint failed: each target pushes on its
+    # anyway, unless cancelled or hadolint or conftest failed (build is then
+    # skipped): each target pushes on its
     # own, and fails if one of its platforms is missing, or, for
     # fedora-coreos, if its VM tests didn't pass.
     if: >-
