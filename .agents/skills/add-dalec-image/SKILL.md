@@ -125,7 +125,13 @@ app itself finds first.
 - one step per tool the app execs (step 1)
 - the app's start command, asserting `${BASE_VERSION}` in its output
 
-Done when every exec'd tool and the app itself have a step.
+A Dalec image ships libraries or a second program, so it is big
+(`containers/AGENTS.md`, "Tests"): `containers/<name>/structure-test.yaml`
+checks its runtime contract, modeled on jellyfin's. Ports stay in the
+header: a spec can't expose one.
+
+Done when every exec'd tool and the app itself have a step, and every
+contract item in the config is a structure test check.
 
 ### 5. Track its versions
 
@@ -158,9 +164,11 @@ Done when every choice of steps 1 to 4 has its reason in
 
 Run the build check's `--set '*.output=type=docker'` build: it runs the
 tests. Then its `test.sh` line, the structure tests
-(`containers/structure-test.yaml`), and `docker run` the image as its runtime contract says (port
+(`containers/structure-test.yaml`, then
+`containers/<name>/structure-test.yaml`), and `docker run` the image as
+its runtime contract says (port
 published, volumes writable by 65532), and check the app starts and
 serves.
 
-Done when the build is green and the container serves with its volumes
-mounted.
+Done when the build and the structure tests are green and the container
+serves with its volumes mounted.

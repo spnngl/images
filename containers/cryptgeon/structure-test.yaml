@@ -1,0 +1,29 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["8000"]
+  entrypoint: ["/app/cryptgeon"]
+  workdir: "/app"
+  envVars:
+    - key: FRONTEND_PATH
+      value: "/app/frontend"
+    - key: REDIS
+      value: "redis://redis/"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "cryptgeon"
+    path: /app/cryptgeon
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/cryptgeon/LICENSE
+    shouldExist: true

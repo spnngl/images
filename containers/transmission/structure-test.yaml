@@ -1,0 +1,27 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  volumes: ["/config", "/downloads", "/watch"]
+  entrypoint: ["/usr/bin/transmission-daemon", "--foreground"]
+  workdir: "/config"
+  envVars:
+    - key: TRANSMISSION_HOME
+      value: "/config"
+    - key: TRANSMISSION_WEB_HOME
+      value: "/usr/lib/transmission/public_html"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "transmission-daemon"
+    path: /usr/bin/transmission-daemon
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # No /bin/sh check: the image ships dash, which Dalec brings in with
+  # Debian's Essential packages, though spec.yml says it has no shell.
+  - name: license
+    path: /usr/share/doc/transmission/COPYING
+    shouldExist: true

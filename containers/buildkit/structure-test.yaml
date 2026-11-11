@@ -1,0 +1,36 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  volumes: ["/var/lib/buildkit"]
+  entrypoint: ["/usr/bin/rootlesskit", "/usr/bin/buildkitd"]
+  cmd: ["--oci-worker-no-process-sandbox"]
+  workdir: "/var/lib/buildkit"
+  envVars:
+    - key: USER
+      value: "nonroot"
+    - key: XDG_RUNTIME_DIR
+      value: "/run/user/65532"
+    - key: XDG_DATA_HOME
+      value: "/var/lib"
+    - key: XDG_CONFIG_HOME
+      value: "/etc"
+    - key: BUILDKIT_HOST
+      value: "unix:///run/user/65532/buildkit/buildkitd.sock"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "rootlesskit"
+    path: /usr/bin/rootlesskit
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # A shell: the image's purpose needs it (containers/AGENTS.md, Shell-less).
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: true
+  - name: license
+    path: /usr/share/doc/buildkit/LICENSE
+    shouldExist: true

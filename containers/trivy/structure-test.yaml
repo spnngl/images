@@ -1,6 +1,39 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["4954"]
+  volumes: ["/var/cache/trivy"]
+  entrypoint: ["/usr/bin/trivy"]
+  workdir: "/src"
+  envVars:
+    - key: TRIVY_CACHE_DIR
+      value: "/var/cache/trivy"
+    - key: XDG_DATA_HOME
+      value: "/var/cache/trivy/data"
+    - key: TRIVY_LISTEN
+      value: "0.0.0.0:4954"
+    - key: TRIVY_DISABLE_TELEMETRY
+      value: "true"
+    - key: TRIVY_SKIP_VERSION_CHECK
+      value: "true"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "trivy"
+    path: /usr/bin/trivy
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # A shell: the image's purpose needs it (containers/AGENTS.md, Shell-less).
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: true
+  - name: license
+    path: /usr/share/doc/trivy/LICENSE
+    shouldExist: true
 commandTests:
   # The binary and git run on this platform (the build stage
   # tested the server), and git's shell scripts find the shell: go-getter runs

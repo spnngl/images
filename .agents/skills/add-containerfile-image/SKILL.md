@@ -92,10 +92,13 @@ Done when every item has an answer and a source file.
   path, `CMD` its default arguments.
 - **Structure test**: `containers/<name>/structure-test.yaml`, modeled
   on garage's: a `commandTests` entry running `<binary> --version` on
-  the shipped image (`containers/AGENTS.md`, "Tests").
+  the shipped image (`containers/AGENTS.md`, "Tests"). A big image (a
+  config file, another program, app files: same section) also checks
+  its runtime contract, modeled on zot's.
 
 Done when every answer from step 1 appears in the Containerfile, its
-header or its structure test, and `hadolint` passes.
+header or its structure test, a big image's every contract item is a
+check, and `hadolint` passes.
 
 ### 3. Track its versions
 

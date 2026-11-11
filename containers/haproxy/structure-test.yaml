@@ -1,0 +1,26 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "99:99"
+  exposedPorts: ["1936", "8080", "8443", "9101"]
+  volumes: ["/etc/haproxy"]
+  entrypoint: ["/usr/sbin/haproxy"]
+  cmd: ["-W", "-db", "-f", "/etc/haproxy"]
+  workdir: "/var/lib/haproxy"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "haproxy"
+    path: /usr/sbin/haproxy
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/haproxy/LICENSE
+    shouldExist: true

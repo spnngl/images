@@ -1,6 +1,31 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["443", "53", "5380", "80", "853", "8765"]
+  volumes: ["/var/lib/numa"]
+  entrypoint: ["/usr/local/bin/numa"]
+  cmd: ["run", "/root/.config/numa/numa.toml"]
+  envVars:
+    - key: HOME
+      value: "/root"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "numa"
+    path: /usr/local/bin/numa
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/numa/LICENSE
+    shouldExist: true
 commandTests:
   # The binary is static and runs on this platform (the build
   # stage tested the server).

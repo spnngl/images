@@ -1,6 +1,28 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["6379"]
+  volumes: ["/data"]
+  entrypoint: ["/usr/bin/valkey-server"]
+  workdir: "/data"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "valkey-server"
+    path: /usr/bin/valkey-server
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/valkey/COPYING
+    shouldExist: true
 commandTests:
   # Both binaries find their libraries (OpenSSL) here.
   - name: "valkey-cli --version"

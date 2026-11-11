@@ -1,0 +1,54 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+fileExistenceTests:
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  # The lists at the image's root, root's, read-only: each file of the
+  # header's contract, and one AS's and one country's (those the
+  # Containerfile's `check` stage reads).
+  - name: cloudflare
+    path: /cloudflare/ips-v4
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"
+  - name: cloudflare v6
+    path: /cloudflare/ips-v6
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"
+  - name: GeoLite2 ASN
+    path: /geolite2/GeoLite2-ASN.mmdb
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"
+  - name: GeoLite2 City
+    path: /geolite2/GeoLite2-City.mmdb
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"
+  - name: GeoLite2 Country
+    path: /geolite2/GeoLite2-Country.mmdb
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"
+  - name: an AS
+    path: /as/13335/ipv4-aggregated.txt
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"
+  - name: a country
+    path: /country/au/ipv4-aggregated.txt
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"

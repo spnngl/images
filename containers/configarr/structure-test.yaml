@@ -1,0 +1,33 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  volumes: ["/app/config", "/app/repos"]
+  entrypoint: ["/usr/bin/dumb-init", "/usr/bin/node", "/usr/lib/configarr/bundle.cjs"]
+  workdir: "/app"
+  envVars:
+    - key: HOME
+      value: "/app/repos"
+    - key: ROOT_PATH
+      value: "/app"
+    - key: GIT_CONFIG_COUNT
+      value: "1"
+    - key: GIT_CONFIG_KEY_0
+      value: "safe.directory"
+    - key: GIT_CONFIG_VALUE_0
+      value: "*"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "dumb-init"
+    path: /usr/bin/dumb-init
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # No /bin/sh check: the image ships dash, which Dalec brings in with
+  # Debian's Essential packages, though spec.yml says it has no shell.
+  - name: license
+    path: /usr/share/doc/configarr/LICENSE.gz
+    shouldExist: true

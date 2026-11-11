@@ -1,0 +1,33 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  volumes: ["/cache", "/config"]
+  entrypoint: ["/usr/lib/jellyfin/jellyfin"]
+  cmd: ["--datadir", "/config", "--configdir", "/config/config", "--logdir", "/config/log", "--cachedir", "/cache", "--ffmpeg", "/usr/lib/jellyfin-ffmpeg/ffmpeg", "--nowebclient"]
+  workdir: "/config"
+  envVars:
+    - key: HOME
+      value: "/config"
+    - key: XDG_CACHE_HOME
+      value: "/cache"
+    - key: TMPDIR
+      value: "/cache"
+    - key: LD_PRELOAD
+      value: "libjemalloc.so.2"
+    - key: NVIDIA_DRIVER_CAPABILITIES
+      value: "compute,video,utility"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "jellyfin"
+    path: /usr/lib/jellyfin/jellyfin
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
