@@ -129,9 +129,12 @@ and give Renovate `dhi.io` credentials for the frontend's tags.
 f=(-f docker-bake.hcl -f containers/docker-bake.hcl -f containers/<name>/docker-bake.hcl)
 docker buildx bake "${f[@]}" --print '<name>*'    # the targets, tags and arguments
 docker buildx bake "${f[@]}" '<name>*' --set '*.output=type=docker'
+.github/actions/bake-test/test.sh containers/<name> <arch> docker-daemon:<first tag>   # its structure tests, as CI
 docker buildx build -f containers/<name>/dhi.yaml containers/<name>/   # DHI: after docker login dhi.io
 ```
 
-The build runs the image's smoke test. Bake's target is named after the
+The build runs the image's smoke test; `test.sh`, its structure tests
+(`containers/structure-test.yaml`, then its own `structure-test.yaml`).
+`<arch>`: the host's, `amd64` or `arm64`. Bake's target is named after the
 image, with the line and the Debian release when there are several
 (`haproxy-3-2-debian13`); `--print` lists them.

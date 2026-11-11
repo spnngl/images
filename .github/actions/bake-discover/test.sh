@@ -34,12 +34,15 @@ head='{
 ign='{
   "fedora": ["*", "!fedora/sysroot", "!k3s/install.sh"],
   "alma": ["# comment", "*", "!alma", "alma/**/*.md"],
-  "app": ["**/*.md", "!keep.md"],
-  "app-reports": ["**/*.md", "!keep.md"]
+  "app": ["**/*.md", "!keep.md", "structure-test.yaml"],
+  "app-reports": ["**/*.md", "!keep.md", "structure-test.yaml"]
 }'
 bakefiles='["docker-bake.hcl", "bootc/docker-bake.hcl", "bootc/fedora/docker-bake.hcl", "bootc/alma/docker-bake.hcl", "containers/app/docker-bake.hcl"]'
 # `git log --format=@%ct --name-only --no-renames`, newest first.
-log='@400
+log='@500
+containers/app/structure-test.yaml
+
+@400
 bootc/alma/docker-bake.hcl
 
 @300
@@ -121,6 +124,13 @@ if discover '[]' '["app", "gone"]' > /dev/null 2>&1; then
 else
   echo "ok: a sample name no target has fails discover"
 fi
+check "its structure test: built again, its epoch unmoved" \
+  "$(builds app) and [.targets[].epoch] == [\"100\"]" '["containers/app/structure-test.yaml"]'
+check "a kind's structure test: nothing built, the others tested as pushed" \
+  "$(builds) and [.kindtest[].id] == [\"app\"]" '["containers/structure-test.yaml"]'
+check "bake-test, with a sample: the sample built, the others tested as pushed" \
+  "$(builds app) and ([.kindtest[].id] | sort) == [\"alma\", \"fedora\"]" '[".github/actions/bake-test/test.sh"]' '["app"]'
+check "no kind test when every target builds" '.kindtest == []' null
 check "groups list their built targets only" '.groups == {"default": ["alma"], "vm-test": []}' '["bootc/alma/x.sh"]'
 
 if ((failed)); then

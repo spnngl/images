@@ -58,6 +58,7 @@ jobs:
       builds: ${{ steps.discover.outputs.builds }}
       files: ${{ steps.discover.outputs.files }}
       containerfiles: ${{ steps.discover.outputs.containerfiles }}
+      kindtest: ${{ steps.discover.outputs.kindtest }}
     steps:
       # The action's own files: a local action needs the checkout.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -192,6 +193,26 @@ jobs:
           platform: linux/${{ matrix.platform.arch }}
           fail: true
 
+  # containers/structure-test.yaml, or bake-test, changed: the images not
+  # built above are tested as pushed (their config alone), every
+  # platform, so that a rule none of them meets fails here, not at their
+  # next push.
+  kind-test:
+    needs: discover
+    if: needs.discover.outputs.kindtest != '[]'
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    steps:
+      # The action's own files: a local action needs the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/bake-test
+        with:
+          targets: ${{ needs.discover.outputs.kindtest }}
+
   # The pull request gate: the one check of this workflow the main
   # ruleset requires, the others being named after the images that
   # changed (.github/REFERENCES.md). Passes when every job above passed
@@ -204,6 +225,7 @@ jobs:
       - hadolint
       - conftest
       - build
+      - kind-test
     if: always()
     runs-on: ubuntu-26.04
     permissions: {}

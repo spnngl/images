@@ -4,9 +4,13 @@
 #   (a version, a tag, an argument...);
 # - or a file its build reads changed: those its .dockerignore keeps, its
 #   Containerfile or spec, its ignore files;
+# - or its structure test (structure-test.yaml beside its Containerfile or
+#   spec) changed: built again, from cache, as no .dockerignore keeps it;
 # - or the workflow, or one of these actions, changed: every target, or on
 #   a pull request the `sample` input's;
 # - or there is no base to compare with: every target.
+# Not built, but tested as pushed (`kindtest`): the others, when their
+# kind's structure test (<kind>/structure-test.yaml) or bake-test changed.
 # discover.jq's tests: test.sh, beside it.
 name: bake-discover
 description: Targets of Bake files to build, those changed since the base.
@@ -59,6 +63,12 @@ outputs:
     description: >-
       JSON object, each Bake group to the ids of its changed targets.
     value: ${{ steps.find.outputs.groups }}
+  kindtest:
+    description: >-
+      JSON array of {id, file, arches, tags}, as in `targets`: the targets
+      not built whose kind's structure test or bake-test changed, for
+      bake-test to check as pushed.
+    value: ${{ steps.find.outputs.kindtest }}
 
 runs:
   using: composite
@@ -180,3 +190,4 @@ runs:
         echo "builds=$(jq -c .builds "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
         echo "containerfiles=$(jq -c '[.targets[].file | select(endswith("/Containerfile"))] | unique' "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
         echo "groups=$(jq -c .groups "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"
+        echo "kindtest=$(jq -c .kindtest "${RUNNER_TEMP}/discovered.json")" >> "${GITHUB_OUTPUT}"

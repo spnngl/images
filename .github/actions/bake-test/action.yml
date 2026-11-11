@@ -1,0 +1,67 @@
+# The structure tests of Bake targets (test.sh, beside this file): one
+# image built by bake-build, before its digest goes to bake-push; or every
+# pushed image of a kind, when what every image of the kind ships changed
+# (the workflows' kind-test job, bake-discover's `kindtest`).
+# (.github/AGENTS.md, "Bake workflows")
+name: bake-test
+description: Run the structure tests of Bake targets.
+
+inputs:
+  targets:
+    description: JSON array of bake-discover's targets.
+    required: true
+  arch:
+    description: >-
+      amd64 or arm64: the platform tested. Empty: each of a target's
+      platforms.
+    default: ""
+  source:
+    description: >-
+      The image of the one target, as test.sh takes it (oci:<dir>,
+      docker://<reference>). Empty: each target's first tag, pushed; a
+      target not pushed yet is skipped, as the scan's missing baseline.
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    # test.sh reads registries with Docker's login: bake-build's, or the
+    # caller's for kind-test (ghcr.io's packages are public: none needed).
+    - shell: bash
+      env:
+        TARGETS: ${{ inputs.targets }}
+        ARCH: ${{ inputs.arch }}
+        SOURCE: ${{ inputs.source }}
+        TEST: ${{ github.action_path }}/test.sh
+      run: |-
+        # Read first: a jq failure fails the step, never tests nothing.
+        rows="$(jq -r --arg arch "${ARCH}" '
+          .[]
+          | (.file | sub("/[^/]*$"; "")) as $dir
+          | (if $arch == "" then .arches[] else $arch end) as $a
+          | [$dir, $a, .tags[0]]
+          | @tsv' <<< "${TARGETS}")"
+        [[ -n "${rows}" ]] || { echo "no target to test" >&2; exit 1; }
+        failed=0
+        while IFS=$'\t' read -r dir arch tag; do
+          source="${SOURCE}"
+          kind=()
+          if [[ -z "${source}" ]]; then
+            # Every pushed image: the kind's tests alone (test.sh --kind).
+            kind=(--kind)
+            if ! out="$(docker buildx imagetools inspect --raw "${tag}" 2>&1 > /dev/null)"; then
+              if [[ "${out}" == *"not found"* ]]; then
+                echo "::notice::${tag}: not pushed yet, not tested"
+                continue
+              fi
+              echo "${out}" >&2
+              failed=1
+              continue
+            fi
+            source="docker://${tag}"
+          fi
+          echo "::group::${dir} ${arch} ${source}"
+          "${TEST}" "${kind[@]}" "${dir}" "${arch}" "${source}" || failed=1
+          echo "::endgroup::"
+        done <<< "${rows}"
+        exit "${failed}"

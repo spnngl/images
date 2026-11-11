@@ -65,7 +65,7 @@ Before a change, read:
 ## Build check
 
 ```sh
-bootc/build.sh <id>   # id: a Bake target, e.g. fedora-45; builds it and a qcow2; needs docker buildx and rootful podman
+bootc/build.sh <id>   # id: a Bake target, e.g. fedora-45; builds it, runs its structure tests (bootc/structure-test.yaml), builds a qcow2; needs docker buildx and rootful podman
 bootc/run.sh <id>     # macOS Apple Silicon, then: ssh -p 2222 <user>@localhost
 ```
 

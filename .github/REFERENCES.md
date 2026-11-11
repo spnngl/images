@@ -12,6 +12,9 @@
 - Signing: `bootc/REFERENCES.md`, "Signing"
 - conftest: `github.com/open-policy-agent/conftest` at the version of
   `policy/conftest.sh` (`parser/` for the input shapes, `output/sarif.go`)
+- container-structure-test: `github.com/GoogleContainerTools/container-structure-test`
+  at the version of `.github/actions/bake-test/test.sh`
+  (`pkg/drivers/host_driver.go` for `--metadata`, `pkg/drivers/docker_driver.go`)
 - Copilot cloud agent: `github.com/github/docs`,
   `content/copilot/how-tos/use-copilot-agents/cloud-agent/`
   (`use-cloud-agent-on-github.md`, "Continuing work on a pull
@@ -261,6 +264,44 @@ Rego and run by conftest (`policy/AGENTS.md`).
   the Bake definition point to the kind's `docker-bake.hcl`, where
   `tags()` is: code scanning places an alert in a file of the
   repository.
+
+## Structure tests: `bake-test`
+
+container-structure-test (CST) checks the image as shipped: its config,
+and, for an image with its own `structure-test.yaml`, its files and
+commands. `.github/actions/bake-test/test.sh` runs it, in CI and by hand.
+
+- **In `bake-build`, before the digest artifact:** an image is pushed
+  once, by digest, in `build`; a failed test leaves no digest, so
+  `push` tags nothing. Named `bake-*`: `discover.jq` treats a change of
+  it as a change of the actions.
+- **Two files, the kind's then the image's:**
+  `<kind>/structure-test.yaml`, what every image of the kind ships, and
+  `structure-test.yaml` beside the image's Containerfile or spec, when
+  it has one.
+- **The kind's file holds metadata tests alone**, so `kind-test` checks
+  it on every pushed image without a build: the image's config, read
+  from the registry. A change tested on the pull request's sample alone
+  would fail the other images at the merge's push, where a failure
+  blocks their tags. A target not pushed yet is skipped. The image's own
+  file is left out (`test.sh --kind`): its commands would run every
+  platform on the job's one runner.
+- **Metadata alone: the config, not the image.** `skopeo inspect
+  --config` reads it (the platform's, from the layout or the registry),
+  and CST's host driver tests it (`--metadata`); the host driver runs
+  in CST's container and reads that file alone (`--force` skips its
+  prompt). A bootc image is gigabytes: nothing else is copied.
+- **Files or commands: the Docker driver**, on the image `skopeo copy`
+  puts in Docker. CST's `--image-from-oci-layout` refuses bake-build's
+  layout: its index holds an index (the image and its attestations).
+- **skopeo and CST from their images**, as the other checks: one
+  version each, in `test.sh`, where Renovate's "Images run by the
+  scripts" manager updates it. skopeo reads registries with Docker's
+  login (`~/.docker/config.json`, which `docker/login-action` writes).
+- **An image's test file rebuilds it, from cache:** `discover.jq` builds
+  a target whose `structure-test.yaml` changed; every application
+  image's `.dockerignore` drops the file, so its `SOURCE_DATE_EPOCH`
+  stays, and the cache serves the build.
 
 ## Vulnerability scanning
 

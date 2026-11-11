@@ -1,7 +1,8 @@
 # One target of Bake files, on one platform, on the runner of that platform:
 # native builds, no QEMU. Pushed by digest and untagged, for bake-push to
 # merge the platforms into one manifest list; or, without push, as an OCI
-# layout for the caller's scan or tests. Run once per target and platform
+# layout for the caller's scan or tests. Either way, bake-test runs the
+# image's structure tests. Run once per target and platform
 # (.github/AGENTS.md, "Bake workflows").
 name: bake-build
 description: Build one Bake target for one platform.
@@ -188,6 +189,15 @@ runs:
         mkdir -p "${RUNNER_TEMP}/digests"
         printf '%s\n' "${digest}" > "${RUNNER_TEMP}/digests/${ID}_${ARCH}"
         echo "digest=${digest}" >> "${GITHUB_OUTPUT}"
+
+    # The structure tests, before the digest goes to bake-push: a failed
+    # one leaves no digest, so nothing is tagged.
+    - uses: ./.github/actions/bake-test
+      with:
+        targets: ${{ format('[{0}]', inputs.item) }}
+        arch: ${{ inputs.arch }}
+        source: ${{ inputs.push == 'true' && format('docker://{0}@{1}', fromJSON(inputs.item).repositories[0], steps.digest.outputs.digest) || format('oci:{0}', inputs.oci-dir) }}
+
     - if: inputs.push == 'true'
       uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
       with:

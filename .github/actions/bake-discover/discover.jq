@@ -77,17 +77,18 @@ def commits:
         .key as $id
         | .value as $target
         | ($target.context | sub("/+$"; "")) as $context
+        | ($context + "/" + ($target.dockerfile // "Dockerfile") | sub("/[^/]*$"; "")) as $dir
         | {
             id: $id,
             context: $context,
             dockerfile: ($target.dockerfile // "Dockerfile"),
+            dir: $dir,
             patterns: ($ign[$id] // [] | compile),
             target: $target,
             # Shared bake files, and those beside the target's Containerfile:
             # a context may be shared (bootc/), a folder is one image's.
             bake: (
-              ($context + "/" + ($target.dockerfile // "Dockerfile") | sub("/[^/]*$"; "")) as $dir
-              | $bakefiles
+              $bakefiles
               | map(
                   select(
                     . as $file
@@ -112,13 +113,27 @@ def commits:
 | map(
     . as $t
     | select(($t.target.tags // []) | length > 0)
-    | select(
-        $everything
-        or ($ci and IN($t.id; ($sample // [])[]))
-        or ($base[0].target[$t.id] != $t.target)
-        or any($changed[]; read_by($t))
-      )
     | {
+        build: (
+          $everything
+          or ($ci and IN($t.id; ($sample // [])[]))
+          or ($base[0].target[$t.id] != $t.target)
+          or any($changed[]; read_by($t))
+          # Its structure test: tested again, its epoch unmoved (no
+          # .dockerignore keeps it), so it builds from cache.
+          or any($changed[]; . == ($t.dir + "/structure-test.yaml"))
+        ),
+        # What every image of its kind ships (<kind>/structure-test.yaml,
+        # <kind> its context's first folder), or how bake-test checks it,
+        # changed: tested as pushed when not built (`kindtest`).
+        kind: (
+          $changed != null
+          and any(
+            $changed[];
+            . == ($t.context | split("/")[0]) + "/structure-test.yaml"
+              or startswith(".github/actions/bake-test/")
+          )
+        ),
         id: $t.id,
         context: $t.context,
         file: ($t.context + "/" + $t.dockerfile),
@@ -144,9 +159,13 @@ def commits:
         rewritetimestamp: (first($t.target.output[]? | ."rewrite-timestamp" // empty) // "true"),
         allow: (($t.target.entitlements // []) | join(","))
       }
-  ) as $targets
+  ) as $tagged
+| [$tagged[] | select(.build) | del(.build, .kind)] as $targets
 | {
     targets: $targets,
+    # What bake-test reads: one job tests them all, its input in one
+    # environment variable.
+    kindtest: [$tagged[] | select(.kind and (.build | not)) | {id, file, arches, tags}],
     # One build job per target and platform, each on a runner of that platform.
     builds: {
       include: [

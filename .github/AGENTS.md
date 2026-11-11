@@ -29,7 +29,12 @@ action; a Bake file describes the build, the workflow only runs it.
    first.
 2. `build` (`actions/bake-build`) builds one target on one platform, on
    a runner of that platform. It pushes the image by digest, untagged,
-   or, without `push`, writes an OCI layout to scan or test.
+   or, without `push`, writes an OCI layout to scan or test. Either
+   way, `actions/bake-test` runs its structure tests before its digest
+   is handed to `push`.
+   `kind-test` (`actions/bake-test`, on bake-discover's `kindtest`)
+   tests the pushed images not built, when their kind's
+   `structure-test.yaml` or `bake-test` changed.
 3. `push` (`actions/bake-push`) merges the platforms into one manifest
    list with every tag, then signs, verifies and attests it.
 
@@ -46,6 +51,9 @@ Rules of the actions, so a workflow stays a list of `uses:`:
   Never export one build twice (an OCI layout beside the push): the
   digest bake reports is then not the pushed one.
 - A new action input has a default or a reason in `REFERENCES.md`.
+- A kind's `structure-test.yaml` (`containers/`, `bootc/`) holds
+  metadata tests alone: `kind-test` reads each pushed image's config,
+  never runs it. File and command tests go in an image's own.
 
 ## Rules
 

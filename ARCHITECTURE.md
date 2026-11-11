@@ -27,7 +27,8 @@ they share the actions `.github/actions/bake-*`.
    proposes bumps (the Debian snapshot and digests on Saturdays).
    Gentoo's stage3 excepted: each build takes the latest.
 2. **Build:** on a change, CI builds each platform natively, runs the
-   image's tests, and pushes one manifest list per image.
+   image's tests and structure tests (`structure-test.yaml`), and
+   pushes one manifest list per image.
 3. **Rebuild:** every Sunday, so images pick up base and package fixes
    under the same tag.
 4. **Verify:** CI signs each pushed image with one cosign key; bootc
