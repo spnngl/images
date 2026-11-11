@@ -149,7 +149,7 @@ EORUN
 # 65532, a CA bundle for Trivy's outbound TLS (the databases on ghcr.io,
 # image registries), and a 1777 /tmp. On top: the binary, the report
 # templates, the state folders, and the licenses.
-FROM ghcr.io/spnngl/images/git:2.56.0@sha256:cf8f8fd36aa1a807b9ea47a4d1be51fe686b36888d91d1818b457f88334902bc
+FROM ghcr.io/spnngl/images/git:2.56.1@sha256:c056ace1677d93cedb24a6237b7f260342e6dfbdbb77da154943213e69640bf8
 ARG BASE_VERSION
 
 # The licenses of git, OpenSSH and busybox: GPL-2.0-only, SSH-OpenSSH.
