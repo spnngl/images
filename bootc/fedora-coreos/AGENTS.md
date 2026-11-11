@@ -74,8 +74,10 @@ each choice: [REFERENCES.md](REFERENCES.md).
 - **Checks:** in the layer that ships what they check: what holds for
   the image's files in `test/<layer>/build.yaml` (goss, at every build,
   CI included), what needs the booted node in
-  `test/<layer>/<suite>.yaml` (goss, `test.sh`). A Containerfile `grep` only guards the
-  `sed` before it.
+  `test/<layer>/<suite>.yaml` (goss, `test.sh`); the image's config
+  (labels) in `bootc/structure-test.yaml`, shared by every bootc image
+  (container-structure-test, `.github/actions/bake-test/test.sh`). A
+  Containerfile `grep` only guards the `sed` before it.
 - **Renovate** proposes `BASE` and `KUBERNETES`, the Cilium of `vm.sh`
   and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
   automerged once every check is green (`vm-test` runs the build check)

@@ -116,6 +116,7 @@
                 "/^containers/[^/]+/[^/]+\\.sh$/",
                 "/^bootc/[^/]+\\.sh$/",
                 "/^policy/[^/]+\\.sh$/",
+                "/^\\.github/actions/bake-[^/]+/[^/]+\\.sh$/",
                 "/\\.md$/"
             ],
             "matchStrings": [
@@ -162,7 +163,9 @@
                 "ghcr.io/renovatebot/renovate",
                 "docker.io/rhysd/actionlint",
                 "ghcr.io/zizmorcore/zizmor",
-                "docker.io/openpolicyagent/conftest"
+                "docker.io/openpolicyagent/conftest",
+                "ghcr.io/googlecontainertools/container-structure-test",
+                "quay.io/skopeo/stable"
             ],
             "matchUpdateTypes": ["minor", "patch"],
             "automerge": true

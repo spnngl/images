@@ -1,0 +1,15 @@
+# What every bootc image ships, checked by
+# .github/actions/bake-test/test.sh (container-structure-test) on each
+# build, and on every pushed image when this file changes (the
+# workflow's kind-test job). Metadata only: test.sh refuses another key,
+# so a test reads the image's config alone, never its gigabytes. Its
+# files: goss, in the build (bootc/REFERENCES.md).
+schemaVersion: 2.0.0
+metadataTest:
+  labels:
+    # bootc refuses to install or switch to an image without it.
+    - key: containers.bootc
+      value: "1"
+    # Links the ghcr.io package to this repository.
+    - key: org.opencontainers.image.source
+      value: https://github.com/spnngl/images

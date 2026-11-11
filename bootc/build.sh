@@ -38,8 +38,8 @@ bake=(docker buildx bake -f docker-bake.hcl -f bootc/docker-bake.hcl)
 for file in bootc/*/docker-bake.hcl; do
     bake+=(-f "${file}")
 done
-tag="$("${bake[@]}" --print --progress=quiet "${id}" |
-    jq -r --arg id "${id}" '.target[$id] | select(.context == "bootc") | .tags[0] // empty')"
+definition="$("${bake[@]}" --print --progress=quiet "${id}")"
+tag="$(jq -r --arg id "${id}" '.target[$id] | select(.context == "bootc") | .tags[0] // empty' <<< "${definition}")"
 [[ -n ${tag} ]] || die "${id} is not an image of bootc/fedora or bootc/almalinux"
 
 if [[ -z ${SKIP_BUILD:-} ]]; then
@@ -54,6 +54,11 @@ if [[ -z ${SKIP_BUILD:-} ]]; then
     tar="$(mktemp)"
     trap 'rm -f "${tar}"' EXIT
     "${bake[@]}" --set "${id}.platform=${platform}" --set "${id}.output=type=docker,dest=${tar}" "${id}"
+    # The structure tests CI runs on it, the image's folder from its
+    # Containerfile.
+    .github/actions/bake-test/test.sh \
+        "bootc/$(jq -r --arg id "${id}" '.target[$id].dockerfile | sub("/[^/]*$"; "")' <<< "${definition}")" \
+        "${platform#linux/}" "docker-archive:${tar}"
     podman load -i "${tar}"
 fi
 

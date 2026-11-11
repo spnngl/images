@@ -1,0 +1,11 @@
+# What every application image ships, checked by
+# .github/actions/bake-test/test.sh (container-structure-test) on each
+# build, and on every pushed image when this file changes (the
+# workflow's kind-test job). Metadata only: test.sh refuses another key,
+# so this file needs no image run.
+schemaVersion: 2.0.0
+metadataTest:
+  labels:
+    # Links the ghcr.io package to this repository.
+    - key: org.opencontainers.image.source
+      value: https://github.com/spnngl/images

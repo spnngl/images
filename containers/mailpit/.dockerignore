@@ -13,6 +13,7 @@ spec.yml
 *-lock.sh
 compose.yml
 docker-bake.hcl
+structure-test.yaml
 public
 node_modules
 resources
