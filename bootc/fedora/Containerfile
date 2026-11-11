@@ -9,6 +9,11 @@
 ARG BASE_VERSION
 
 
+# goss, upstream's static build, for the checks at the end of kubeenv:
+# one binary for fedora and almalinux (AlmaLinux 9's EPEL has no goss).
+FROM ghcr.io/goss-org/goss:v0.4.10 AS goss
+
+
 # The host system.
 FROM quay.io/fedora/fedora-bootc:${BASE_VERSION} AS base
 
@@ -83,6 +88,15 @@ RUN --mount=type=bind,source=k3s/install.sh,target=/k3s/install.sh \
 
 # After the install, so that editing sysroot/ doesn't rerun it.
 COPY --link ./k3s/sysroot/ /
+
+# Checks of the image's files (test/build.yaml, which includes k3s's):
+# a failed check fails the build. goss and the checks are mounted: the
+# image ships neither.
+RUN --network=none \
+    --mount=type=bind,from=goss,source=/usr/bin/goss,target=/run/goss/goss \
+    --mount=type=bind,source=fedora/test,target=/run/goss/fedora/test \
+    --mount=type=bind,source=k3s/test,target=/run/goss/k3s/test \
+    ["/run/goss/goss", "--gossfile", "/run/goss/fedora/test/build.yaml", "validate"]
 
 # Keep this as the last instruction, on its own.
 # hadolint ignore=DL3059

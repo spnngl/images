@@ -43,6 +43,18 @@
   through `bootc upgrade` and change release only with `bootc switch`.
 - **`bootc container lint` without `--fatal-warnings`:** errors fail
   the build, warnings are printed.
+- **goss for fedora's and almalinux's files, container-structure-test
+  for the image config:** goss reads files, links and command output
+  in the build, where the image's tools run; CST's labels need only the
+  config (`bootc/structure-test.yaml`). goss is upstream's static
+  binary (`ghcr.io/goss-org/goss`, `/usr/bin/goss`), one for both
+  bases: AlmaLinux 9's EPEL has none. Mounted in a `RUN` with the
+  checks, its layer is empty (`docker history`: 4.1 kB, the empty
+  layer's digest). fedora-coreos keeps Fedora's package in its own
+  stage (`fedora-coreos/AGENTS.md`).
+- **The k3s release in the checks comes from the build:** goss reads
+  `{{.Env.INSTALL_K3S_VERSION}}`, the `ARG` Bake sets, so no version is
+  written in a test.
 - **hadolint ignores DL3041** (pin dnf versions): packages follow the
   pinned base release.
 - **One `RUN <<EORUN` heredoc with `set -xeuo pipefail`:** one layer

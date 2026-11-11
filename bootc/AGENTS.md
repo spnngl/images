@@ -32,7 +32,13 @@ Before a change, read:
   `sysroot/<BASE_VERSION>/` for files that differ between base releases
   (`policy.json`).
 - **`bootc/k3s/`** is shared, not an image: every `kubeenv` stage runs
-  its `install.sh` and copies its `sysroot/`.
+  its `install.sh`, copies its `sysroot/` and includes its checks
+  (`test/build.yaml`).
+- **`test/build.yaml`**: the goss checks of fedora's and almalinux's
+  files, which the `kubeenv` stage's goss step runs before the lint; a
+  failed check fails the build. It includes `bootc/k3s/test/build.yaml`
+  and `bootc/fedora/test/signature.yaml`. A unit the Containerfile
+  enables, or a file a boot needs, gets a check there.
 
 ## Rules
 

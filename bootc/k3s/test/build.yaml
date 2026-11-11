@@ -1,0 +1,59 @@
+# Checks of what bootc/k3s/install.sh and bootc/k3s/sysroot/ put in the
+# kubeenv stage, included by every image's test/build.yaml and run at
+# build time by its goss step: what holds without booting.
+# Patterns: a plain string is a substring of a line, /.../ a regular
+# expression, a leading ! negates.
+
+file:
+  # CRI-O enabled; k3s and k3s-agent installed, both disabled: the role is
+  # per host (bootc/K3S.md).
+  /etc/systemd/system/multi-user.target.wants/crio.service:
+    exists: true
+    filetype: symlink
+    linked-to: /usr/lib/systemd/system/crio.service
+  /etc/systemd/system/multi-user.target.wants/k3s.service: {exists: false}
+  /etc/systemd/system/multi-user.target.wants/k3s-agent.service: {exists: false}
+  # Both roles on CRI-O, with the image's kubelet drop-ins.
+  /usr/lib/systemd/system/k3s.service:
+    exists: true
+    contents:
+      - --container-runtime-endpoint=unix:///run/crio/crio.sock
+      - --kubelet-arg=config-dir=/usr/lib/rancher/k3s/kubelet.conf.d
+  /usr/lib/systemd/system/k3s-agent.service:
+    exists: true
+    contents:
+      - --container-runtime-endpoint=unix:///run/crio/crio.sock
+      - --kubelet-arg=config-dir=/usr/lib/rancher/k3s/kubelet.conf.d
+  # The kubelet drop-ins' folder, which both units name.
+  /usr/lib/rancher/k3s/kubelet.conf.d/20-my-kubelet.conf: {exists: true, filetype: file}
+  # The slice the drop-ins put k3s and CRI-O in.
+  /usr/lib/systemd/system/kube.slice: {exists: true, filetype: file}
+  /usr/lib/systemd/system/crio.service.d/10-slice.conf: {exists: true, contents: [/^Slice=kube.slice$/]}
+  /usr/lib/systemd/system/k3s.service.d/10-slice.conf: {exists: true, contents: [/^Slice=kube.slice$/]}
+  /usr/lib/systemd/system/k3s-agent.service.d/10-slice.conf: {exists: true, contents: [/^Slice=kube.slice$/]}
+  # The files config.yaml names, and the one admission-controls.yaml
+  # names: k3s server doesn't start without them.
+  /etc/rancher/k3s/admission-controls/admission-controls.yaml: {exists: true, filetype: file}
+  /etc/rancher/k3s/admission-controls/podsecurity.yaml: {exists: true, filetype: file}
+  /etc/rancher/k3s/audit-policy.yaml: {exists: true, filetype: file}
+  /etc/rancher/k3s/kubelet-server.conf: {exists: true, filetype: file}
+  # CRI-O's registries.conf.d/crio.conf would override podman's search
+  # registries (install.sh).
+  /etc/containers/registries.conf.d/crio.conf: {exists: false}
+
+command:
+  # The k3s release Bake set.
+  k3s --version:
+    exec: k3s --version
+    exit-status: 0
+    # A large binary: slow to start under QEMU (a cross-platform build).
+    timeout: 60000
+    stdout: ["k3s version {{.Env.INSTALL_K3S_VERSION}} "]
+  # 20-k3s.conf's keys reach CRI-O's merged config.
+  crio config:
+    exec: crio config
+    exit-status: 0
+    timeout: 60000
+    stdout:
+      - global_auth_file = "/etc/ostree/auth.json"
+      - /^conmon_cgroup = "pod"$/

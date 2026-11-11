@@ -5,5 +5,7 @@
 *
 !fedora/policy.jq
 !fedora/sysroot
+!fedora/test
 !k3s/install.sh
 !k3s/sysroot
+!k3s/test
