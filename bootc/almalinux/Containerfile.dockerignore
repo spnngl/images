@@ -1,13 +1,17 @@
 # The build context is bootc/, shared by fedora and almalinux: send only what this
 # Containerfile reads, so that discover rebuilds it only when that changes:
-# fedora's policy check and shared files, not its Containerfile or versions.
+# fedora's policy check, shared files and signature checks, not its
+# Containerfile or versions.
 # BuildKit reads this file, named after the Containerfile, before
 # any bootc/.dockerignore (bootc/REFERENCES.md, "Shared build context").
 *
 !almalinux/geoblock.nu
 !almalinux/test_geoblock.nu
 !almalinux/sysroot
+!almalinux/test
 !fedora/policy.jq
 !fedora/sysroot/common
+!fedora/test/signature.yaml
 !k3s/install.sh
 !k3s/sysroot
+!k3s/test

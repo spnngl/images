@@ -14,6 +14,10 @@ choice: [REFERENCES.md](REFERENCES.md).
   `ARG INSTALL_K3S_VERSION`, set by Bake from the `K3S` variable of
   `bootc/docker-bake.hcl`, which Renovate updates. The tag suffix,
   `-v<minor>k3s`, is computed from it (`line()`).
+- `test/build.yaml` checks what `install.sh` and `sysroot/` leave in
+  the image, at build time (goss, included by each image's
+  `test/build.yaml`): a unit `install.sh` enables or a file a boot
+  needs gets a check there.
 
 ## Updates
 

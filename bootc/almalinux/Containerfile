@@ -125,6 +125,10 @@ geoblock zones /out/usr/share/geoblock/blocklists bogons /out ...$countries
 EORUN
 
 
+# goss, for the checks at the end of kubeenv: bootc/fedora/Containerfile.
+FROM ghcr.io/goss-org/goss:v0.4.10 AS goss
+
+
 # The host system.
 FROM quay.io/almalinuxorg/almalinux-bootc:${BASE_VERSION} AS base
 
@@ -215,6 +219,16 @@ RUN --mount=type=bind,source=k3s/install.sh,target=/k3s/install.sh \
 
 # After the install, so that editing sysroot/ doesn't rerun it.
 COPY --link ./k3s/sysroot/ /
+
+# Checks of the image's files (test/build.yaml, which includes fedora's
+# signature checks and k3s's): a failed check fails the build. goss and
+# the checks are mounted: the image ships neither.
+RUN --network=none \
+    --mount=type=bind,from=goss,source=/usr/bin/goss,target=/run/goss/goss \
+    --mount=type=bind,source=almalinux/test,target=/run/goss/almalinux/test \
+    --mount=type=bind,source=fedora/test/signature.yaml,target=/run/goss/fedora/test/signature.yaml \
+    --mount=type=bind,source=k3s/test,target=/run/goss/k3s/test \
+    ["/run/goss/goss", "--gossfile", "/run/goss/almalinux/test/build.yaml", "validate"]
 
 # Keep this as the last instruction, on its own.
 # hadolint ignore=DL3059

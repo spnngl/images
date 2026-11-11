@@ -151,7 +151,7 @@
             "automerge": true
         },
         {
-            "description": "Build tools, and runtimes the image's tests run (configarr's node), that CI exercises (the Containerfiles' smoke tests, the spec's tests, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates (pinned FROM lines: see the weekly rule below).",
+            "description": "Build tools, and runtimes the image's tests run (configarr's node), that CI exercises (the Containerfiles' smoke tests, the spec's tests, the structure tests, the bootc goss checks, test_geoblock.nu), or doc-only: automerge minor/patch once CI is green. Not digest updates (pinned FROM lines: see the weekly rule below).",
             "matchDepNames": [
                 "docker.io/library/golang",
                 "docker.io/library/node",
@@ -165,7 +165,8 @@
                 "ghcr.io/zizmorcore/zizmor",
                 "docker.io/openpolicyagent/conftest",
                 "ghcr.io/googlecontainertools/container-structure-test",
-                "quay.io/skopeo/stable"
+                "quay.io/skopeo/stable",
+                "ghcr.io/goss-org/goss"
             ],
             "matchUpdateTypes": ["minor", "patch"],
             "automerge": true

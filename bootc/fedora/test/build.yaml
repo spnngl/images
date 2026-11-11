@@ -1,0 +1,15 @@
+# fedora's checks, run at build time by the Containerfile's goss step:
+# what holds without booting. Patterns: a plain string is a substring of
+# a line, /.../ a regular expression, a leading ! negates.
+gossfile:
+  signature.yaml: {}
+  ../../k3s/test/build.yaml: {}
+
+file:
+  # The units the Containerfile enables (`systemctl enable` links them in
+  # /etc), and NetworkManager masked.
+  /etc/systemd/system/multi-user.target.wants/sshd.service: {exists: true, filetype: symlink, linked-to: /usr/lib/systemd/system/sshd.service}
+  /etc/systemd/system/multi-user.target.wants/firewalld.service: {exists: true, filetype: symlink, linked-to: /usr/lib/systemd/system/firewalld.service}
+  /etc/systemd/system/multi-user.target.wants/systemd-networkd.service: {exists: true, filetype: symlink, linked-to: /usr/lib/systemd/system/systemd-networkd.service}
+  /etc/systemd/system/multi-user.target.wants/mdmonitor.service: {exists: true, filetype: symlink, linked-to: /usr/lib/systemd/system/mdmonitor.service}
+  /etc/systemd/system/NetworkManager.service: {exists: true, filetype: symlink, linked-to: /dev/null}

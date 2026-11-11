@@ -1,0 +1,20 @@
+# Checks of bootc/fedora/sysroot/common/, which fedora and almalinux both
+# ship: included by their test/build.yaml.
+
+file:
+  # The signature chain hosts check on `bootc upgrade` (bootc/REFERENCES.md,
+  # "Signing"): the key, the policy naming it, and where signatures are.
+  # That the image ships them: conftest's bootc.signature checks the
+  # policy itself, the key on the scope (policy/AGENTS.md).
+  /usr/share/pki/containers/spnngl-images.pub:
+    exists: true
+    filetype: file
+    contents: ["/^-----BEGIN PUBLIC KEY-----$/"]
+  /etc/containers/policy.json:
+    exists: true
+    contents:
+      - '"ghcr.io/spnngl/images"'
+      - '"keyPath": "/usr/share/pki/containers/spnngl-images.pub"'
+  /etc/containers/registries.d/spnngl-images.yaml:
+    exists: true
+    contents: ["/^ *use-sigstore-attachments: true$/"]
