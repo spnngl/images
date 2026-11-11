@@ -26,8 +26,9 @@ fileExistenceTests:
     uid: 0
     gid: 0
     permissions: "-rwxr-xr-x"
-  # No /bin/sh check: the image ships dash, which Dalec brings in with
-  # Debian's Essential packages, though spec.yml says it has no shell.
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
   - name: license
     path: /usr/share/doc/configarr/LICENSE.gz
     shouldExist: true

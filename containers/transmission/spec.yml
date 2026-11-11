@@ -56,6 +56,11 @@ dependencies:
   runtime:
     # Trackers' and blocklists' HTTPS (libcurl).
     ca-certificates: {}
+    # Not used by Transmission: Dalec 0.22.4 purges it before its last
+    # dpkg run, which then fails and leaves the shell in the image
+    # (containers/jellyfin/REFERENCES.md).
+    # TODO: drop when Dalec keeps the libraries dpkg links.
+    libmd0: {}
 
 build:
   env:

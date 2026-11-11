@@ -45,3 +45,6 @@ Each failed save leaves a `settings.json.tmp.<random>` in `/config`.
 Automerged for minor and patch releases once the build and its tests
 pass (`depType=automerge`); majors by hand. A checksum-only update means
 upstream moved the tag.
+
+On a Dalec update, check whether `libmd0` can leave the runtime
+dependencies (`containers/jellyfin/REFERENCES.md`).

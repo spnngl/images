@@ -107,6 +107,11 @@ dependencies:
     # PID 1, as upstream: forwards SIGTERM and SIGINT, which node as PID 1
     # ignores, and reaps git's processes.
     dumb-init: {}
+    # Not used by configarr: Dalec 0.22.4 purges it before its last dpkg
+    # run, which then fails and leaves the shell in the image
+    # (containers/jellyfin/REFERENCES.md).
+    # TODO: drop when Dalec keeps the libraries dpkg links.
+    libmd0: {}
 
 image:
   entrypoint: /usr/bin/dumb-init /usr/bin/node /usr/lib/configarr/bundle.cjs
