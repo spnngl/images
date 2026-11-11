@@ -335,9 +335,11 @@ jobs:
     permissions: {}
     steps:
       - env:
-          NEEDS: ${{ toJSON(needs) }}
+          # The results alone: needs also holds discover's outputs, every
+          # target, past what one environment variable may hold.
+          RESULTS: ${{ toJSON(needs.*.result) }}
         run: |-
-          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<< "${NEEDS}"
+          jq -e 'all(.[]; . == "success" or . == "skipped")' <<< "${RESULTS}"
 
   # The build cache's versions not updated in 14 days (.github/REFERENCES.md,
   # "The bootc images' build cache in ghcr.io"): main's tags are rewritten
