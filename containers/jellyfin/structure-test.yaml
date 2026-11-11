@@ -31,3 +31,6 @@ fileExistenceTests:
   - name: /bin/sh
     path: /bin/sh
     shouldExist: false
+  - name: license
+    path: /usr/share/doc/jellyfin/copyright
+    shouldExist: true

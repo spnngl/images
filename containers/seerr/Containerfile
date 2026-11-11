@@ -170,6 +170,7 @@ ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1
 
 COPY --link --from=app-files /app/ /app/
+COPY --link --from=source /LICENSE /usr/share/doc/seerr/
 USER 65532:65532
 WORKDIR /app
 EXPOSE 5055

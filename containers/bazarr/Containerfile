@@ -236,6 +236,7 @@ LABEL org.opencontainers.image.title="Bazarr" \
 # the image's user's.
 COPY --link --from=build /rootfs/ /
 COPY --link --from=build --chown=0:0 /out/usr/ /usr/
+COPY --link --from=source /LICENSE /usr/share/doc/bazarr/
 COPY --link --from=build --chown=65532:65532 /out/config/ /config/
 
 # NO_UPDATE: Bazarr never replaces its install folder nor runs pip

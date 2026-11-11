@@ -109,6 +109,8 @@ build:
     # The server as jellyfin-server installs it: .NET's dotnet publish
     # output, the jellyfin executable included.
     - command: cp -a /usr/lib/jellyfin/bin jellyfin
+    # Its license and copyright notices, as its package ships them.
+    - command: cp /usr/share/doc/jellyfin-server/copyright copyright
 
 artifacts:
   # Upstream's binaries as they ship them: their deb build can't strip
@@ -117,6 +119,10 @@ artifacts:
   libs:
     # Installed as /usr/lib/jellyfin.
     jellyfin: {}
+  licenses:
+    # In /usr/share/doc/jellyfin/. Declaring it also keeps the Debian
+    # packages' copyright files (containers/sabnzbd/REFERENCES.md).
+    copyright: {}
 
 image:
   entrypoint: /usr/lib/jellyfin/jellyfin
