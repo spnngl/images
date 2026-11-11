@@ -355,7 +355,7 @@
             "allowedVersions": "/^\\d+\\.\\d{8}\\.3\\.\\d+$/"
         },
         {
-            "description": "A new Fedora major of fedora-coreos: the GPU image's NVIDIA repository URLs hold it (bootc/fedora-coreos/nvidia.repo takes it from the base, $releasever, but the driver's registryUrl in docker-bake.hcl is literal).",
+            "description": "A new Fedora major of fedora-coreos: the GPU image's NVIDIA repository URLs hold it (bootc/fedora-coreos/repos/nvidia.conf takes it from the base, $releasever, but the driver's registryUrl in docker-bake.hcl is literal).",
             "matchDepNames": ["quay.io/fedora/fedora-coreos"],
             "matchUpdateTypes": ["major"],
             "prBodyNotes": [

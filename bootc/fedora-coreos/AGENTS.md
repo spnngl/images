@@ -101,6 +101,9 @@ with `bootc switch`.
 
 - `Containerfile`, `sysroot/<layer>/`: the image (`system`, `kube`,
   `vm`, `metal`).
+- `repos/<name>.conf`: the dnf repositories of the build (Kubernetes',
+  NVIDIA's), bind-mounted by the stages that install from them, never in
+  the image.
 - `docker-bake.hcl`: the targets (one pair per Kubernetes line), their
   versions and tags, the `vm-test` and `disk-image` groups.
 - `workbench.sh`: a rootful podman container on an x86_64 host with KVM,

@@ -2,7 +2,7 @@
 # BuildKit and buildah both read this file (REFERENCES.md, "Own build context").
 *
 !policy.jq
-!nvidia.repo
+!repos/
 !sysroot/
 !test/build.yaml
 !test/*/build.yaml
