@@ -27,7 +27,7 @@ set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
 
 cst_image=ghcr.io/googlecontainertools/container-structure-test:1.22.1
-skopeo_image=quay.io/skopeo/stable:v1.21.0
+skopeo_image=quay.io/skopeo/stable:v1.24.1
 
 usage() {
   echo "usage: .github/actions/bake-test/test.sh [--kind] <folder> <arch> oci:<dir>|oci-archive:<file>|docker-archive:<file>|docker://<reference>|docker-daemon:<reference>" >&2
