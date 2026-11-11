@@ -186,7 +186,7 @@ find /out /setuid -type f -perm -u+x | while read -r f; do
 done
 EORUN
 
-FROM ghcr.io/spnngl/images/git:2.56.0@sha256:cf8f8fd36aa1a807b9ea47a4d1be51fe686b36888d91d1818b457f88334902bc
+FROM ghcr.io/spnngl/images/git:2.56.1@sha256:c056ace1677d93cedb24a6237b7f260342e6dfbdbb77da154943213e69640bf8
 ARG BASE_VERSION
 
 # Licenses: BuildKit's, runc's and RootlessKit's (Apache-2.0), shadow's
