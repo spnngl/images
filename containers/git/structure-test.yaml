@@ -1,6 +1,27 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  entrypoint: ["/usr/bin/git"]
+  cmd: ["--version"]
+  workdir: "/git"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "git"
+    path: /usr/libexec/git-core/git
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # A shell: the image's purpose needs it (containers/AGENTS.md, Shell-less).
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: true
+  - name: license
+    path: /usr/share/doc/git/COPYING
+    shouldExist: true
 commandTests:
   # The binaries run on this platform (the build stage tested
   # the transports), git finds its exec path and templates at the image's

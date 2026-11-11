@@ -121,6 +121,19 @@ By what the app needs at runtime; name that need in the image's
   one, and those it is built `FROM`). Such a `RUN` with `--mount`
   stays: it reads a build stage's file or needs a tmpfs, which
   container-structure-test can't give.
+  A **big** image's `structure-test.yaml` also checks its runtime
+  contract: user, ports, volumes, entrypoint, command, working folder,
+  the variables it sets; the program it runs root's and not writable
+  by the user; `/bin/sh` absent (present for the Shell-less exceptions);
+  its license file. The header keeps the reasons. These catch a
+  removal: container-structure-test checks the listed ports, volumes
+  and variables are there, not that nothing else is. An image is big when
+  its last stage (a Containerfile's `COPY`/`ADD`, a spec's `artifacts`)
+  ships, beside its program and the common files (CA certificates,
+  zoneinfo, licenses, `os-release`, `passwd`/`group`, empty data
+  folders), a config file, another program, a library or an
+  interpreter, or app files (web assets, data). An image that grows one
+  gets its contract checks in the same change.
 
 ## Limits
 

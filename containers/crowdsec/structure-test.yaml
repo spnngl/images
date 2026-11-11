@@ -1,0 +1,23 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "0:0"
+  volumes: ["/etc/crowdsec", "/var/lib/crowdsec/data"]
+  entrypoint: ["/usr/bin/crowdsec"]
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "crowdsec"
+    path: /usr/bin/crowdsec
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/crowdsec/LICENSE
+    shouldExist: true

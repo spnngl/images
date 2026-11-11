@@ -302,6 +302,18 @@ commands. `.github/actions/bake-test/test.sh` runs it, in CI and by hand.
   a target whose `structure-test.yaml` changed; every application
   image's `.dockerignore` drops the file, so its `SOURCE_DATE_EPOCH`
   stays, and the cache serves the build.
+- **A big image's file checks its runtime contract**
+  (`containers/AGENTS.md`, "Tests"): a config file, a second program
+  or app files give a change more ways to break what the header
+  promises. Read from the pushed images, then checked on every target of
+  the image (redis' and haproxy's release lines): a check true of one
+  line alone names a folder (redis' license is `COPYING` up to 7,
+  `LICENSE.txt` from 8).
+- **Ports without their protocol:** CST's drivers drop it from the
+  config (`strings.Split(p, "/")[0]`, `pkg/drivers/docker_driver.go`),
+  so `53/udp` and `53/tcp` are one check. A Dalec image has no port in
+  its config (dalec's `ImageConfig` has no field for it): its header
+  alone states them.
 
 ## Vulnerability scanning
 

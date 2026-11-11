@@ -1,0 +1,11 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  cmd: ["/bin/bash"]
+fileExistenceTests:
+  # A shell: the image's purpose needs it (containers/AGENTS.md, Shell-less).
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: true

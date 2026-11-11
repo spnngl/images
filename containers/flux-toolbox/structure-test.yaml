@@ -1,6 +1,19 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  cmd: ["/bin/sh"]
+  workdir: "/git"
+fileExistenceTests:
+  # A shell: the image's purpose needs it (containers/AGENTS.md, Shell-less).
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: true
+  - name: license
+    path: /usr/share/doc/flux/LICENSE
+    shouldExist: true
 commandTests:
   # Every program runs on this platform at the image's paths
   # (the build stage tested them), and the image's user reads every

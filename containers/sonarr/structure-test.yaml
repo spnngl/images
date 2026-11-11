@@ -1,6 +1,34 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["8989"]
+  volumes: ["/config"]
+  entrypoint: ["/usr/lib/sonarr/bin/Sonarr"]
+  cmd: ["-nobrowser", "-data=/config"]
+  workdir: "/config"
+  envVars:
+    - key: Sonarr__Log__AnalyticsEnabled
+      value: "false"
+    - key: DOTNET_EnableDiagnostics
+      value: "0"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "Sonarr"
+    path: /usr/lib/sonarr/bin/Sonarr
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/sonarr/LICENSE.md
+    shouldExist: true
 commandTests:
   # The archive's ffprobe, a static binary: it runs on this platform.
   - name: "ffprobe -version"

@@ -1,0 +1,34 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["6767"]
+  volumes: ["/config", "/tmp"]
+  entrypoint: ["/usr/bin/python3", "/usr/lib/bazarr/bazarr/main.py"]
+  cmd: ["--config", "/config"]
+  workdir: "/config"
+  envVars:
+    - key: LANG
+      value: "C.UTF-8"
+    - key: NO_UPDATE
+      value: "true"
+    - key: PYTHONUNBUFFERED
+      value: "1"
+    - key: STOPFILE
+      value: "/tmp/bazarr.stop"
+    - key: RESTARTFILE
+      value: "/tmp/bazarr.restart"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "main.py"
+    path: /usr/lib/bazarr/bazarr/main.py
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false

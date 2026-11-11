@@ -1,6 +1,29 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  volumes: ["/data"]
+  entrypoint: ["/nodejs/bin/node", "/mjolnir/index.js"]
+  workdir: "/mjolnir"
+  envVars:
+    - key: NODE_ENV
+      value: "production"
+    - key: NODE_CONFIG_DIR
+      value: "/data/config"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "node"
+    path: /nodejs/bin/node
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-r-xr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
 commandTests:
   # The addons load against this image's libraries, and its Node meets
   # upstream's range (>=<major>.0.0: another form fails, to be read).

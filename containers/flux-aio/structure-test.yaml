@@ -1,6 +1,22 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["9692", "9693", "9694", "9695", "9696", "9697", "9791", "9792", "9793", "9794", "9795", "9796", "9797", "9798", "9799"]
+  volumes: ["/data", "/tmp"]
+  envVars:
+    - key: TUF_ROOT
+      value: "/tmp/.sigstore"
+fileExistenceTests:
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/flux-aio/source-controller/LICENSE
+    shouldExist: true
 commandTests:
   # The binaries run on this platform, from scratch. One is
   # enough: the build stage ran each, built alike.

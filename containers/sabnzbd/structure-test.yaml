@@ -1,0 +1,28 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  volumes: ["/config", "/downloads"]
+  entrypoint: ["/usr/bin/python3", "/usr/lib/sabnzbd/SABnzbd.py"]
+  cmd: ["--config-file", "/config/sabnzbd.ini", "--server", "0.0.0.0:8080", "--browser", "0"]
+  workdir: "/config"
+  envVars:
+    - key: HOME
+      value: "/config"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "SABnzbd.py"
+    path: /usr/lib/sabnzbd/SABnzbd.py
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/lib/sabnzbd/LICENSE.txt
+    shouldExist: true

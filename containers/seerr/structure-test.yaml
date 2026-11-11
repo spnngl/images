@@ -1,6 +1,31 @@
 # The shipped image's own tests, after containers/structure-test.yaml
-# (.github/actions/bake-test/test.sh).
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
 schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["5055"]
+  volumes: ["/app/.next/cache", "/app/config"]
+  entrypoint: ["/nodejs/bin/node"]
+  cmd: ["dist/index.js"]
+  workdir: "/app"
+  envVars:
+    - key: NODE_ENV
+      value: "production"
+    - key: NEXT_TELEMETRY_DISABLED
+      value: "1"
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "node"
+    path: /nodejs/bin/node
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-r-xr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
 commandTests:
   # The addons load against this image's libraries, and its Node meets
   # upstream's range.

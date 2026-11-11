@@ -1,0 +1,22 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "0:0"
+  entrypoint: ["/usr/bin/nftables-exporter"]
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "nftables-exporter"
+    path: /usr/bin/nftables-exporter
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/nftables-exporter/LICENSE.gz
+    shouldExist: true

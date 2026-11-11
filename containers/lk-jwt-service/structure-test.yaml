@@ -1,0 +1,23 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh). A big image: its runtime contract
+# too (containers/AGENTS.md, "Tests"); the reasons are in its header.
+schemaVersion: 2.0.0
+metadataTest:
+  user: "65532:65532"
+  exposedPorts: ["8080"]
+  entrypoint: ["/lk-jwt-service"]
+fileExistenceTests:
+  # What the image runs: root's, not writable by the image's user.
+  - name: "lk-jwt-service"
+    path: /lk-jwt-service
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rwxr-xr-x"
+  # Shell-less (containers/AGENTS.md, "Rules").
+  - name: /bin/sh
+    path: /bin/sh
+    shouldExist: false
+  - name: license
+    path: /usr/share/doc/lk-jwt-service/LICENSE
+    shouldExist: true
