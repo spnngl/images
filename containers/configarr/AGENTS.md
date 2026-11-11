@@ -45,3 +45,6 @@ moved to it; until then, close the PR (Renovate then ignores that
 major). The node image's major PR also bumps the other images on it
 (`rg library/node containers`): closing it holds them too. Corepack ships with Node.js up to 24: a newer
 node image needs pnpm another way.
+
+On a Dalec update, check whether `libmd0` can leave the runtime
+dependencies (`containers/jellyfin/REFERENCES.md`).

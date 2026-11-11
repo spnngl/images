@@ -37,4 +37,5 @@
   libraries before purging the cleanup tools with dpkg, so that purge
   fails (`libmd.so.0: cannot open shared object file`) and leaves
   dash, coreutils and grep in the image. Kept, dpkg runs and they go.
-  Also crowdsec's.
+  Still so in 0.22.4. Also crowdsec's, configarr's and transmission's;
+  each image's structure test checks `/bin/sh` is absent.
