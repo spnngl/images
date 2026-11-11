@@ -444,14 +444,10 @@ oscap xccdf eval --profile xccdf_local_profile_build \
 STATE_DIRECTORY=/reports/grype CACHE_DIRECTORY=/var/cache/grype /usr/libexec/grype-scan
 EORUN
 
-# goss, from Fedora's package, in a stage of its own: the goss stage mounts
-# its binary alone, so that neither the image nor the scans see it. Same
-# Fedora release as the image, so the image's glibc runs it. FROM system:
-# a Kubernetes release keeps it cached.
-FROM system AS goss-bin
-# No dnf clean: a throwaway stage, only its goss binary is used.
-# hadolint ignore=DL3040
-RUN dnf -yq install goss
+# goss, upstream's static build, as fedora's and almalinux's
+# (bootc/REFERENCES.md): the goss stage mounts its binary alone, so that
+# neither the image nor the scans see it.
+FROM ghcr.io/goss-org/goss:v0.4.10 AS goss-bin
 
 # Checks of the image's files (test/build.yaml, which includes each
 # layer's; test/<IMAGE_BASE>-build.yaml includes that one and adds the image's).
