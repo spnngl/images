@@ -335,7 +335,6 @@ Read each at the version this repository pins.
   `bootc container lint` runs last. The initramfs stays in `system`: no
   `kube` package adds a dracut module (the tree diff of the split found
   the same initramfs).
-- **`goss-bin` is `FROM system`:** a Kubernetes release keeps it cached.
 
 ### OpenSCAP
 
@@ -601,9 +600,11 @@ Read each at the version this repository pins.
   the `reports` stage; the `check` stage fails on a `not ok`, or on a
   report with no check (goss couldn't read the suite). `test.sh` runs
   what needs the booted node.
-- **goss from Fedora's package** (`goss-bin` stage, `dnf install`): no
-  pin to update, it follows `BASE_VERSION` like cri-tools ("Versions not
-  pinned"), and the image's glibc runs it (it is dynamically linked). The
+- **goss from upstream's image** (`goss-bin` stage,
+  `ghcr.io/goss-org/goss`): a static binary, the one fedora's and
+  almalinux's builds run (`bootc/REFERENCES.md`), which Renovate
+  updates. It was Fedora's package, dynamically linked: one goss for
+  every bootc build instead (the VM tests keep the workbench's). The
   `goss` stage mounts its binary alone, so the checks see the shipped
   tree, rpmdb included, and grype never scans goss. `--network=none`: the
   checks read the image only.

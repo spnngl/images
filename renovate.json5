@@ -391,6 +391,13 @@
             ]
         },
         {
+            "description": "goss runs fedora-coreos's build checks, as fedora's and almalinux's: automerged as the build tools rule says. One branch updates all three FROM lines, and Renovate automerges it only if every one of them is.",
+            "matchFileNames": ["bootc/fedora-coreos/**"],
+            "matchDepNames": ["ghcr.io/goss-org/goss"],
+            "matchUpdateTypes": ["minor", "patch"],
+            "automerge": true
+        },
+        {
             "description": "Fedora CoreOS releases of the same major (BASE_VERSION <major>.<date>.3.<n>: docker versioning makes the date the minor): automerged once every check is green, build-bootc's gate-bootc check included; the tag stays, so nodes take them with `bootc upgrade`. A new major changes the tag: by hand.",
             "matchDepNames": ["quay.io/fedora/fedora-coreos"],
             "matchUpdateTypes": ["minor", "patch"],

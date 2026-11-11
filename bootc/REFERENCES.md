@@ -47,11 +47,12 @@
   for the image config:** goss reads files, links and command output
   in the build, where the image's tools run; CST's labels need only the
   config (`bootc/structure-test.yaml`). goss is upstream's static
-  binary (`ghcr.io/goss-org/goss`, `/usr/bin/goss`), one for both
-  bases: AlmaLinux 9's EPEL has none. Mounted in a `RUN` with the
-  checks, its layer is empty (`docker history`: 4.1 kB, the empty
-  layer's digest). fedora-coreos keeps Fedora's package in its own
-  stage (`fedora-coreos/AGENTS.md`).
+  binary (`ghcr.io/goss-org/goss`, `/usr/bin/goss`), one for every
+  build, fedora-coreos's included: AlmaLinux 9's EPEL has none (the VM
+  tests' goss is the workbench's). Mounted in a `RUN` with the checks,
+  it adds nothing: the layer's digest is the empty layer's (`docker
+  history` shows 4.1 kB for it). `--network=none`: the checks read the
+  image only.
 - **The k3s release in the checks comes from the build:** goss reads
   `{{.Env.INSTALL_K3S_VERSION}}`, the `ARG` Bake sets, so no version is
   written in a test.
