@@ -5,7 +5,9 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 - `build-bootc.yml`, `build-apps.yml`: lint, build, sign and push the
   bootc images, and the application images, that changed, found in the
-  Bake files, not listed. `build-bootc.yml` also runs the VM tests of
+  Bake files, not listed. Their `conftest` job checks every source of
+  its kind against `policy/` (`policy/AGENTS.md`), on every run, before
+  any build. `build-bootc.yml` also runs the VM tests of
   fedora-coreos before its push, and releases its disk images. Their
   `gate-bootc` and `gate` jobs are the checks the `main` ruleset
   requires: each one's `needs` lists every job a pull request runs.

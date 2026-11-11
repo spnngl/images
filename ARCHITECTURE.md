@@ -53,5 +53,6 @@ Each folder's `AGENTS.md` describes what is inside it.
 ├── renovate.json5              # what Renovate tracks, and how
 ├── bootc/                      # bootc images, and the build context they share
 ├── containers/                 # application images, each with its build context
+├── policy/                     # conftest policies on both kinds' sources
 └── output/                     # build results (git-ignored)
 ```

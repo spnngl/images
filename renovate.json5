@@ -115,6 +115,7 @@
             "managerFilePatterns": [
                 "/^containers/[^/]+/[^/]+\\.sh$/",
                 "/^bootc/[^/]+\\.sh$/",
+                "/^policy/[^/]+\\.sh$/",
                 "/\\.md$/"
             ],
             "matchStrings": [
@@ -160,7 +161,8 @@
                 "docker.io/hadolint/hadolint",
                 "ghcr.io/renovatebot/renovate",
                 "docker.io/rhysd/actionlint",
-                "ghcr.io/zizmorcore/zizmor"
+                "ghcr.io/zizmorcore/zizmor",
+                "docker.io/openpolicyagent/conftest"
             ],
             "matchUpdateTypes": ["minor", "patch"],
             "automerge": true

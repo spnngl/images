@@ -10,6 +10,8 @@
 - BuildKit attestations:
   <https://docs.docker.com/build/metadata/attestations/>
 - Signing: `bootc/REFERENCES.md`, "Signing"
+- conftest: `github.com/open-policy-agent/conftest` at the version of
+  `policy/conftest.sh` (`parser/` for the input shapes, `output/sarif.go`)
 - Copilot cloud agent: `github.com/github/docs`,
   `content/copilot/how-tos/use-copilot-agents/cloud-agent/`
   (`use-cloud-agent-on-github.md`, "Continuing work on a pull
@@ -230,6 +232,35 @@ Dalec, and one way to build, attest and sign is simpler.
   auto-merge Renovate enables on a new PR, and the PR waits for
   Renovate's next run. Its source in the ruleset: GitHub Actions, so no
   other app or commit status can pass it.
+
+## Policies: `policy/`
+
+The rules of the `AGENTS.md` files a reader checks by eye, written as
+Rego and run by conftest (`policy/AGENTS.md`).
+
+- **conftest, not plain OPA:** it parses Containerfiles, YAML, INI
+  (systemd units) and JSON into one input, so a policy reads a file as
+  its build or its host does; OPA alone reads JSON.
+- **From its image, as the other checks of `AGENTS.md`:** nothing to
+  install, one version, written once in `policy/conftest.sh`, where
+  Renovate's "Images run by the scripts" manager updates it.
+- **One script for CI and by hand:** `policy/conftest.sh <kind>`. A
+  parser flag applies to a whole call, so each namespace has its call;
+  a failed one doesn't stop the next, so one run lists every finding.
+  Containerfiles need `--parser dockerfile`: conftest only detects
+  files named `Dockerfile*`.
+- **Bake's resolved definition, not the HCL:** `bake --print` applies
+  the matrix and `tags()`, so the `bake` namespaces check the tags CI
+  pushes; HCL functions are opaque to conftest's HCL parser.
+- **Every file on every run**, not only what changed: the job takes
+  seconds, and a policy change must reach every file it applies to.
+  Before `build`, as `hadolint`: a broken rule builds nothing.
+- **Results to code scanning too**, as hadolint's: one SARIF file per
+  namespace, its category (`runs[].automationDetails.id`)
+  `conftest-<namespace>`, stable so fixed findings close. Findings on
+  the Bake definition point to the kind's `docker-bake.hcl`, where
+  `tags()` is: code scanning places an alert in a file of the
+  repository.
 
 ## Vulnerability scanning
 

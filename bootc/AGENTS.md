@@ -53,7 +53,9 @@ Before a change, read:
   workflow changes. `docker buildx bake -f docker-bake.hcl -f
   bootc/docker-bake.hcl -f bootc/<name>/docker-bake.hcl --print` lists
   its targets.
-- `RUN bootc container lint` is the last instruction of each stage.
+- `RUN bootc container lint` is the last instruction of the image's
+  stage: the last stage, or the stage a bare last `FROM <stage>` names
+  (fedora-coreos).
 - Users and SSH keys go in `config.toml` (repo root, git-ignored,
   template `bootc/config.example.toml`): added to the disk image only,
   and optional: CI's release disks have none.
