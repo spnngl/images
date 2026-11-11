@@ -32,3 +32,6 @@ fileExistenceTests:
   - name: /bin/sh
     path: /bin/sh
     shouldExist: false
+  - name: license
+    path: /usr/share/doc/bazarr/LICENSE
+    shouldExist: true

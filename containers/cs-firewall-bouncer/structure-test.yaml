@@ -18,6 +18,9 @@ fileExistenceTests:
   - name: /bin/sh
     path: /bin/sh
     shouldExist: false
+  - name: license
+    path: /usr/share/doc/cs-firewall-bouncer/LICENSE
+    shouldExist: true
 commandTests:
   # The binary runs on this platform and the shipped config parses.
   # -T, not -t (AGENTS.md, Rules).

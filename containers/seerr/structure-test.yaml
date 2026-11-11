@@ -26,6 +26,9 @@ fileExistenceTests:
   - name: /bin/sh
     path: /bin/sh
     shouldExist: false
+  - name: license
+    path: /usr/share/doc/seerr/LICENSE
+    shouldExist: true
 commandTests:
   # The addons load against this image's libraries, and its Node meets
   # upstream's range.

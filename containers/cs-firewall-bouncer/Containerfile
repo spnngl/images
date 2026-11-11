@@ -33,7 +33,8 @@ make binary DOCKER_BUILD=1 \
     BUILD_TIMESTAMP="$(date -u -d "@${SOURCE_DATE_EPOCH}" +%F_%T)"
 EORUN
 
-# Static binary, plain HTTP to the LAPI: nothing else to ship.
+# Static binary, plain HTTP to the LAPI: nothing else to ship but the
+# license.
 FROM scratch
 ARG BASE_VERSION
 
@@ -46,6 +47,7 @@ LABEL org.opencontainers.image.version="${BASE_VERSION}" \
 # The upstream RPM's paths, so upstream docs, the .yaml.local override
 # included, apply as is.
 COPY --link --from=build /src/crowdsec-firewall-bouncer /usr/bin/
+COPY --link --from=build /src/LICENSE /usr/share/doc/cs-firewall-bouncer/
 COPY --link ./sysroot/ /
 
 # Prometheus metrics (prometheus.listen_port in the config). Documentation

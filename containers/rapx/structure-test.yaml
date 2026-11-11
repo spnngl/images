@@ -22,3 +22,6 @@ fileExistenceTests:
   - name: /bin/sh
     path: /bin/sh
     shouldExist: false
+  - name: license
+    path: /usr/share/doc/rapx/MPL-2.0
+    shouldExist: true
