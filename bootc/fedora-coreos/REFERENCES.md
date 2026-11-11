@@ -72,8 +72,9 @@ Read each at the version this repository pins.
   `kubeadm config images list`, so they can't drift from the versions
   installed.
 - **Kubernetes RPMs from `pkgs.k8s.io`, one patch release:** signed repo;
-  ships `kubelet.service` and the kubeadm drop-in. The repo file is removed
-  in the same `RUN`. `kubernetes-cni` ships `/opt/cni/bin`, which is
+  ships `kubelet.service` and the kubeadm drop-in. Its repo file,
+  `repos/kubernetes.conf`, is bind-mounted, never in a layer, its minor a
+  dnf variable (`DNF_VAR_minor`). `kubernetes-cni` ships `/opt/cni/bin`, which is
   `/var/opt` here: removed in that `RUN`, since `/var` ships empty.
 - **Tag `<major>-v<minor>`** (`docker-bake.hcl`, e.g. `44-v1.35`), as CI's
   other images: a Fedora CoreOS release or a Kubernetes patch release
@@ -752,10 +753,10 @@ the workloads' images, never on the host.
   (610 to 620; the fleet's R580 is in `fedora42` and `rhel10`); a new
   branch changes the kernel module and the CUDA the workloads run
   against: a person moves to it. The repository's URL holds the base's
-  Fedora major, which `nvidia.repo` takes from the base (`$releasever`);
+  Fedora major, which `repos/nvidia.conf` takes from the base (`$releasever`);
   `renovate.json5`'s URL for the driver is the one literal, a person
   changes it with a new base major (its PR says so).
-- **`nvidia.repo`, bind-mounted, never written into a layer:** both
+- **`repos/nvidia.conf`, bind-mounted, never written into a layer:** both
   stages that install from NVIDIA read the one file, and no RUN has to
   remove it. Both repositories check package signatures: NVIDIA's own
   Container Toolkit `.repo` file sets `gpgcheck=0`, but its packages are

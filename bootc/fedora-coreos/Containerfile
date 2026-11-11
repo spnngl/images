@@ -195,19 +195,13 @@ SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 # Kubernetes patch release of kubelet, kubeadm and kubectl.
 ARG KUBERNETES_VERSION
 
-RUN <<EORUN
 # Kubernetes RPMs: https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/
-# One repository per minor release. Removed below: the image is not
-# updated with dnf, a new Kubernetes patch is a new image.
-minor="${KUBERNETES_VERSION%.*}"
-cat > /etc/yum.repos.d/kubernetes.repo <<EOF
-[kubernetes]
-name=Kubernetes v${minor}
-baseurl=https://pkgs.k8s.io/core:/stable:/v${minor}/rpm/
-enabled=1
-gpgcheck=1
-gpgkey=https://pkgs.k8s.io/core:/stable:/v${minor}/rpm/repodata/repomd.xml.key
-EOF
+# One repository per minor release: repos/kubernetes.conf, bind-mounted,
+# so never in a layer (the image is not updated with dnf, a new Kubernetes
+# patch is a new image). dnf fills its ${minor} from DNF_VAR_minor.
+RUN --mount=type=bind,source=repos/kubernetes.conf,target=/etc/yum.repos.d/kubernetes.repo \
+    <<EORUN
+export DNF_VAR_minor="${KUBERNETES_VERSION%.*}"
 
 # What kubeadm and the node's units need: conntrack-tools (kubeadm's
 # preflight), iproute-tc (etcd-network-tuning). No weak dependencies, as
@@ -215,8 +209,6 @@ EOF
 dnf -yq install --setopt=install_weak_deps=False \
     "kubelet-${KUBERNETES_VERSION}" "kubeadm-${KUBERNETES_VERSION}" "kubectl-${KUBERNETES_VERSION}" \
     cri-tools conntrack-tools iproute-tc
-
-rm -f /etc/yum.repos.d/kubernetes.repo
 
 # The base's /opt is /var/opt, and /var ships empty. kubernetes-cni (a kubelet
 # dependency) drops the CNI plugins there: Cilium installs its own at
@@ -274,10 +266,10 @@ SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 ARG NVIDIA_VERSION
 
 # A throwaway stage: no dnf clean, only /rpms is used. NVIDIA's repositories
-# (nvidia.repo): the DKMS package is the driver's source, which dkms builds
-# below.
+# (repos/nvidia.conf): the DKMS package is the driver's source, which dkms
+# builds below.
 # hadolint ignore=DL3040
-RUN --mount=type=bind,source=nvidia.repo,target=/etc/yum.repos.d/nvidia.repo \
+RUN --mount=type=bind,source=repos/nvidia.conf,target=/etc/yum.repos.d/nvidia.repo \
     <<EORUN
 kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
 
@@ -349,9 +341,9 @@ ARG NVIDIA_CONTAINER_TOOLKIT_VERSION
 # out of the layers), the driver's compute userspace (nvidia-smi, the NVML and
 # CUDA driver libraries, nvidia-persistenced) and the Container Toolkit's
 # runtime and CDI tools. No graphics, no CUDA toolkit: the workloads' images
-# carry their CUDA. NVIDIA's repositories: nvidia.repo, bind-mounted.
+# carry their CUDA. NVIDIA's repositories: repos/nvidia.conf, bind-mounted.
 RUN --mount=type=bind,from=nvidia-kmod,source=/rpms,target=/run/rpms \
-    --mount=type=bind,source=nvidia.repo,target=/etc/yum.repos.d/nvidia.repo \
+    --mount=type=bind,source=repos/nvidia.conf,target=/etc/yum.repos.d/nvidia.repo \
     <<EORUN
 kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
 
