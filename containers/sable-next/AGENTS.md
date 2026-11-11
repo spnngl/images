@@ -9,11 +9,11 @@ sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- The build is upstream's release build (`.forgejo/actions/setup`):
-  `node scripts/build/build-wasm.mjs --release`, `pnpm install
-  --frozen-lockfile`, `pnpm exec vite build`. `--ignore-scripts` stays;
-  a build that needs a script gets `pnpm rebuild <package>` for that one,
-  with its reason in `REFERENCES.md`.
+- The build follows upstream's release build (`.forgejo/actions/setup`):
+  `pnpm install --frozen-lockfile` in each stage, `node
+  scripts/build/build-wasm.mjs --release`, `pnpm exec vite build`.
+  `--ignore-scripts` stays; a build that needs a script gets `pnpm rebuild
+  <package>` for that one, with its reason in `REFERENCES.md`.
 - **Tools follow the source**: wasm-bindgen and wasm-opt are the
   releases `.mise/mise.lock` names, checked against its sha256; Rust is
   the image's (`RUSTUP_TOOLCHAIN`), Node the major of

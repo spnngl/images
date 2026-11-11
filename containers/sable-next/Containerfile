@@ -64,12 +64,17 @@ SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 RUN rustup target add wasm32-unknown-unknown
 COPY --link --from=node /usr/local/bin/node /usr/local/bin/
+RUN corepack enable pnpm
 
 # Built as the image's user, in its own copy: neither the crates' build
 # scripts nor the tools get root.
 USER 65532:65532
 WORKDIR /build
 COPY --link --from=source --chown=65532:65532 / /build/
+
+# The build script imports proper-lockfile, a root workspace dependency.
+RUN --mount=type=cache,id=pnpm-store-65532,uid=65532,gid=65532,target=/tmp/pnpm-store \
+    pnpm install --frozen-lockfile --ignore-scripts --filter sable-next --store-dir /tmp/pnpm-store
 
 # wasm-bindgen and binaryen's wasm-opt: the releases upstream's mise
 # installs, as its .mise/mise.lock names them for this platform, with
