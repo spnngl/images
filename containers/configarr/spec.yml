@@ -77,6 +77,8 @@ build:
       command: |
         export PATH="${PWD}/node/bin:${PATH}"
         cd configarr
+        # Corepack enforces the packageManager version declared by upstream.
+        npm pkg set "packageManager=${PNPM}"
         corepack "${PNPM}" install --frozen-lockfile --store-dir /tmp/pnpm-store
         corepack "${PNPM}" run build
 
