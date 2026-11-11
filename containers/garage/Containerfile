@@ -160,7 +160,3 @@ VOLUME ["/var/lib/garage/meta", "/var/lib/garage/data"]
 # Kubernetes' `command:` replaces it, as in upstream's Helm chart.
 ENTRYPOINT ["/garage"]
 CMD ["server"]
-
-# Smoke test: the binary is static and runs on this platform (the build
-# stage tested the server).
-RUN ["/garage", "--version"]

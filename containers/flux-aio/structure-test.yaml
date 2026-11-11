@@ -1,0 +1,9 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The binaries run on this platform, from scratch. One is
+  # enough: the build stage ran each, built alike.
+  - name: "source-controller --help"
+    command: /usr/bin/source-controller
+    args: ["--help"]

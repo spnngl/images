@@ -138,6 +138,3 @@ USER 65532:65532
 
 # Upstream's entrypoint: arguments are kubectl's.
 ENTRYPOINT ["/usr/bin/kubectl"]
-
-# Smoke test: the binary runs on this platform (the build stage tested it).
-RUN ["/usr/bin/kubectl", "version", "--client"]

@@ -111,7 +111,7 @@
   These are the runtime contract's features, each one a reload or file
   path a release can break. Upstream's `make test` (Perl, minutes) is
   left to upstream's CI. Patch and minor releases automerge on it. The
-  final image runs `--version` in exec form: the binary finds its
+  structure test runs `--version` in the image: the binary finds its
   libraries there.
 - **No `HEALTHCHECK`:** Kubernetes ignores it; probes are the
   deployments'.

@@ -33,7 +33,7 @@ for each choice: [REFERENCES.md](REFERENCES.md).
   over UDP and over DoT, an override added through the API and
   answered, and, with the image's `HOME`, a service saved in
   `/var/lib/numa`. Loopback only: no upstream, no blocklist.
-- Final stage: `numa --version`, the static binary on this platform.
+- Structure test: `numa --version`, the static binary on this platform.
 
 ## Updates
 

@@ -163,7 +163,3 @@ VOLUME ["/var/lib/registry"]
 # /etc/distribution/config.yml` runs the other command.
 ENTRYPOINT ["/usr/bin/registry"]
 CMD ["serve", "/etc/distribution/config.yml"]
-
-# Smoke test: the binary runs on this platform (the build stage tested the
-# server).
-RUN ["/usr/bin/registry", "--version"]

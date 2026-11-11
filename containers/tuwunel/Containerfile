@@ -215,7 +215,3 @@ VOLUME ["/var/lib/tuwunel"]
 
 # Arguments are Tuwunel's: `docker run <image> --config /etc/tuwunel.toml`.
 ENTRYPOINT ["/usr/bin/tuwunel"]
-
-# Smoke test: the binary is static and runs on this platform (the build
-# stage tested the server).
-RUN ["/usr/bin/tuwunel", "--version"]

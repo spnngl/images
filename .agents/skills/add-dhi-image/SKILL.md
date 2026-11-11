@@ -193,6 +193,8 @@ docker buildx build -f containers/<name>/dhi.yaml -t <name>:test --load containe
 The build runs the server test. Then:
 
 - `docker inspect`: the labels, user `65532`, entrypoint and volumes
+  (no `structure-test.yaml`: CI builds no DHI image, so nothing would
+  run it)
 - `docker create` and `docker export | tar -tv`: no shell, the binary
   root's, state folders 65532's
 - `docker run` as the runtime contract says, with a named volume,

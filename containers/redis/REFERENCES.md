@@ -77,8 +77,9 @@
   config answers when `.make-settings` records `BUILD_COMPRESSION=yes`:
   the version check stays in one place, the build flag. A Sentinel
   monitoring the server reads its run ID: the link, the config it
-  rewrites, `auth-pass`. The final image runs
-  `redis-cli --version` and `redis-check-rdb` on the build's dump, in exec
-  form (no shell): the libraries are found there, and the links work.
+  rewrites, `auth-pass`. The structure test
+  runs `redis-cli --version`, and the final stage `redis-check-rdb` on
+  the build's dump, in exec form (no shell): the libraries are found
+  there, and the links work.
 - **No `HEALTHCHECK`:** Kubernetes ignores it; probes are the
   deployments'.

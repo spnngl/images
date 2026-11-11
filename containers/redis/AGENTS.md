@@ -19,7 +19,7 @@ reason for each choice: [REFERENCES.md](REFERENCES.md).
   SPDX ids are the `LICENSES` argument of `docker-bake.hcl`.
 - **Build with `make -C src`**: the top-level Makefile of 8.10 also
   builds and installs the bundled modules it finds.
-- **Done when** the build passes: the build stage's server answers over
+- **Done when** the build and its structure test pass: the build stage's server answers over
   TCP and TLS, with jemalloc's page size for the platform, a Sentinel
   reads its run ID, the final
   image runs `redis-cli` and `redis-check-rdb` on that server's dump,

@@ -19,10 +19,10 @@ Upstream sources and the reason for each choice:
 - **Nushell's plugins: all but upstream's examples and test fixtures**
   (`example`, `custom_values`, `stress_internals`). Shipped, not
   registered: a plugin registry is user state, under `HOME`.
-- **Done when** the build passes: the build stage checks every archive,
+- **Done when** the build and its structure test pass: the build stage checks every archive,
   runs each program at its pinned version, generates manifests offline
   (flux, flux-operator, kubectl), builds a kustomization and compares it
-  byte for byte, and loads and uses each nushell plugin; the final stage
+  byte for byte, and loads and uses each nushell plugin; the structure test
   runs each program at its image path.
 
 ## Updates

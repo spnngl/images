@@ -215,9 +215,9 @@ VOLUME ["/data", "/etc/redis"]
 ENTRYPOINT ["/usr/local/bin/redis-server"]
 CMD ["/etc/redis/redis.conf"]
 
-# Smoke test: the binaries find their libraries here (one distroless
-# lacks fails the build), and the link to redis-server dispatches on its
-# name: redis-check-rdb reads the build stage's dump, as the image's user.
-RUN ["/usr/local/bin/redis-cli", "--version"]
+# Smoke test: redis-server finds its libraries here (one distroless
+# lacks fails the build), and the link to it dispatches on its name:
+# redis-check-rdb reads the build stage's dump, as the image's user. A
+# RUN, not structure-test.yaml: it reads a build stage's file.
 RUN --mount=type=bind,from=build,source=/tmp/smoke-test.rdb,target=/tmp/smoke-test.rdb \
     ["/usr/local/bin/redis-check-rdb", "/tmp/smoke-test.rdb"]

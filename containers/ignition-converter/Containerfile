@@ -123,7 +123,3 @@ EXPOSE 8443/tcp
 # No CMD: the certificate paths have no default upstream, and deploy.yaml
 # passes every flag.
 ENTRYPOINT ["/usr/bin/ignition-converter"]
-
-# Smoke test: the binary runs on this platform (the build stage tested the
-# server).
-RUN ["/usr/bin/ignition-converter", "--version"]

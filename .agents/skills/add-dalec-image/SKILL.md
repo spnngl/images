@@ -157,7 +157,8 @@ Done when every choice of steps 1 to 4 has its reason in
 ### 7. Verify
 
 Run the build check's `--set '*.output=type=docker'` build: it runs the
-tests. Then `docker run` the image as its runtime contract says (port
+tests. Then its `test.sh` line, the structure tests
+(`containers/structure-test.yaml`), and `docker run` the image as its runtime contract says (port
 published, volumes writable by 65532), and check the app starts and
 serves.
 

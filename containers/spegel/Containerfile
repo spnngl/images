@@ -153,6 +153,3 @@ EXPOSE 5000/tcp 5001/tcp 5001/udp 9090/tcp
 # Upstream's entrypoint: arguments are Spegel's subcommand and flags. No
 # CMD: every subcommand needs flags of the deployment.
 ENTRYPOINT ["/spegel"]
-
-# Smoke test: the binary runs on this platform (the build stage tested it).
-RUN ["/spegel", "version"]

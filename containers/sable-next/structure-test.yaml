@@ -1,0 +1,7 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  - name: "static-web-server --version"
+    command: /static-web-server
+    args: ["--version"]

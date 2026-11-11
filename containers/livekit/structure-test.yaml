@@ -1,0 +1,9 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The binary runs on this platform (the build stage tested the
+  # server).
+  - name: "livekit-server --version"
+    command: /usr/bin/livekit-server
+    args: ["--version"]

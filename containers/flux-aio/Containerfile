@@ -247,7 +247,3 @@ EXPOSE 9791/tcp \
     9696/tcp \
     9697/tcp
 VOLUME ["/data", "/tmp"]
-
-# Smoke test: the binaries run on this platform, from scratch. One is
-# enough: the build stage ran each, built alike.
-RUN ["/usr/bin/source-controller", "--help"]

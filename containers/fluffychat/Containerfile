@@ -365,5 +365,3 @@ ENV SERVER_ROOT=/app \
 EXPOSE 8080/tcp
 # SIGTERM: the server stops gracefully on it.
 ENTRYPOINT ["/static-web-server"]
-
-RUN ["/static-web-server", "--version"]

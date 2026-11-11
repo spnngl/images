@@ -1,0 +1,8 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The binary finds its libraries (libevent, OpenSSL) here.
+  - name: "memcached --version"
+    command: /usr/bin/memcached
+    args: ["--version"]

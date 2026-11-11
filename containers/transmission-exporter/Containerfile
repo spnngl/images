@@ -145,7 +145,3 @@ EXPOSE 19091/tcp
 
 # Settings are variables (upstream's Config): nothing in CMD to replace.
 ENTRYPOINT ["/usr/bin/transmission-exporter"]
-
-# Smoke test: the binary runs on this platform (the build stage tested the
-# server).
-RUN ["/usr/bin/transmission-exporter", "--version"]

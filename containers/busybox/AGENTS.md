@@ -17,7 +17,7 @@ choice: [REFERENCES.md](REFERENCES.md).
   configuration writes into its source tree, which `ADD` makes root's.
 - **`/etc/passwd` and `/etc/group` name the image's `USER`** (nonroot,
   65532, `HOME` `/tmp`), passwords locked (`*`).
-- **Done when** the build passes: its stages check every applet link,
+- **Done when** the build and its structure test pass: its stages check every applet link,
   run applets through the image's shell, and fail unless the binary is
   static and `whoami` prints `nonroot`.
 

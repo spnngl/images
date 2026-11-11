@@ -15,7 +15,7 @@ header. Upstream sources and the reason for each choice:
   smoke test exercises it.
 - **The version** comes from `git describe` (upstream's `version.pl`),
   hence `--keep-git-dir`: the smoke test's first line checks it.
-- **Done when** the build passes: the build stage's smoke test (the
+- **Done when** the build and its structure test pass: the build stage's smoke test (the
   version, the hardening, the binary protocol refused with an authfile,
   an unauthenticated client refused, a key
   written over TCP and read over TLS, values read back from extstore,

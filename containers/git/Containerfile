@@ -256,9 +256,3 @@ WORKDIR /git
 # `command:` replaces the entrypoint (`["sh", "-c", ...]` for a script).
 ENTRYPOINT ["/usr/bin/git"]
 CMD ["--version"]
-
-# Smoke test: the binaries run on this platform (the build stage tested
-# the transports), git finds its exec path and templates at the image's
-# paths, and the shell runs. `ssh -V` (DL3001) prints its version only.
-# hadolint ignore=DL3001
-RUN ["/bin/sh", "-euc", "git --version && ssh -V && [ \"$(git --exec-path)\" = /usr/libexec/git-core ] && git init -q /tmp/t && rm -r /tmp/t"]

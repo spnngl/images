@@ -189,8 +189,3 @@ VOLUME ["/var/cache/trivy"]
 # (the git image's `--version` reset).
 ENTRYPOINT ["/usr/bin/trivy"]
 CMD []
-
-# Smoke test: the binary and git run on this platform (the build stage
-# tested the server), and git's shell scripts find the shell: go-getter runs
-# `git submodule update` after every clone.
-RUN ["/bin/sh", "-euc", "trivy --version && git --version && git init -q /tmp/t && git -C /tmp/t submodule status && rm -r /tmp/t"]

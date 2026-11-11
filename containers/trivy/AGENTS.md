@@ -24,8 +24,8 @@ Upstream sources and the reason for each choice:
 ## Tests
 
 The build stage's smoke test (its comment lists what it checks), and
-`trivy --version` and `git submodule status` in the final stage, on each
-platform.
+`trivy --version` and `git submodule status` in the structure test, on
+each platform.
 
 ## Updates
 

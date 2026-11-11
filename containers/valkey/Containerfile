@@ -234,9 +234,3 @@ EXPOSE 6379/tcp
 VOLUME ["/data"]
 
 ENTRYPOINT ["/usr/bin/valkey-server"]
-
-# Smoke test: both binaries find their libraries (OpenSSL) here. Two
-# RUNs (DL3059): exec form, no shell to chain them.
-RUN ["/usr/bin/valkey-cli", "--version"]
-# hadolint ignore=DL3059
-RUN ["/usr/bin/valkey-server", "--version"]

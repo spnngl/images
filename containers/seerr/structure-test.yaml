@@ -1,0 +1,9 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The addons load against this image's libraries, and its Node meets
+  # upstream's range.
+  - name: "addons load, Node in range"
+    command: /nodejs/bin/node
+    args: ["-e", "require('bcrypt'); require('sqlite3'); require('sharp'); if (!require('semver').satisfies(process.version, require('./package.json').engines.node)) process.exit(1)"]

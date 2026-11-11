@@ -221,7 +221,3 @@ EXPOSE 8000/tcp 8766/tcp
 # compose `command:` copied from them replaces as is.
 ENTRYPOINT ["/angos"]
 CMD ["-c", "/config/config.toml", "server"]
-
-# Smoke test: the binary is static and runs on this platform (the build
-# stage tested the server).
-RUN ["/angos", "--help"]

@@ -179,9 +179,5 @@ EXPOSE 9000/tcp 6060/tcp
 ENTRYPOINT ["/usr/bin/crowdsec-spoa-bouncer"]
 CMD ["-c", "/etc/crowdsec/bouncers/crowdsec-spoa-bouncer.yaml"]
 
-# Smoke test: the binary runs on this platform (the build stage tested the
-# bouncer).
-RUN ["/usr/bin/crowdsec-spoa-bouncer", "--version"]
-
 # Last: GeoLite2 changes every 3 days, the other layers less often.
 COPY --link --from=lists /geolite2/ /var/lib/crowdsec/data/

@@ -20,10 +20,10 @@ Upstream sources and the reason for each choice:
   build checks it.
 - **The build stage runs as UID 65532**, writing only to `/src/_output`,
   with containers/minio's Go build cache id.
-- **Done when** the build passes: its smoke test checks `kubectl version
+- **Done when** the build and its structure test pass: its smoke test checks `kubectl version
   --client` (version, commit, clean tree, major and minor), a static
   binary, and a ConfigMap generated with `kubectl create --dry-run=client
-  -o yaml`, byte for byte; the final image runs `kubectl version
+  -o yaml`, byte for byte; the structure test runs `kubectl version
   --client`. No API server: see REFERENCES.md.
 
 ## Updates

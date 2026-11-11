@@ -19,7 +19,7 @@ for each choice: [REFERENCES.md](REFERENCES.md).
 ## Tests
 
 The build stage's smoke test (its comment lists what it checks), and
-`zot --version` in the final stage, on each platform.
+`zot --version` in the structure test, on each platform.
 
 ## Updates
 

@@ -15,7 +15,7 @@ each choice: [REFERENCES.md](REFERENCES.md).
   first.
 - **`/tmp` stays root's, mode 1777:** `build --enable-helm` writes there,
   as any UID.
-- **Done when** the build passes: its smoke test (the Containerfile's)
+- **Done when** the build and its structure test pass: its smoke test (the Containerfile's)
   makes a kustomization from `smoke-test/` with `create` and `edit`,
   renders it offline with `--enable-helm`, and matches
   `smoke-test/expected.yaml` byte for byte.

@@ -324,6 +324,3 @@ USER 65532:65532
 EXPOSE 11211/tcp
 
 ENTRYPOINT ["/usr/bin/memcached"]
-
-# Smoke test: the binary finds its libraries (libevent, OpenSSL) here.
-RUN ["/usr/bin/memcached", "--version"]

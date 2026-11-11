@@ -1,0 +1,10 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # The binary and git run on this platform (the build stage
+  # tested the server), and git's shell scripts find the shell: go-getter runs
+  # `git submodule update` after every clone.
+  - name: "trivy runs, git submodule finds the shell"
+    command: /bin/sh
+    args: ["-euc", "trivy --version && git --version && git init -q /tmp/t && git -C /tmp/t submodule status && rm -r /tmp/t"]

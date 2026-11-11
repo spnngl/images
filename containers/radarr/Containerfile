@@ -191,6 +191,3 @@ CMD ["-nobrowser", "-data=/config"]
 # stage's server test covers SQLite. A throwaway data folder.
 RUN --mount=type=tmpfs,target=/tmp \
     ["/usr/lib/radarr/bin/Radarr", "-nobrowser", "-data=/tmp/smoke-data", "-?"]
-
-# The archive's ffprobe, a static binary: it runs on this platform.
-RUN ["/usr/lib/radarr/bin/ffprobe", "-version"]

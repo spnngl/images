@@ -26,7 +26,7 @@ The build stage's server test, step by step in its Containerfile
 comment: version and commit, schema migration and admin creation on a
 throwaway PostgreSQL, the image's health check, the login page, API
 authentication, a category written and read back, a local RSS feed
-fetched and its entry read back. The final stage runs `miniflux -version`.
+fetched and its entry read back. The structure test runs `miniflux -version`.
 
 ## Updates
 

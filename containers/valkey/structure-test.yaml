@@ -1,0 +1,11 @@
+# The shipped image's own tests, after containers/structure-test.yaml
+# (.github/actions/bake-test/test.sh).
+schemaVersion: 2.0.0
+commandTests:
+  # Both binaries find their libraries (OpenSSL) here.
+  - name: "valkey-cli --version"
+    command: /usr/bin/valkey-cli
+    args: ["--version"]
+  - name: "valkey-server --version"
+    command: /usr/bin/valkey-server
+    args: ["--version"]

@@ -90,10 +90,12 @@ Done when every item has an answer and a source file.
 - **Runtime**: `USER 65532:65532`. `ENV` for settings that must survive a
   replaced `CMD`. `EXPOSE`, `VOLUME`. `ENTRYPOINT` the binary's absolute
   path, `CMD` its default arguments.
-- **Last instruction**: `RUN ["<binary>", "--version"]`, exec form.
+- **Structure test**: `containers/<name>/structure-test.yaml`, modeled
+  on garage's: a `commandTests` entry running `<binary> --version` on
+  the shipped image (`containers/AGENTS.md`, "Tests").
 
-Done when every answer from step 1 appears in the Containerfile or its
-header, and `hadolint` passes.
+Done when every answer from step 1 appears in the Containerfile, its
+header or its structure test, and `hadolint` passes.
 
 ### 3. Track its versions
 
@@ -125,7 +127,7 @@ Done when every decision of step 2 has its reason in `REFERENCES.md`.
 ### 5. Verify
 
 Run the build check's `--set '*.output=type=docker'` build: it runs the
-server test. Then:
+server test. Then its `test.sh` line, the structure tests, and:
 
 - `docker create` and `docker export | tar -tv`: the binary root's, state
   folders 65532's

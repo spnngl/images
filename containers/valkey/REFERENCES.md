@@ -101,8 +101,8 @@
   check links. Patch and minor releases automerge on it.
   `valkey-check-aof` checks the incremental file: 9.1's reads the
   manifest's base RDB, signed `VALKEY`, as a broken AOF
-  (valkey-io/valkey#4739, in `unstable` only). The final image runs
-  both binaries' `--version` in exec form: they find their libraries
-  there.
+  (valkey-io/valkey#4739, in `unstable` only). The structure test
+  runs both binaries' `--version` in the image: they find their
+  libraries there.
 - **No `HEALTHCHECK`:** Kubernetes ignores it; probes are the
   deployments'.
