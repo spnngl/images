@@ -7,6 +7,7 @@ Description=Apply sysctl tuning on large machines with Mellanox NICs
 DefaultDependencies=no
 After=systemd-sysctl.service systemd-udev-settle.service
 Before=network-pre.target
+ConditionVirtualization=false
 ConditionMemory=>=128G
 ConditionCPUs=>=64
 ConditionPathExistsGlob=/sys/bus/pci/drivers/mlx5_core/0000*
