@@ -101,6 +101,8 @@ with `bootc switch`.
 
 - `Containerfile`, `sysroot/<layer>/`: the image (`system`, `kube`,
   `vm`, `metal`).
+- `initramfs/`: files at their path in the initramfs, never in the image:
+  the dedicated servers' Ignition config (root on LUKS).
 - `repos/<name>.conf`: the dnf repositories of the build (Kubernetes',
   NVIDIA's), bind-mounted by the stages that install from them, never in
   the image.

@@ -89,15 +89,6 @@ dnf -yq remove nmstate NetworkManager-team NetworkManager-tui NetworkManager-clo
 sed -i 's|^pool .*|sourcedir /etc/chrony/sources.d|' /etc/chrony.conf
 grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 
-# No core user: FCOS's initramfs creates it with Ignition (00-core.ign of
-# dracut module ignition-conf), and enables afterburn-sshkeys@core
-# (ignition-conf-fcos, also NetworkManager-cloud-setup on AWS, Azure and
-# GCP, removed above). rootless is the only login. The arguments are the
-# base's (usr/lib/dracut/build-parameter.txt).
-kver="$(ls /usr/lib/modules)"
-dracut --force --reproducible --no-hostonly --omit 'ignition-conf ignition-conf-fcos' \
-    --tmpdir /tmp --kver "${kver}" "/usr/lib/modules/${kver}/initramfs.img"
-
 # /var ships empty.
 dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /run/selinux-policy
@@ -106,6 +97,19 @@ rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /run/selinux-policy
 rm -rf /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated /var/spool/audit
 # moby-engine's group, left behind by its removal.
 if getent group docker >/dev/null; then groupdel docker; fi
+EORUN
+
+# The initramfs runs Ignition. No core user: FCOS's creates it (00-core.ign
+# of dracut module ignition-conf), and enables afterburn-sshkeys@core
+# (ignition-conf-fcos, also NetworkManager-cloud-setup on AWS, Azure and
+# GCP, removed above). rootless is the only login. initramfs/ holds files at
+# their path in the initramfs: the bare-metal installs' root on LUKS
+# (REFERENCES.md, "Root on LUKS"). Its own RUN, so that editing initramfs/
+# keeps the packages' layer cached.
+RUN --mount=type=bind,source=initramfs,target=/tmp/initramfs <<EORUN
+kver="$(ls /usr/lib/modules)"
+dracut --force --reproducible --no-hostonly --omit 'ignition-conf ignition-conf-fcos' \
+    --include /tmp/initramfs / --tmpdir /tmp --kver "${kver}" "/usr/lib/modules/${kver}/initramfs.img"
 EORUN
 
 # Our policy.json, about to replace the base's, must still be the base's

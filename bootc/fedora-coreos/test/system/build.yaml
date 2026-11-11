@@ -163,6 +163,11 @@ command:
     exec: modprobe -c
     exit-status: 0
     stdout: [/^blacklist usb_storage$/]
+  # initramfs/, by the Containerfile's dracut: Ignition reads its configs
+  # from the initramfs only.
+  the initramfs holds the dedicated servers' root on LUKS:
+    exec: lsinitrd -f usr/lib/ignition/base.platform.d/metal/30-luks-root.ign /usr/lib/modules/*/initramfs.img | jq -e '.storage.luks[0].clevis.tpm2'
+    exit-status: 0
   RAID and LUKS tools:
     exec: |
       for c in mdadm cryptsetup systemd-cryptenroll pvcreate vgcreate networkctl; do

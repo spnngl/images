@@ -1,0 +1,31 @@
+{
+  "ignition": {
+    "version": "3.4.0"
+  },
+  "storage": {
+    "filesystems": [
+      {
+        "device": "/dev/mapper/root",
+        "format": "xfs",
+        "label": "root",
+        "wipeFilesystem": true
+      }
+    ],
+    "luks": [
+      {
+        "clevis": {
+          "tpm2": true
+        },
+        "device": "/dev/disk/by-partlabel/root",
+        "discard": true,
+        "label": "luks-root",
+        "name": "root",
+        "openOptions": [
+          "--perf-no_read_workqueue",
+          "--perf-no_write_workqueue"
+        ],
+        "wipeVolume": true
+      }
+    ]
+  }
+}

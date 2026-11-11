@@ -1,6 +1,7 @@
 # The build context is this folder: send only what the Containerfile reads.
 # BuildKit and buildah both read this file (REFERENCES.md, "Own build context").
 *
+!initramfs/
 !policy.jq
 !repos/
 !sysroot/

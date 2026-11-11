@@ -1,7 +1,22 @@
 # The booted node, metal layer: the test node is a VM, so the dedicated
-# servers' units must skip it and leave the kernel defaults.
+# servers' units must skip it and leave the kernel defaults. vm.sh gives it
+# their root on LUKS.
 
 command:
+  # initramfs/'s Ignition config: Ignition's own key removed, the TPM's is
+  # the one key slot, sealed to no PCR; TRIM and no work queues kept in the
+  # header (REFERENCES.md, "Root on LUKS").
+  root is on LUKS, unlocked by the TPM alone:
+    exec: |
+      [ "$(findmnt -nvo SOURCE /sysroot)" = /dev/mapper/root ] &&
+        cryptsetup luksDump --dump-json-metadata /dev/disk/by-partlabel/root |
+        jq -c '{slots: (.keyslots | length), flags: (.config.flags | sort)}' &&
+        clevis luks list -d /dev/disk/by-partlabel/root
+    exit-status: 0
+    stdout:
+      - '{"slots":1,"flags":["allow-discards","no-read-workqueue","no-write-workqueue"]}'
+      - "/^[0-9]+: tpm2 /"
+      - "!pcr_ids"
   # The softnet budget is for large machines with a Mellanox NIC.
   sysctl-mlx5-large skips the test VM:
     exec: systemctl show -P ConditionResult sysctl-mlx5-large.service

@@ -29,6 +29,10 @@ Read each at the version this repository pins.
 - The bootstrap webhook: `github.com/spnngl/ignition-converter`
   (`README.md`, `deploy.yaml`), on `github.com/coreos/ign-converter`
   (`translate/v23tov30`)
+- Root on LUKS: `github.com/coreos/ignition` (`internal/exec/stages/disks/luks.go`,
+  `internal/providers/system/system.go`), Butane: `github.com/coreos/butane`
+  (`config/fcos/v1_5/translate.go`, `processBootDevice`), FCOS's
+  `overlay.d/05core/usr/lib/dracut/modules.d/40ignition-ostree/`
 - `github.com/fedora-iot/greenboot-rs` (`README.md`, `greenboot-rs.spec`,
   `usr/`)
 - `github.com/bootc-dev/bootc-operator` (`api/v1alpha1/`,
@@ -296,8 +300,8 @@ Read each at the version this repository pins.
     `localhost` by then (`hostname-setup.c:208-215`); and `os-release`
     is Fedora's.
 - **The data array and the public bond's MAC come with bare-metal
-  installs** (Later): RAID10, its LUKS bound to the TPM with no PCR, since PCR 4
-  changes with each bootc update.
+  installs** (Later): RAID10, its LUKS bound to the TPM as the root's
+  (Root on LUKS).
 
 ### Layers
 
@@ -570,7 +574,8 @@ Read each at the version this repository pins.
   that can't run KVM, and only CI is the reference.
 - **Test VM: `qemu-system-x86_64` with KVM in the workbench:** the
   cluster's bare-metal node and GitHub's runners expose `/dev/kvm`. Ignition goes through `fw_cfg`, a throwaway SSH key
-  comes from Butane. Its disk is NVMe, as a dedicated server's.
+  comes from Butane. Its disk is NVMe and its TPM (swtpm, `tpm-crb`) fresh,
+  as a dedicated server's.
 - **Workbench on the image's Fedora release** (`workbench.sh` reads the
   major of `BASE_VERSION`): osbuild builds the disk
   images from a tree of the same release, and the pin can't drift.
@@ -679,6 +684,64 @@ Read each at the version this repository pins.
   --ignition-file`** (Later): BYOLinux lays the disks out as one ext4 RAID1
   `/` and boots it with the image's own script; FCOS needs its own EFI,
   `boot` and `root` partitions and Ignition at first boot.
+
+### Root on LUKS
+
+- **Dedicated servers' root on LUKS, bound to the TPM with no PCR**
+  (`initramfs/usr/lib/ignition/base.platform.d/metal/30-luks-root.ign`): a
+  disk that leaves its server holds nothing readable. Code booted on the
+  server itself (OVH rescue) still unseals the key: PCR 4 changes with each
+  bootc update, and PCR 7 means something only under Secure Boot, which
+  isn't known to be on.
+- **Ignition at first boot, not bootc's `tpm2-luks`:** that one
+  (`[install] block`, bootc-install-config(5)) is `bootc install to-disk`'s,
+  run on the target to bind its TPM (`crates/lib/src/install/baseline.rs`);
+  osbuild builds the disks before any TPM. FCOS's initramfs saves the root
+  in RAM (zram), formats LUKS, restores it (`ignition-ostree-transposefs.sh`),
+  and clevis unlocks it at each boot.
+- **The file is Butane's output** for `boot_device.luks` with `tpm2: true`
+  and `discard: true` (`variant: fcos`, `version: 1.5.0`), plus
+  `openOptions`, which `boot_device` lacks: as Ignition reads it, no Butane
+  at build.
+- **TRIM and no dm-crypt work queues** (`discard`,
+  `--perf-no_read_workqueue`, `--perf-no_write_workqueue`): the queues add
+  latency on NVMe, which etcd feels; TRIM keeps the SSDs fast. Ignition opens
+  the volume with `--persistent` (`luks.go`, `luksOpenArgs`), so the LUKS2
+  header keeps both for clevis's unlock at each boot. TRIM shows a removed
+  disk's free blocks, not their contents.
+- **Other disks wiped before the install:** the volume is
+  `/dev/disk/by-partlabel/root`, and a partition named `root` left on
+  another disk by an earlier system could take the link and be formatted
+  instead. The install (Bootstrap, OVH rescue) runs `wipefs -a` on every
+  other disk before `coreos-installer`; the image can't name the disk.
+- **No recovery key, a reinstall instead:** Ignition removes the key it
+  formats with once clevis is bound (`luks.go`, `luksRemoveKey`). A server
+  whose TPM is cleared or replaced is reinstalled.
+- **In the image, for every bare-metal install:** Ignition merges
+  `base.platform.d/<platform id>/` under the user's config
+  (`system.go`, `FetchBaseConfig`), and coreos-installer's image is
+  `metal`. Cluster API's bootstrap needs no LUKS of its own, which its spec
+  2.3 can't express (LUKS is 3.2+).
+- **In the initramfs only** (`initramfs/`, the Containerfile's `dracut
+  --include`): Ignition reads the initramfs's `/usr/lib/ignition`; a copy in
+  the image's would be read by nothing. dracut has a RUN of its own, so that
+  editing `initramfs/` keeps the packages' layer cached.
+- **Not on VMs:** OVHcloud's instances have no vTPM, and the binding would
+  fail their first boot.
+- **The test VM gets it** (`vm.sh` merges the file into its config, with a
+  TPM): its first boot encrypts, the reboot of `vm.sh check` unlocks, and
+  `test/metal/node.yaml` checks the one key slot is the TPM's.
+- **Not taken, from bootc's docs:**
+  - `etc.transient` (ostree's `prepare-root.conf`): a reboot would drop what
+    Ignition writes once, at first boot, and kubeadm's `/etc/kubernetes`.
+    `etc-diff.timer` lists `/etc`'s drift instead.
+  - `systemd.volatile=state`: `/var` on tmpfs (ostree's `var.mount` steps
+    aside, `ostree-impl-system-generator.c`), so etcd, kubelet and containerd
+    start empty at each boot, the images in RAM.
+  - composefs `enabled = verity`: it needs fs-verity, which XFS lacks. The
+    base's `prepare-root.conf` stays (`enabled = yes`, `sysroot.readonly`).
+  - bootc-setup-root-conf(5) configures bootc's composefs backend, not
+    ostree's.
 
 ### Greenboot
 
