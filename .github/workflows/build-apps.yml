@@ -183,9 +183,11 @@ jobs:
     permissions: {}
     steps:
       - env:
-          NEEDS: ${{ toJSON(needs) }}
+          # The results alone: needs also holds discover's outputs, every
+          # target, past what one environment variable may hold.
+          RESULTS: ${{ toJSON(needs.*.result) }}
         run: |-
-          jq -e 'all(.[]; .result == "success" or .result == "skipped")' <<< "${NEEDS}"
+          jq -e 'all(.[]; . == "success" or . == "skipped")' <<< "${RESULTS}"
 
   # Merge each target's platforms into one manifest list with all its
   # tags, on ghcr.io and Docker Hub, then sign, check and attest it.
