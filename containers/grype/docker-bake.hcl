@@ -8,7 +8,7 @@ target "grype" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=anchore/grype extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "0.121.2", checksum = "82d7a0ea911946b99343c672056867d372f9b319" },
+      { version = "0.121.3", checksum = "cd1f23eb50dfb52647090158f453c7359172591f" },
     ]
   }
   args = merge(containerfile_args(debian), {
