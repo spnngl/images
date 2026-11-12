@@ -12,7 +12,7 @@ target "bazarr" {
     ]
     uv = [
       # renovate: datasource=docker depName=ghcr.io/astral-sh/uv depType=automerge
-      { version = "0.13.7", digest = "sha256:96f40d3904aad8d0bd010539001d36c8e2188b981e1334471a90c4a1d93bb490" },
+      { version = "0.13.8", digest = "sha256:5cc1805e2426484abca4ad46ea783bab281fdb225fd82d8ce6d66a81254bac85" },
     ]
   }
   args = merge(apt_args(debian), {
