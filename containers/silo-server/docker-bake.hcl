@@ -15,7 +15,7 @@ target "silo-server" {
     # Builds the web app only.
     node = [
       # renovate: datasource=docker depName=docker.io/library/node
-      { tag = "24.22.3-trixie-slim", digest = "sha256:0a085df29353bca2c119e8fa2171773a4c7eab2a13330ee88b5e91ee4b21de9e" },
+      { tag = "24.22.3-trixie", digest = "sha256:6e5d4c38403930b420404f190be8563396dca2bd156a6cb4722707b0efcf6fc1" },
     ]
   }
   args = {
