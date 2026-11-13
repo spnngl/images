@@ -71,7 +71,7 @@ ADD --link \
     https://github.com/static-web-server/static-web-server.git#v${SWS_VERSION} /
 
 # Debian trixie with Rust: the toolchain of the app and of the server.
-FROM docker.io/library/rust:1.99-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS toolchain
+FROM docker.io/library/rust:1.100-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS toolchain
 
 ARG DEBIAN_CODENAME
 ENV DEBIAN_FRONTEND=noninteractive
