@@ -77,7 +77,7 @@ COPY --link --from=frontend --chown=0:0 /build/packages/frontend/build/ /app/fro
 
 # Debian trixie: its musl-tools build the C libraries, its valkey-server
 # runs the server test.
-FROM docker.io/library/rust:1.99-trixie@sha256:8a4e90c7946b74626488b1446f712c0fe0ed1a596cbd3d871684bc9c5433ae07 AS build
+FROM docker.io/library/rust:1.100-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS build
 
 ARG BASE_VERSION
 ARG DEBIAN_CODENAME
