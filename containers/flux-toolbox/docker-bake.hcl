@@ -31,7 +31,7 @@ target "flux-toolbox" {
     ]
     nushell = [
       # renovate: datasource=github-release-attachments depName=nushell/nushell depType=automerge
-      { version = "0.116.1", checksum = "296b515aa8416a012ca444e40a0e7635266872cc99b8ab704e1bdc8fcb3dd0a6" },
+      { version = "0.117.0", checksum = "b7261d7a734d4382f43389f7d35a2578883e51f0bb6bb462a1091aa75d39b839" },
     ]
   }
   args = {
