@@ -8,7 +8,7 @@ target "tuwunel" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=matrix-construct/tuwunel extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "1.9.4", checksum = "f473d9a4a8342514302884041e0ccfea1ad503fc" },
+      { version = "2.0.0", checksum = "a3feae1a26ec764ee88606c2c68b659a9b5fba8d" },
     ]
   }
   args = merge(apt_args(debian), {
