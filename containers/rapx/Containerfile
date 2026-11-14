@@ -39,7 +39,7 @@ ADD --link \
 
 # The final image's base, by digest, which Renovate moves. Read by the
 # closure stage too: the packages it holds are the ones not to copy again.
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:08476c244888bfb425bae1ae4dd7c17f093e972aab8426883d97f3c6f280f7c1 AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
 
 # Debian trixie, with Rust's own image: the packages below come from its
 # snapshot.
@@ -235,8 +235,8 @@ CMD ["--help"]
 FROM image AS smoke
 ARG BASE_VERSION
 ENV CARGO_HOME=/tmp/cargo
-COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:00f0156847588a3dd60bedaa6e443167b018be650d3af798d5879b9f3b1770a5 /bin/busybox /bin/ash
-COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:00f0156847588a3dd60bedaa6e443167b018be650d3af798d5879b9f3b1770a5 /bin/busybox /bin/grep
+COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:ba922320081ffa63d5e1a407d93d1436c69a7a1a947d82ea414f17a713b80348 /bin/busybox /bin/ash
+COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:ba922320081ffa63d5e1a407d93d1436c69a7a1a947d82ea414f17a713b80348 /bin/busybox /bin/grep
 COPY --link --chown=65532:65532 smoke-test/ /tmp/smoke/
 SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
 

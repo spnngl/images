@@ -71,7 +71,7 @@ FROM natives-${TARGETARCH} AS natives
 # Node: upstream's major (package.json engines, its Dockerfile). The full
 # image, not slim: node-gyp needs python3, make and g++. Debian trixie,
 # as the final image's libc. Its yarn 1 reads upstream's yarn.lock.
-FROM docker.io/library/node:22.23-trixie@sha256:c46850e69b4fab3c4f225aa36b777c8cc001d1cd5b2136e1ea024796f6d3bbbb AS build
+FROM docker.io/library/node:22.23-trixie@sha256:c103d7b5aa3bf627c8b98db941d52556f04e0b5d9352b3d7b6391245d26620f8 AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
@@ -204,7 +204,7 @@ COPY --link --from=build --chown=0:0 /app/ /mjolnir/
 COPY --link --from=source /LICENSE /usr/share/doc/mjolnir/
 COPY --link --from=build --chown=65532:65532 /tmp/data/ /data/
 
-FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:8ad9cc935b7843c4024b7e1487b5ef472c354ea847b97c667023e2618552607e
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:39c66687298417dbf3ff2fb8b6012c20554494e16414ef7afd07b9abbb45b501
 
 ARG BASE_VERSION
 # source: links the ghcr.io package to this repository.

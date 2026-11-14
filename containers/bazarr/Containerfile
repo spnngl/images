@@ -45,11 +45,11 @@ ADD --link \
 
 # The final image's base, by digest, which Renovate moves. Read by the
 # build stage too: the packages it holds are the ones not to copy again.
-FROM gcr.io/distroless/python3-debian13:nonroot@sha256:1c32c3720dc4c7f0c7dbe998737f32c200add6511eca7cec705008be488b87d6 AS runtime
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:6c4cb3bfa4b555429dd19541796a6ba6b30c84675b460bd0bd5072f7d5bdae71 AS runtime
 
 # The web app, built as upstream's release workflow builds it: npm
 # install, npm run build. Node: upstream's major (frontend/.nvmrc).
-FROM docker.io/library/node:24.22-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS frontend
+FROM docker.io/library/node:24.22-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS frontend
 
 # HOME for the build user below: npm keeps its cache in ~/.npm. Before
 # SHELL: hadolint (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh,

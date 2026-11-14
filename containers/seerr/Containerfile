@@ -36,7 +36,7 @@ ADD --link \
 # Node: upstream's major (package.json engines, its Dockerfile). The full
 # image, not slim: node-gyp needs python3, make and g++. Debian trixie,
 # as the final image's libc.
-FROM docker.io/library/node:22.23-trixie@sha256:c46850e69b4fab3c4f225aa36b777c8cc001d1cd5b2136e1ea024796f6d3bbbb AS build
+FROM docker.io/library/node:22.23-trixie@sha256:c103d7b5aa3bf627c8b98db941d52556f04e0b5d9352b3d7b6391245d26620f8 AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
@@ -157,7 +157,7 @@ COPY --link --from=build --chown=0:0 /build/public/ /app/public/
 COPY --link --from=build --chown=0:0 /build/package.json /build/seerr-api.yml /build/committag.json /build/next.config.ts /app/
 COPY --link --from=build --chown=65532:65532 /build/config/ /app/config/
 
-FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:8ad9cc935b7843c4024b7e1487b5ef472c354ea847b97c667023e2618552607e
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:39c66687298417dbf3ff2fb8b6012c20554494e16414ef7afd07b9abbb45b501
 
 ARG BASE_VERSION
 # hadolint ignore=DL3050

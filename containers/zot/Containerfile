@@ -45,7 +45,7 @@ ADD --link \
 
 # The web UI: static files, embedded in the binary. Node: the major of
 # zui's CI (.github/workflows/build-test.yml); containers/cinny's image.
-FROM docker.io/library/node:24.22-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS ui
+FROM docker.io/library/node:24.22-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS ui
 
 ARG ZUI_VERSION
 
@@ -83,7 +83,7 @@ COPY --link --from=ui /build/node_modules/ /node_modules/
 COPY --link --from=ui /build/build/ /build/
 
 # Debian trixie: its ca-certificates is the CA bundle copied below.
-FROM docker.io/library/golang:1.27-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
