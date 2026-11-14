@@ -30,7 +30,7 @@
 
 # Versions come from containers/trivy/docker-bake.hcl: build with
 # `docker buildx bake` (containers/AGENTS.md).
-FROM docker.io/library/golang:1.27-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
@@ -149,7 +149,7 @@ EORUN
 # 65532, a CA bundle for Trivy's outbound TLS (the databases on ghcr.io,
 # image registries), and a 1777 /tmp. On top: the binary, the report
 # templates, the state folders, and the licenses.
-FROM ghcr.io/spnngl/images/git:2.56.1@sha256:c056ace1677d93cedb24a6237b7f260342e6dfbdbb77da154943213e69640bf8
+FROM ghcr.io/spnngl/images/git:2.56.1@sha256:2ae09cc91b8f61e7ea36c372b84927ce5416e52c522b62d4243df747c0892da8
 ARG BASE_VERSION
 
 # The licenses of git, OpenSSH and busybox: GPL-2.0-only, SSH-OpenSSH.

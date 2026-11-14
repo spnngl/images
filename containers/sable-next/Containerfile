@@ -44,7 +44,7 @@ ADD --link \
 
 # Node: upstream's major (.mise/config.toml). Its binary also runs
 # upstream's WebAssembly build script, in the wasm stage.
-FROM docker.io/library/node:24.22-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS node
+FROM docker.io/library/node:24.22-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS node
 
 # Debian trixie: its musl-tools build the server's C libraries.
 FROM docker.io/library/rust:1.100-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS rust

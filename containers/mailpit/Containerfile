@@ -21,7 +21,7 @@
 # release builds it with Node 22 (.github/workflows/build-release.yml).
 # On the build platform: the output is the same for every platform, and a
 # cross build runs no emulated Node.
-FROM --platform=${BUILDPLATFORM} docker.io/library/node:24-trixie-slim@sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d AS ui
+FROM --platform=${BUILDPLATFORM} docker.io/library/node:24-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS ui
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
@@ -61,7 +61,7 @@ npm run package
 EORUN
 
 # Debian trixie: its ca-certificates and tzdata are copied below.
-FROM docker.io/library/golang:1.27-trixie@sha256:af1bfc2614ebb1dbd31af514b78740fd678850e76498762b425ecee4c5c6ea80 AS build
+FROM docker.io/library/golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
