@@ -8,7 +8,7 @@ target "mc" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=pgsty/mc depType=automerge-all
-      { version = "RELEASE.2026-11-09T00-00-00Z", checksum = "e1d4cc5abfe00b674eb36347399e7398990be467" },
+      { version = "RELEASE.2026-11-12T00-00-00Z", checksum = "a37a9f054fba828a0bbbceb4e9ff247ccf09c28d" },
     ]
   }
   args = merge(containerfile_args(debian), {
