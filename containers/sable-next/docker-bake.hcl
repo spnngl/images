@@ -16,7 +16,7 @@ target "sable-next" {
     ]
     sws = [
       # renovate: datasource=github-tags depName=static-web-server/static-web-server extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "2.44.1", checksum = "c5cbe67e91da91ccad838163cf9a034bf221a447" },
+      { version = "2.44.2", checksum = "d6b90168a71b2eeaa80cdb9e7966863f14ce62df" },
     ]
   }
   args = merge(apt_args(debian), {
