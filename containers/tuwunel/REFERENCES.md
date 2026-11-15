@@ -5,15 +5,16 @@
 - Upstream: `github.com/matrix-construct/tuwunel` at tag
   `v<BASE_VERSION>`:
   - `docker/bake.hcl`: the release image (`docker`, `static`, `install`
-    targets), the feature sets (`cargo_feat_sets`), the static link
-    (`static_rustflags`, `static_libs`)
+    targets), the feature sets (`cargo_feat_sets`, `cargo_spec_features`),
+    the static link (`static_rustflags`, `static_libs`)
   - `docker/Dockerfile.cargo`: `CXXSTDLIB=""` and its reason
   - `docker/Dockerfile.smoketest`: the `-Otest='["smoke"]'` self-test
   - `.github/workflows/publish.yml`: what is published (`release`,
-    `stable`, `all`)
+    `msrv`, `default`)
   - `Cargo.toml`, `src/main/Cargo.toml`: profile, features, license,
     MSRV; `rust-toolchain.toml`
-  - `src/core/config/mod.rs`, `tuwunel-example.toml`: configuration
+  - `src/core/config/`, `tuwunel-example.toml`, `docs/configuration.md`:
+    configuration, its tables and their flat (`legacy:`) names
   - `src/main/health.rs`: `--health-check`
   - `src/core/info/version.rs`, `src/macros/git.rs`: `--version`
 - RocksDB bindings: `github.com/matrix-construct/rust-rocksdb` at the
@@ -44,10 +45,13 @@
   Upstream's `rust-toolchain.toml` pins an MSRV channel with
   rust-analyzer, clippy and four targets that rustup would download.
   A newer stable is what upstream's `stable` builds use.
-- **Features `all`:** what upstream publishes, so upstream's docs
-  (LDAP, direct TLS, Sentry) apply. `tokio_console` and `tuwunel_mods`
-  need `--cfg tokio_unstable` and `--cfg tuwunel_mods`, set on nightly
-  only (`docker/bake.hcl`): compiled in, inactive, as upstream's image.
+- **Features `default`:** what upstream publishes since 2.0, so
+  upstream's docs (LDAP, OIDC, S3, email) apply. Upstream builds it with
+  `--no-default-features` (`cargo_spec_features`), so Cargo's default
+  set, which differs, is not used. Each feature has to be listed:
+  one missing from the list is missing from the image, which still
+  builds and passes the smoke test (2.0 moved OIDC, MAS and the
+  Synapse admin API behind features of their own).
 - **`x86-64-v2` on amd64:** RocksDB's `build.rs` follows the target
   features and enables SSE4.2 (hardware CRC32C); the default x86_64
   target has none and warns `compiling without SSE4.2: CRC will be
@@ -75,8 +79,13 @@
 - **`TUWUNEL_ADDRESS=0.0.0.0`:** the default is loopback, unreachable
   from outside a container (upstream's compose files set the same). A
   single address: one that is set must bind or the server refuses to
-  start (`src/core/config/mod.rs`), `::` is dual-stack on Linux and
+  start (`src/core/config/http.rs`), `::` is dual-stack on Linux and
   collides with `0.0.0.0`, and fails where IPv6 is off.
+- **Flat environment names (`TUWUNEL_ADDRESS`), not 2.0's table names
+  (`TUWUNEL_HTTP__LISTEN__ADDRESS`):** upstream's docs and compose files
+  use them, and they work throughout 2.x. Two spellings of one setting
+  in the environment fail startup (`src/core/config/normalize.rs`), so
+  the header warns against the table name of `TUWUNEL_ADDRESS`.
 - **No `TUWUNEL_DATABASE_PATH`:** the default is `/var/lib/tuwunel`.
 - **Debian's CA bundle:** federation, URL previews, LDAP and Sentry use
   TLS with public CAs (`rustls-platform-verifier` reads the system
