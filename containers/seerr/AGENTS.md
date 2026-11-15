@@ -19,7 +19,7 @@ reason for each choice: [REFERENCES.md](REFERENCES.md).
   one, and say why in `REFERENCES.md`.
 - The image ships what the server reads at run time (`dist`, `.next`,
   the production `node_modules`, `public`, `package.json`,
-  `seerr-api.yml`, `committag.json`, `next.config.ts`), root-owned. The
+  `seerr-api.yml`, `committag.json`, `next.config.mjs`), root-owned. The
   two volumes, `/app/config` and `/app/.next/cache`, are 65532's.
   A file the server starts to read goes in `app-files`; the test (below)
   runs on the same tree and fails when one is missing.
@@ -33,7 +33,7 @@ reason for each choice: [REFERENCES.md](REFERENCES.md).
 The build stage runs it, on the pruned production tree: the server on
 loopback with a temp config folder; `/api/v1/status` reports
 `<BASE_VERSION>`; `/_next/image` answers a WebP (`sharp`); the image
-proxy accepts upstream's hosts (`next.config.ts` is read); `/` answers;
+proxy accepts upstream's hosts (`next.config.mjs` is read); `/` answers;
 `bcrypt` and `sqlite3` work. The final stage's last `RUN` loads the
 three addons against distroless' libraries and checks its Node against
 `engines.node`.
@@ -46,5 +46,5 @@ migrate the previous release's: read the release notes of a version
 that changes `server/migration`); a major release is never. Before
 merging read upstream's `Dockerfile`, `package.json` (`engines`,
 `packageManager`, `pnpm.onlyBuiltDependencies`, the lifecycle scripts)
-and `next.config.ts` at the new tag: a new Node major, a new install
+and `next.config.*` at the new tag: a new Node major, a new install
 script, a new file the server reads.
