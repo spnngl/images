@@ -44,14 +44,21 @@
 - **`RUSTUP_TOOLCHAIN=${RUST_VERSION}`:** the base image's toolchain.
   Upstream's `rust-toolchain.toml` pins an MSRV channel with
   rust-analyzer, clippy and four targets that rustup would download.
-  A newer stable is what upstream's `stable` builds use.
+  A newer stable is what upstream's `stable` builds use (it publishes
+  the MSRV build since 2.0). An older one fails the build, checked
+  before compiling: a Renovate minor could raise the MSRV.
 - **Features `default`:** what upstream publishes since 2.0, so
   upstream's docs (LDAP, OIDC, S3, email) apply. Upstream builds it with
   `--no-default-features` (`cargo_spec_features`), so Cargo's default
   set, which differs, is not used. Each feature has to be listed:
   one missing from the list is missing from the image, which still
   builds and passes the smoke test (2.0 moved OIDC, MAS and the
-  Synapse admin API behind features of their own).
+  Synapse admin API behind features of their own). So the build fails
+  when the list differs from `cargo_feat_sets.default` (read with
+  `sed`; a reformatted file fails it too): Renovate automerges minor
+  releases, and 2.0's notes announce feature changes within 2.x.
+  Checked, not read from the source: a feature change gets a review
+  (new build dependencies, runtime behavior) instead of an automerge.
 - **`x86-64-v2` on amd64:** RocksDB's `build.rs` follows the target
   features and enables SSE4.2 (hardware CRC32C); the default x86_64
   target has none and warns `compiling without SSE4.2: CRC will be

@@ -100,6 +100,9 @@ WORKDIR /src
 # enables SSE4.2, its hardware CRC; arm64 keeps the default baseline.
 # Features: upstream's `default` set (docker/bake.hcl, cargo_feat_sets)
 # without Cargo's defaults, as upstream's release image (cargo_spec_features).
+# Checked first against the source, with the toolchain: Renovate automerges
+# minor releases, and one that changes the set or raises the MSRV
+# (rust-toolchain.toml) must fail here, not build without a feature.
 # Caches: uid sets the owner of a new cache only, and one is shared by
 # every build that uses its id (the target by default): ids of their own,
 # as containers/garage does. The git cache: rust-rocksdb is a git
@@ -108,6 +111,18 @@ RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/l
     --mount=type=cache,id=cargo-git-65532,uid=65532,gid=65532,target=/usr/local/cargo/git \
     --mount=type=cache,id=tuwunel-target-65532,uid=65532,gid=65532,target=/src/target \
     <<EORUN
+features=brotli_compression,bzip2_compression,console,cpu_affinity,direct_tls,element_hacks,email,gcs_storage,gzip_compression,io_uring,jemalloc,jemalloc_conf,jwt_login,ldap,lz4_compression,markdown,mas,media_thumbnail,oidc,release_max_log_level,s3_storage,sentry_telemetry,synapse_admin,systemd,url_preview,zstd_compression
+upstream="$(sed -n '/^cargo_feat_sets = {/,/^}/s/^ *default = "\(.*\)"$/\1/p' docker/bake.hcl)"
+if [ "${features}" != "${upstream}" ]; then
+    echo "features differ from docker/bake.hcl's cargo_feat_sets.default: ${upstream:-not found}" >&2
+    exit 1
+fi
+msrv="$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)"
+rustc="$(rustc --version | cut -d ' ' -f 2)"
+if ! printf '%s\n' "${msrv:?channel not found in rust-toolchain.toml}" "${rustc}" | sort -V -C; then
+    echo "rustc ${rustc} is older than the MSRV ${msrv}: move the base image's rust tag" >&2
+    exit 1
+fi
 target="$(uname -m)-unknown-linux-gnu"
 export CXXSTDLIB=""
 RUSTFLAGS="-C relocation-model=static -C target-feature=+crt-static -C link-arg=-l:libstdc++.a -C link-arg=-l:libc.a -C link-arg=-l:libm.a -C link-arg=-l:liburing.a -C link-arg=-l:libgcc.a"
@@ -118,7 +133,7 @@ export RUSTFLAGS
 cargo auditable build \
     --locked --release --target "${target}" --package tuwunel --bin tuwunel \
     --no-default-features \
-    --features brotli_compression,bzip2_compression,console,cpu_affinity,direct_tls,element_hacks,email,gcs_storage,gzip_compression,io_uring,jemalloc,jemalloc_conf,jwt_login,ldap,lz4_compression,markdown,mas,media_thumbnail,oidc,release_max_log_level,s3_storage,sentry_telemetry,synapse_admin,systemd,url_preview,zstd_compression
+    --features "${features}"
 cp "target/${target}/release/tuwunel" /out/
 # A dynamic binary does not run on scratch.
 if ldd /out/tuwunel > /dev/null 2>&1; then
