@@ -3,7 +3,7 @@
 Tuwunel (Matrix homeserver, Rust, RocksDB) built from source, one static
 glibc binary on `scratch`. Close to upstream's published image: same
 paths (`/usr/bin/tuwunel`, `/var/lib/tuwunel`), Cargo features
-(`all`) and static link, so upstream's docs apply. Runtime contract: the
+(`default`) and static link, so upstream's docs apply. Runtime contract: the
 Containerfile's header. Upstream sources and the reason for each choice:
 [REFERENCES.md](REFERENCES.md).
 
@@ -16,8 +16,11 @@ Containerfile's header. Upstream sources and the reason for each choice:
   dynamic.
 - `RUSTUP_TOOLCHAIN=${RUST_VERSION}` (the base image's): without it
   rustup downloads upstream's `rust-toolchain.toml` toolchain.
-- Cargo features are upstream's `all` set (`docker/bake.hcl`,
-  `cargo_feat_sets`).
+- Cargo features are upstream's `default` set (`docker/bake.hcl`,
+  `cargo_feat_sets`), with `--no-default-features`: every feature is
+  listed.
+- `ENV TUWUNEL_ADDRESS`: the flat name, as upstream's docs. Its table
+  name (`TUWUNEL_HTTP__LISTEN__ADDRESS`) set as well fails startup.
 - amd64 builds for `x86-64-v2`: the image does not run on a CPU without
   SSE4.2. arm64 keeps the default baseline.
 - `TUWUNEL_ADDRESS=0.0.0.0`: one address, never `["0.0.0.0", "::"]`
@@ -32,8 +35,8 @@ Containerfile's header. Upstream sources and the reason for each choice:
 The build stage runs the server: `--version`, then registration by
 token, a user, a room and a message through the client API, a graceful
 stop, and the same database reopened with the message still there.
-`tokio_console` and `tuwunel_mods` are compiled in and inactive (they
-need cfg flags upstream sets on nightly only), so nothing tests them.
+It does not test the features (a missing one still builds and passes):
+the Updates check below does.
 
 ## Updates
 
@@ -46,7 +49,8 @@ migrations are one-way: before merging any release, read its notes
 merging changes the image tag, and a node stays on the old one until
 moved. Each bump, by hand or from the PR:
 
-- `docker/bake.hcl`'s `cargo_feat_sets.all` against the `--features`
-  list of the Containerfile;
+- `docker/bake.hcl`'s `cargo_feat_sets.default` against the
+  `--features` list of the Containerfile, and `publish.yml`'s
+  `feat_set` (still `default`);
 - `rust-toolchain.toml`'s `channel` (upstream's MSRV) against the base
   image's `rust:` tag: the tag must not be older.

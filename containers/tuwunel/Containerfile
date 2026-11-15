@@ -2,7 +2,7 @@
 
 # Tuwunel, Matrix homeserver (https://tuwunel.chat), built from source as
 # one static glibc binary on scratch: upstream's release image (profile
-# release, feature set all, docker/bake.hcl) with the same paths, but not
+# release, feature set default, docker/bake.hcl) with the same paths, but not
 # root, and on an x86-64-v2 baseline.
 #
 # Runtime contract: UID/GID 65532 (no passwd entry); /var/lib/tuwunel
@@ -10,7 +10,9 @@
 # file (TUWUNEL_CONFIG), none shipped; secrets (registration_token_file
 # and the like) from files, not readable by others. Listens on
 # 0.0.0.0:8008 (TUWUNEL_ADDRESS, TUWUNEL_PORT); 8448 only with direct TLS
-# configured. amd64 needs an x86-64-v2 CPU (SSE4.2, any since ~2009).
+# configured. Environment: settings keep their flat names (TUWUNEL_ADDRESS),
+# as upstream's docs; the table spelling of a setting the image sets
+# (TUWUNEL_HTTP__LISTEN__ADDRESS) conflicts with it and fails startup. amd64 needs an x86-64-v2 CPU (SSE4.2, any since ~2009).
 # Probe: exec ["/usr/bin/tuwunel", "--health-check"], no shell needed.
 # Run with --read-only, --cap-drop all, no-new-privileges. A host with
 # many cores needs --pids-limit 16384 or TUWUNEL_DB_POOL_MAX_WORKERS=512,
@@ -96,9 +98,8 @@ WORKDIR /src
 # skip build scripts and proc macros, which must stay dynamic to load
 # libclang. x86-64-v2: RocksDB's build.rs follows target features and
 # enables SSE4.2, its hardware CRC; arm64 keeps the default baseline.
-# Features: upstream's `all` set (docker/bake.hcl, cargo_feat_sets):
-# tokio_console and tuwunel_mods need cfg flags upstream only sets on
-# nightly, so they are compiled in and inactive, as upstream's image.
+# Features: upstream's `default` set (docker/bake.hcl, cargo_feat_sets)
+# without Cargo's defaults, as upstream's release image (cargo_spec_features).
 # Caches: uid sets the owner of a new cache only, and one is shared by
 # every build that uses its id (the target by default): ids of their own,
 # as containers/garage does. The git cache: rust-rocksdb is a git
@@ -117,7 +118,7 @@ export RUSTFLAGS
 cargo auditable build \
     --locked --release --target "${target}" --package tuwunel --bin tuwunel \
     --no-default-features \
-    --features brotli_compression,bzip2_compression,console,direct_tls,element_hacks,gzip_compression,io_uring,jemalloc,jemalloc_conf,jemalloc_prof,jemalloc_stats,ldap,lz4_compression,media_thumbnail,perf_measurements,release_max_log_level,sentry_telemetry,systemd,tokio_console,tuwunel_mods,url_preview,zstd_compression
+    --features brotli_compression,bzip2_compression,console,cpu_affinity,direct_tls,element_hacks,email,gcs_storage,gzip_compression,io_uring,jemalloc,jemalloc_conf,jwt_login,ldap,lz4_compression,markdown,mas,media_thumbnail,oidc,release_max_log_level,s3_storage,sentry_telemetry,synapse_admin,systemd,url_preview,zstd_compression
 cp "target/${target}/release/tuwunel" /out/
 # A dynamic binary does not run on scratch.
 if ldd /out/tuwunel > /dev/null 2>&1; then
