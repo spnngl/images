@@ -20,7 +20,7 @@ target "buildkit" {
     ]
     runc = [
       # renovate: datasource=github-tags depName=opencontainers/runc extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "1.5.2", checksum = "29dd3dc2b13b4123162e5fe132504bb4b15569f1" },
+      { version = "1.5.3", checksum = "46365c62967c76a765a5e347f48f0c7b3b571fe9" },
     ]
     rootlesskit = [
       # renovate: datasource=github-tags depName=rootless-containers/rootlesskit extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
