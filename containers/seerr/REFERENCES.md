@@ -6,7 +6,7 @@
   `Dockerfile` (release build and image), `package.json` (`engines`,
   `packageManager`, lifecycle scripts, `pnpm.onlyBuiltDependencies`,
   `pnpm.overrides`, license), `pnpm-lock.yaml`, `.npmrc`
-  (`engine-strict`), `next.config.ts`, `server/index.ts` (`PORT`,
+  (`engine-strict`), `next.config.mjs`, `server/index.ts` (`PORT`,
   `HOST`, the paths of `dist/`), `server/utils/appVersion.ts`
   (`committag.json`), `server/utils/appDataVolume.ts` (the `DOCKER`
   marker), `server/datasource.ts` and `server/lib/settings/index.ts`
@@ -55,8 +55,8 @@
   the browser bundles hold what the app uses), and the `*musl*` native
   packages: pnpm installs both libc variants, upstream removes the other
   half (`linux-x64-gnu`) for Alpine. The test runs on the result.
-- **`next.config.ts` shipped, `tsconfig.json` not:** Next compiles and
-  reads `next.config.ts` at start, even with a custom server; without
+- **`next.config.mjs` shipped, `tsconfig.json` not:** Next reads
+  `next.config.mjs` at start, even with a custom server; without
   it, `/_next/image` answers 400 for upstream's hosts (`remotePatterns`).
   The test checks it. Next needs no `tsconfig.json` to do so (the test
   removes it before starting).
