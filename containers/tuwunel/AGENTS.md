@@ -15,10 +15,11 @@ Containerfile's header. Upstream sources and the reason for each choice:
   `static_rustflags`, `static_libs`). The build fails if the binary is
   dynamic.
 - `RUSTUP_TOOLCHAIN=${RUST_VERSION}` (the base image's): without it
-  rustup downloads upstream's `rust-toolchain.toml` toolchain.
+  rustup downloads upstream's `rust-toolchain.toml` toolchain. The build
+  fails if it is older than that file's `channel` (upstream's MSRV).
 - Cargo features are upstream's `default` set (`docker/bake.hcl`,
   `cargo_feat_sets`), with `--no-default-features`: every feature is
-  listed.
+  listed, and the build fails if the list differs from upstream's.
 - `ENV TUWUNEL_ADDRESS`: the flat name, as upstream's docs. Its table
   name (`TUWUNEL_HTTP__LISTEN__ADDRESS`) set as well fails startup.
 - amd64 builds for `x86-64-v2`: the image does not run on a CPU without
@@ -36,7 +37,7 @@ The build stage runs the server: `--version`, then registration by
 token, a user, a room and a message through the client API, a graceful
 stop, and the same database reopened with the message still there.
 It does not test the features (a missing one still builds and passes):
-the Updates check below does.
+the check against `docker/bake.hcl` does.
 
 ## Updates
 
@@ -47,10 +48,9 @@ release's data). A major release is never automerged. Database
 migrations are one-way: before merging any release, read its notes
 (`https://github.com/matrix-construct/tuwunel/releases/tag/v<new>`);
 merging changes the image tag, and a node stays on the old one until
-moved. Each bump, by hand or from the PR:
+moved. A failed feature or MSRV check: update the `features` list or
+the base image's `rust:` tag. A major release, by hand:
 
-- `docker/bake.hcl`'s `cargo_feat_sets.default` against the
-  `--features` list of the Containerfile, and `publish.yml`'s
-  `feat_set` (still `default`);
-- `rust-toolchain.toml`'s `channel` (upstream's MSRV) against the base
-  image's `rust:` tag: the tag must not be older.
+- `publish.yml`'s `feat_set` still `default`;
+- the previous release's database opened by the new one: a user, a
+  room and a thread written by the old image, read by the new.
