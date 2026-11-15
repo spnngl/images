@@ -9,7 +9,7 @@ target "seerr" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=seerr-team/seerr extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "3.5.1", checksum = "564bfb08b54caa374bddaf820abfd226e5e69151" },
+      { version = "3.5.2", checksum = "18a90b4ed962cc56abc9087e305da5c18a3c7275" },
     ]
   }
   args = merge(containerfile_args(debian), {
