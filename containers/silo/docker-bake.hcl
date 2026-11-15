@@ -8,7 +8,7 @@ target "silo" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=pgsty/silo depType=automerge-all
-      { version = "RELEASE.2026-11-09T00-00-00Z", checksum = "d998292387ccf1d2907749e0fb1575ef5fb93fda" },
+      { version = "RELEASE.2026-11-12T00-00-00Z", checksum = "44e848fedf8cec3d8c0da4b1aa8422390a2b7a8b" },
     ]
   }
   args = merge(containerfile_args(debian), {
