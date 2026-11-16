@@ -122,6 +122,22 @@ command:
           grep -q '^etc_diff_file{path="/etc/machine-id",change="A",expected="true"' /var/lib/etc-diff/etc-diff.prom
     exit-status: 0
     timeout: 120000
+  # Goss runs checks in no set order: it makes its own sessions, a recorded
+  # one and one without a terminal (as the two above), and counts them.
+  tlog-stats.service counts tlog's sessions:
+    exec: |
+      (printf 'echo stats\nexit\n'; sleep 2) |
+          runuser -u rootless -- /usr/bin/tlog-rec-session >/dev/null 2>&1
+      runuser -u rootless -- /usr/libexec/tlog-login -c 'echo stats' </dev/null >/dev/null
+      sleep 2
+      systemctl start tlog-stats.service || exit 1
+      p=/var/lib/tlog-stats/tlog-stats.prom
+      grep -q '^tlog_last_run_timestamp_seconds ' "${p}" &&
+          grep -qE '^tlog_recordings_total\{user="rootless"\} [1-9]' "${p}" &&
+          grep -qE '^tlog_unrecorded_sessions_total\{user="rootless",reason="no_terminal"\} [1-9]' "${p}" &&
+          grep -qx '# TYPE tlog_recordings_total counter' "${p}"
+    exit-status: 0
+    timeout: 120000
   grype.service scans the node:
     exec: systemctl start grype.service && grep -q '^grype_last_scan_timestamp_seconds ' /var/lib/grype/grype.prom
     exit-status: 0

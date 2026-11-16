@@ -225,6 +225,30 @@ Read each at the version this repository pins.
     `TLOG_USER`, `TLOG_SESSION`, `TLOG_REC`, `TLOG_ID`. `tlog-play -r
     journal -M TLOG_REC=<rec>` replays one. `tlog-login`'s own messages
     are `SYSLOG_IDENTIFIER=tlog-login`.
+  - **Metrics, hourly** (`tlog-stats.timer`, `usr/libexec/tlog-stats`, nushell
+    like `etc-diff`; `/var/lib/tlog-stats/tlog-stats.prom` for node-exporter's
+    textfile collector). It reads the journal of the current boot, and from
+    tlog's entries only `TLOG_USER` and `TLOG_REC`, never `MESSAGE` (the
+    recorded session). The counters are "since boot": that is what a counter
+    restarting at 0 is, and `increase()` copes; a journal vacuum within a boot
+    reads as a reset. `prometheus.nu`'s `metric --counter` writes the type;
+    the other scripts' stay gauges.
+    - `tlog_recordings_total{user}`: distinct `TLOG_REC`, from messages of
+      `_UID=1501`, which only `tlog-rec-session` (setuid) can send: upstream's
+      way to tell genuine tlog messages (README, "Filtering out tlog
+      messages"). A recording still running counts.
+    - `tlog_last_recording_timestamp_seconds{user}`: its newest message.
+    - `tlog_unrecorded_sessions_total{user,reason}`: the wrapper's messages,
+      `reason` `no_terminal` or `tlog_failed`. Alert on `tlog_failed`: it
+      means the recording is broken. `no_terminal` is automation. Any user
+      can run `logger -t tlog-login`: the count says what sessions claimed.
+    - `tlog_journal_suppressed_messages_total`: journald's "Suppressed N
+      messages from session-X.scope", where tlog writes. With `limit.action`
+      `pass`, tlog never throttles, and journald's rate limit is where
+      recorded data is lost; it needs `increase(...[1h]) > 0` alerting.
+    - `tlog_last_run_timestamp_seconds`: for a stale-metric alert.
+    The series of `rootless` and `root` exist from 0, so that `increase()`
+    sees the first event.
 - **SSH keys from the image only:** `AuthorizedKeysFile` is
   `/usr/lib/ssh/authorized_keys/%u`, read-only: a key comes and goes with an
   image. Keys that Ignition, Afterburn or an OpenStack keypair write (to

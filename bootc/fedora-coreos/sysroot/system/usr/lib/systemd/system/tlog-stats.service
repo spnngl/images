@@ -1,0 +1,9 @@
+# Run by tlog-stats.timer: counts what tlog recorded since boot, and the
+# sessions it did not, for node-exporter's textfile collector.
+[Unit]
+Description=Count tlog's recordings and unrecorded sessions
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/tlog-stats
+StateDirectory=tlog-stats

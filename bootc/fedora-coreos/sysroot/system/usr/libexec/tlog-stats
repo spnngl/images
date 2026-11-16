@@ -1,0 +1,107 @@
+#!/usr/bin/nu --no-config-file
+# Count what tlog recorded since boot, and the sessions it did not (the
+# wrapper's logs, usr/libexec/tlog-login). See
+# usr/lib/systemd/system/tlog-stats.service.
+#
+# Output, in /var/lib/tlog-stats:
+#   tlog-stats.prom  counters and gauges for node-exporter's textfile
+#                    collector: mount /var/lib/tlog-stats into its pod, and
+#                    give that path to --collector.textfile.directory
+#
+# The counters are those of the current boot (journalctl --boot), which is
+# what a Prometheus counter that restarts at 0 means: increase() and rate()
+# cope with it. A journal vacuum inside a boot makes one drop, read as a reset.
+#
+# It reads tlog's entries for TLOG_USER and TLOG_REC only, never MESSAGE: that
+# is the recorded session, secrets typed into it included.
+#
+# Nushell of Fedora's package (0.99): no syntax of a later release.
+
+use /usr/share/nushell/prometheus.nu [metric save-metrics]
+
+const DIR = '/var/lib/tlog-stats'
+
+# tlog's user, usr/lib/sysusers.d/tlog.conf: journald stamps it on the entries
+# of tlog-rec-session (setuid to it), which no other user can write.
+const TLOG_UID = '1501'
+
+# The image's two logins (usr/lib/sysusers.d/rootless.conf and the
+# Containerfile's usermod): their series exist from 0, so that increase()
+# sees the first event.
+const LOGINS = [rootless root]
+
+# What the wrapper logs, `session of <user> NOT recorded, <reason>, ...`, and
+# the label each reason gets.
+const REASONS = {'no terminal': no_terminal, 'tlog failed': tlog_failed}
+
+def main [] {
+    cd $DIR
+    let recordings = recordings
+    let unrecorded = unrecorded
+    let users = $LOGINS | append ($recordings | each {|r| $r.user }) | uniq
+    [
+        ...([{labels: {}, value: (date now | format date '%s')}]
+            | metric tlog_last_run_timestamp_seconds 'Last count of the journal for tlog.')
+        ...($users | each {|u|
+            {labels: {user: $u}, value: ($recordings | where user == $u | each {|r| $r.rec } | uniq | length)}
+        } | metric --counter tlog_recordings_total 'Terminal sessions tlog recorded since boot, by user. One per recording ID, one that is still running included.')
+        ...($users | each {|u|
+            let times = $recordings | where user == $u | each {|r| $r.time }
+            if ($times | is-empty) { [] } else { [{labels: {user: $u}, value: ($times | math max)}] }
+        } | flatten | metric tlog_last_recording_timestamp_seconds 'Newest entry of a recording, by user.')
+        ...($users | each {|u|
+            $REASONS | values | each {|reason|
+                {
+                    labels: {user: $u, reason: $reason}
+                    value: ($unrecorded | where user == $u and reason == $reason | length)
+                }
+            }
+        } | flatten | metric --counter tlog_unrecorded_sessions_total 'Sessions the login shell ran without tlog since boot, by user and reason: no_terminal (tlog loses the output of a command whose stdin ends), tlog_failed. Logged by the session itself, so a user can add to it.')
+        ...([{labels: {}, value: (suppressed)}]
+            | metric --counter tlog_journal_suppressed_messages_total 'Messages journald dropped since boot for exceeding the rate limit of a session scope, where tlog writes: recordings lost.')
+    ] | flatten | save-metrics tlog-stats.prom
+}
+
+# The current boot's entries of tlog-rec-session: one per message logged,
+# with its user, recording ID and time (seconds).
+def recordings []: nothing -> list {
+    journal --output json --output-fields=TLOG_USER,TLOG_REC $'_UID=($TLOG_UID)'
+        | lines
+        | where {|l| $l | str starts-with '{' }
+        | each {|l| $l | from json }
+        | where {|e| $e.TLOG_USER? != null and $e.TLOG_REC? != null }
+        | each {|e|
+            {
+                user: $e.TLOG_USER
+                rec: $e.TLOG_REC
+                time: (($e.__REALTIME_TIMESTAMP | into int) // 1000000)
+            }
+        }
+}
+
+# The wrapper's logs of a session it did not record: user and reason.
+def unrecorded []: nothing -> list {
+    journal --output cat --identifier=tlog-login
+        | lines
+        | parse --regex '^session of (?<user>\S+) NOT recorded, (?<reason>no terminal|tlog failed)'
+        | each {|e| {user: $e.user, reason: ($REASONS | get $e.reason)} }
+}
+
+# Messages journald dropped: its "Suppressed N messages from session-X.scope".
+def suppressed []: nothing -> int {
+    journal --output cat _SYSTEMD_UNIT=systemd-journald.service
+        | lines
+        | parse --regex '^Suppressed (?<count>[0-9]+) messages from session-\S+\.scope'
+        | each {|e| $e.count | into int }
+        | append 0
+        | math sum
+}
+
+# journalctl, for the current boot, failing with its error.
+def --wrapped journal [...args: string]: nothing -> string {
+    let result = ^journalctl --boot --no-pager ...$args | complete
+    if $result.exit_code != 0 {
+        error make {msg: $"journalctl exited ($result.exit_code): ($result.stderr)"}
+    }
+    $result.stdout
+}

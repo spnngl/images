@@ -43,6 +43,7 @@ file:
     contents: ["/^ *use-sigstore-attachments: true$/"]
   /etc/sudoers.d/99-rootless: {exists: true, filetype: file, mode: "0440"}
   /usr/libexec/tlog-login: {exists: true, filetype: file, mode: "0755"}
+  /usr/libexec/tlog-stats: {exists: true, filetype: file, mode: "0755"}
   # The default hostname, wildcards systemd fills from the machine ID.
   /etc/hostname:
     exists: true
@@ -60,6 +61,7 @@ file:
   /usr/lib/systemd/system/multi-user.target.wants/systemd-networkd.service: {exists: true, filetype: symlink, linked-to: ../systemd-networkd.service}
   /usr/lib/systemd/system/timers.target.wants/openscap.timer: {exists: true, filetype: symlink, linked-to: ../openscap.timer}
   /usr/lib/systemd/system/timers.target.wants/etc-diff.timer: {exists: true, filetype: symlink, linked-to: ../etc-diff.timer}
+  /usr/lib/systemd/system/timers.target.wants/tlog-stats.timer: {exists: true, filetype: symlink, linked-to: ../tlog-stats.timer}
   /usr/lib/systemd/system/timers.target.wants/grype.timer: {exists: true, filetype: symlink, linked-to: ../grype.timer}
   /usr/lib/systemd/system/sysinit.target.wants/wx-remount.service: {exists: true, filetype: symlink, linked-to: ../wx-remount.service}
   /usr/lib/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service: {exists: true, filetype: symlink, linked-to: ../systemd-networkd-wait-online.service}

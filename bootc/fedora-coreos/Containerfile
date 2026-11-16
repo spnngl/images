@@ -37,8 +37,9 @@ RUN <<EORUN
 # - greenboot checks an update boots and rolls back when it doesn't.
 # - openscap-scanner and scap-security-guide check the image (scan stage,
 #   below) and the nodes (openscap.timer); audispd-plugins holds audit's
-#   syslog plugin; nushell runs usr/libexec/openscap-scan and
-#   usr/libexec/etc-diff, which write their results as metrics.
+#   syslog plugin; nushell runs usr/libexec/openscap-scan,
+#   usr/libexec/etc-diff and usr/libexec/tlog-stats, which write their results
+#   as metrics.
 # - grype lists the CVEs of the image (scan stage, below) and of the nodes
 #   (grype.timer).
 # - tlog records the terminal sessions of rootless and root into the journal
@@ -147,7 +148,7 @@ grep -qx 'GSSAPIAuthentication yes' /etc/ssh/sshd_config.d/50-redhat.conf
 sed -i '/^GSSAPIAuthentication yes$/d' /etc/ssh/sshd_config.d/50-redhat.conf
 chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
-chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan,tlog-login}
+chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan,tlog-login,tlog-stats}
 # root's login shell records its console and sudo sessions (rootless's is in
 # usr/lib/sysusers.d/rootless.conf). Fail if the wrapper is not executable.
 usermod -s /usr/libexec/tlog-login root

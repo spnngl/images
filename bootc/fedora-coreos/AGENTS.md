@@ -65,6 +65,10 @@ each choice: [REFERENCES.md](REFERENCES.md).
   nodes scan daily (`openscap.timer`, results in `/var/lib/openscap`), and
   list `/etc`'s drift hourly (`etc-diff.timer`, `/var/lib/etc-diff`); the
   paths the node writes on purpose are in `usr/libexec/etc-diff`.
+- **tlog** records the terminal sessions of `rootless` and `root` into the
+  journal (`usr/libexec/tlog-login` is their shell; a session without a
+  terminal, or with tlog broken, runs unrecorded and logged), and
+  `tlog-stats.timer` counts them hourly (`/var/lib/tlog-stats`).
 - **grype** lists the CVEs of `/usr` and `/etc`, at build and daily on
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;

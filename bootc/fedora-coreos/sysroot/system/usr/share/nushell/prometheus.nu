@@ -1,5 +1,5 @@
 # Prometheus' text format, for node-exporter's textfile collector: the metrics
-# of usr/libexec/openscap-scan and usr/libexec/etc-diff.
+# of usr/libexec/openscap-scan, usr/libexec/etc-diff and usr/libexec/tlog-stats.
 #
 # Nushell of Fedora's package (0.99): no syntax of a later release.
 
@@ -13,10 +13,12 @@ def labels []: record -> string {
     if ($pairs | is-empty) { '' } else { $"{($pairs | str join ',')}" }
 }
 
-# A gauge, from rows of {labels, value}.
-export def metric [name: string, help: string]: list<record> -> list<string> {
+# A gauge, or with --counter a counter (name ending in _total), from rows of
+# {labels, value}.
+export def metric [name: string, help: string, --counter]: list<record> -> list<string> {
     let rows = $in
-    [$"# HELP ($name) ($help)" $"# TYPE ($name) gauge"]
+    let type = if $counter { 'counter' } else { 'gauge' }
+    [$"# HELP ($name) ($help)" $"# TYPE ($name) ($type)"]
         | append ($rows | each {|r| $"($name)($r.labels | labels) ($r.value)" })
 }
 
