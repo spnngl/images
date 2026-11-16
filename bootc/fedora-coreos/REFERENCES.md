@@ -909,7 +909,9 @@ the workloads' images, never on the host.
 - **The driver's compute userspace and the Container Toolkit's base
   package, nothing more** (`nvidia-driver-cuda`,
   `nvidia-container-toolkit-base`): `nvidia-smi`, NVML, the CUDA driver
-  library, `nvidia-persistenced`, `nvidia-container-runtime`,
+  library, `nvidia-persistenced`, `nvidia-cuda-mps-control` and
+  `nvidia-cuda-mps-server` (the DRA driver's MPS sharing runs them from
+  the host, in a chroot of `/`), `nvidia-container-runtime`,
   `nvidia-ctk`. No graphics, no CUDA toolkit: the workloads' images carry
   their CUDA, and the GPU Operator's toolkit pod (which writes to
   `/usr/local` and the read-only containerd config) stays disabled.
