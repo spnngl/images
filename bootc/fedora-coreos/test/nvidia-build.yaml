@@ -34,7 +34,6 @@ file:
 
   /usr/bin/nvidia-smi: {exists: true, filetype: file}
   /usr/bin/nvidia-ctk: {exists: true, filetype: file}
-  /usr/bin/nvidia-container-runtime: {exists: true, filetype: file}
   # The DRA driver's MPS sharing runs them from the host (REFERENCES.md,
   # "GPU image").
   /usr/bin/nvidia-cuda-mps-control: {exists: true, filetype: file}
@@ -54,13 +53,14 @@ command:
       done
     exit-status: 0
 
-  # containerd ignores a mistyped plugin key: check the merged config.
-  containerd, merged config has the nvidia runtime and CDI:
+  # containerd ignores a mistyped plugin key: check the merged config. A
+  # runtime `nvidia` would let a RuntimeClass hand every GPU to a pod, past
+  # the scheduler (REFERENCES.md, "GPU image").
+  containerd, merged config has CDI, runc, and no nvidia runtime:
     exec: containerd --config /usr/lib/containerd/config.toml config dump
     exit-status: 0
     timeout: 60000
     stdout:
-      - runtimes.nvidia.options]
-      - BinaryName = '/usr/bin/nvidia-container-runtime'
       - enable_cdi = true
       - default_runtime_name = 'runc'
+      - "!runtimes.nvidia"
