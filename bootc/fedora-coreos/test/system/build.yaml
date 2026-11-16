@@ -13,6 +13,7 @@ package:
   openssh-clients: {installed: true}
   grype: {installed: true}
   nushell: {installed: true}
+  tlog: {installed: true}
   bootc: {installed: true}
   rpm-ostree: {installed: true}
   podman: {installed: true}
@@ -108,6 +109,17 @@ command:
     exec: iptables --version
     exit-status: 0
     stdout: [nf_tables]
+  # Containerfile: tlog's account is made before the package, at the ID of
+  # usr/lib/sysusers.d/tlog.conf. A dynamic ID would leave the setuid
+  # owner different from the user a node's sysusers makes.
+  tlog-rec-session is setuid to tlog 1501:
+    exec: stat -c '%u:%g:%a' /usr/bin/tlog-rec-session
+    exit-status: 0
+    stdout: ["/^1501:1501:6755$/"]
+  tlog account is 1501:1501 in the image:
+    exec: getent passwd tlog
+    exit-status: 0
+    stdout: ["/^tlog:x:1501:1501:[^:]*:/run/tlog:/sbin/nologin$/"]
   rootless sudoers parse:
     exec: visudo -cf /etc/sudoers.d/99-rootless
     exit-status: 0

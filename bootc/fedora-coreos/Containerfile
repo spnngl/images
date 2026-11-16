@@ -41,6 +41,11 @@ RUN <<EORUN
 #   usr/libexec/etc-diff, which write their results as metrics.
 # - grype lists the CVEs of the image (scan stage, below) and of the nodes
 #   (grype.timer).
+# - tlog records the terminal sessions of rootless and root into the journal
+#   (usr/libexec/tlog-login). Its user is 1501:1501, made here before the
+#   package: the package's sysusers.d file gives it a dynamic ID, and the
+#   setuid owner of /usr/bin/tlog-rec-session, baked into /usr, must be the
+#   ID a node's sysusers makes at boot (usr/lib/sysusers.d/tlog.conf).
 #
 # scap-security-guide holds about 40 products' content and the remediation
 # scripts, 735 MB; the scans read Fedora's data stream alone, 21 MB. rpm skips
@@ -51,11 +56,16 @@ skip="$(dnf -q repoquery --latest-limit=1 --list scap-security-guide |
     grep "^${ssg}/" | grep -vx "${ssg}/ssg-fedora-ds.xml" | paste -sd:)"
 echo "%_netsharedpath /usr/share/scap-security-guide:${skip}" > /etc/rpm/macros.ssg
 
+# tlog's account first (useradd warns that 1501 is above SYS_UID_MAX: the
+# range is for the platform's users, as rootless's 1500).
+groupadd -g 1501 tlog
+useradd -r -u 1501 -g tlog -d /run/tlog -s /sbin/nologin -c 'Tlog terminal I/O logger' tlog
+
 # No weak dependencies, as FCOS itself is built.
 dnf -yq install --setopt=install_weak_deps=False \
     sysstat rootlesskit net-tools qemu-guest-agent greenboot \
     greenboot-default-health-checks systemd-networkd openscap-scanner scap-security-guide \
-    audispd-plugins grype nushell
+    audispd-plugins grype nushell tlog
 
 rm -f /etc/rpm/macros.ssg
 

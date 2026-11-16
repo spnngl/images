@@ -26,6 +26,12 @@ command:
   "audit rules: the kernel has all of them":
     exec: '[ "$(grep -cE "^-[aw] " /etc/audit/audit.rules)" = "$(auditctl -l | grep -cE "^-[aw] ")" ]'
     exit-status: 0
+  # The image's setuid programs, tlog's recorder among them (the image
+  # stage generates a rule for each).
+  audit rules cover tlog-rec-session:
+    exec: auditctl -l | grep -c 'path=/usr/bin/tlog-rec-session .* -F key=privileged'
+    exit-status: 0
+    stdout: ["/^[1-9][0-9]*$/"]
   rootless password is locked:
     exec: passwd -S rootless
     exit-status: 0
@@ -136,6 +142,13 @@ file:
     mode: "0700"
   # The initramfs no longer creates FCOS' core user (Containerfile, dracut).
   /var/home/core: {exists: false}
+  # usr/lib/tmpfiles.d/tlog.conf, the package's: tlog-rec-session locks
+  # each session there.
+  /run/tlog:
+    exists: true
+    filetype: directory
+    owner: tlog
+    group: tlog
 
 user:
   # Made at boot by sysusers.d.
@@ -146,6 +159,13 @@ user:
     home: /var/home/rootless
     shell: /bin/bash
     groups: [wheel]
+  # usr/lib/sysusers.d/tlog.conf: the setuid owner of tlog-rec-session.
+  tlog:
+    exists: true
+    uid: 1501
+    gid: 1501
+    home: /run/tlog
+    shell: /sbin/nologin
   core: {exists: false}
 
 service:

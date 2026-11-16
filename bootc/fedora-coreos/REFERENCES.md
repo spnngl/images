@@ -157,6 +157,20 @@ Read each at the version this repository pins.
   runs before `sysusers` and fails on a name ("Failed to resolve user",
   emergency mode). The sysusers file also declares the group first, or
   systemd-sysusers refuses the fixed GID.
+- **`tlog` is `1501:1501`** ([tlog](https://github.com/Scribery/tlog),
+  Fedora's package, read at the tag it ships): its `sysusers.d` file has
+  `u tlog -`, a dynamic ID (977 in a probe), while `/usr/bin/tlog-rec-session`
+  is setuid to the owner the build gave. A node's `/etc/passwd` is its own
+  (`rootless` is added at boot), so sysusers makes `tlog` there, from the
+  image's file. The Containerfile makes the account before `dnf` (the
+  package's scriptlet finds it and keeps it), and
+  `sysroot/system/usr/lib/sysusers.d/tlog.conf` replaces the package's file
+  with the same ID. `rpm -V tlog` reports that file as changed: a second file
+  that sysusers reads first would log a conflict at every boot instead.
+  `useradd` warns that 1501 is above `SYS_UID_MAX`: the account can't log in
+  (`/sbin/nologin`). Both `tlog-rec-session` (setuid) and `libutempter`'s
+  `utempter` (setgid `utmp`) get an audit rule from the `image` stage's
+  `52-privileged.rules`.
 - **SSH keys from the image only:** `AuthorizedKeysFile` is
   `/usr/lib/ssh/authorized_keys/%u`, read-only: a key comes and goes with an
   image. Keys that Ignition, Afterburn or an OpenStack keypair write (to
