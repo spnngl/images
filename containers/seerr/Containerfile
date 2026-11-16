@@ -77,24 +77,24 @@ COPY --link --from=source --chown=65532:65532 / /build/
 # runs. Cypress' (CYPRESS_INSTALL_BINARY=0) downloads a test browser;
 # sqlite3's fetches an unverified prebuilt binary from GitHub, so it is
 # built from the source of its npm package (what its script falls back
-# to), against the image's Node headers (--nodedir: no download). By
-# npm's node-gyp: the 8.4.1 the lockfile overrides for sqlite3 needs
-# Python's distutils, which trixie's Python 3.13 no longer ships. bcrypt
-# ships its prebuilds in its npm package, sharp its binaries in platform
-# packages, and swc's only checks them.
+# to), against the image's Node headers (--nodedir: no download), by
+# the lockfile's node-gyp, the one its script runs. bcrypt ships its
+# prebuilds in its npm package, sharp its binaries in platform packages,
+# and swc's only checks them.
 RUN --mount=type=cache,id=pnpm-store-65532,uid=65532,gid=65532,target=/tmp/pnpm-store <<EORUN
 CYPRESS_INSTALL_BINARY=0 pnpm install --frozen-lockfile --ignore-scripts
-node /usr/local/lib/node_modules/npm/node_modules/node-gyp/bin/node-gyp.js rebuild --nodedir=/usr/local \
+pnpm exec node-gyp rebuild --nodedir=/usr/local \
   --directory="$(dirname "$(node -p "require.resolve('sqlite3/package.json')")")"
 COMMIT_TAG="${BASE_CHECKSUM}" pnpm build
 EORUN
 
 # The runtime packages alone, less the musl builds of the native
-# packages (pnpm installs both libc's; this image is glibc) and the
-# folders upstream's Dockerfile removes (the browser bundles hold what
-# the app uses of them): what the app serves with, as the image ships
-# it. The test is the proof, so it runs on this tree. Next's build cache
-# is the volume's to start empty.
+# packages (pnpm installs both libc's; this image is glibc) and what
+# upstream's Dockerfile removes: the build's compilers (swc, TypeScript,
+# ts-node), folders the browser bundles hold what the app uses of, and
+# source maps. What the app serves with, as the image ships it. The test
+# is the proof, so it runs on this tree. Next's build cache is the
+# volume's to start empty.
 # The test: the server on loopback, a temp config folder (the app does
 # not create db/). The status reports this release; Next's image
 # optimizer, through sharp, answers an image at a width and quality it
@@ -105,7 +105,14 @@ EORUN
 # hadolint ignore=DL3001
 RUN <<EORUN
 pnpm prune --prod --ignore-scripts
-find node_modules/.pnpm -maxdepth 1 -name '*musl*' -exec rm -rf {} +
+find node_modules/.pnpm -maxdepth 1 \( \
+  -name '*musl*' -o \
+  -name '@next+swc-*' -o \
+  -name '@swc+core*' -o \
+  -name 'ts-node@*' -o \
+  -name 'typescript@*' \
+\) -exec rm -rf {} +
+find node_modules .next -name '*.map' -type f -delete
 find node_modules/.pnpm -type d \( \
   -path '*ace-builds/src' -o \
   -path '*ace-builds/src-min' -o \

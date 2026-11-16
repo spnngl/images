@@ -42,19 +42,24 @@
 - **`pnpm install --ignore-scripts`, `sqlite3` rebuilt:** `sqlite3`'s
   script (`prebuild-install || node-gyp rebuild`) downloads a binary
   from GitHub without a checksum. It is built from its npm package's
-  source, against the image's Node headers (`--nodedir`), by npm's
-  `node-gyp`: the 8.4.1 upstream's `pnpm.overrides` pins for it needs
-  `distutils`, which Python 3.13 (trixie) dropped. `bcrypt` ships
-  prebuilds in its npm package (`node-gyp-build`); `sharp`'s binaries
-  come in `@img/sharp-*` packages; `@swc/core`'s and `cypress`' scripts
-  fetch or check binaries the build and the server don't use
+  source, against the image's Node headers (`--nodedir`), by the
+  lockfile's `node-gyp` (`pnpm exec`), the one its script falls back
+  to: pinned and hashed by the lockfile, not npm's bundled one.
+  `bcrypt` ships prebuilds in its npm package (`node-gyp-build`);
+  `sharp`'s binaries come in `@img/sharp-*` packages; `@swc/core`'s and
+  `cypress`' scripts fetch or check binaries the build and the server
+  don't use
   (`CYPRESS_INSTALL_BINARY=0`); `prepare` (husky) needs `.git`.
 - **Runtime packages only, musl builds removed:** `pnpm prune --prod`,
-  then the folders upstream's Dockerfile removes (`ace-builds` sources,
-  `country-flag-icons` `1x1`, `react` and `string`, `@heroicons/react/16`:
-  the browser bundles hold what the app uses), and the `*musl*` native
-  packages: pnpm installs both libc variants, upstream removes the other
-  half (`linux-x64-gnu`) for Alpine. The test runs on the result.
+  then what upstream's Dockerfile leaves out: the folders (`ace-builds`
+  sources, `country-flag-icons` `1x1`, `react` and `string`,
+  `@heroicons/react/16`: the browser bundles hold what the app uses),
+  the build's compilers (`@next/swc-*`, `@swc/core`, `typescript`,
+  `ts-node`: Next needs swc only for `next build` and a
+  `next.config.ts`), and the source maps (`*.map`, in `node_modules`
+  and `.next`); and the `*musl*` native packages: pnpm installs both
+  libc variants, upstream removes the other half (`linux-x64-gnu`) for
+  Alpine. The test runs on the result.
 - **`next.config.mjs` shipped, `tsconfig.json` not:** Next reads
   `next.config.mjs` at start, even with a custom server; without
   it, `/_next/image` answers 400 for upstream's hosts (`remotePatterns`).
