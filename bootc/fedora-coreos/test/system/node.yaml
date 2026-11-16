@@ -38,10 +38,39 @@ command:
     stdout: [/^rootless L /]
   # etc/profile.d/tmout.sh: set, read-only, and sourced without error.
   a login shell exits when idle:
-    exec: runuser -l rootless -c 'echo "TMOUT=${TMOUT}"; (TMOUT=0) 2>/dev/null && echo writable'
+    exec: printf '%s\n' 'echo "TMOUT=${TMOUT}"' '(TMOUT=0) 2>/dev/null && echo writable' | runuser -l rootless
     exit-status: 1
     stdout: [/^TMOUT=900$/, "!writable"]
     stderr: {have-len: 0}
+  # usr/libexec/tlog-login: without a terminal, tlog loses the command's
+  # output when stdin reaches EOF, so bash runs, unrecorded, and says so.
+  a session without a terminal is unrecorded and logged:
+    exec: |
+      m=notty-$(date +%s%N)
+      runuser -u rootless -- /usr/libexec/tlog-login -c "echo ${m}" </dev/null
+      for i in 1 2 3 4 5; do
+          journalctl -t tlog-login -o cat --no-pager |
+              grep -qF "session of rootless NOT recorded, no terminal, command: echo ${m}" && exit 0
+          sleep 1
+      done
+      exit 1
+    exit-status: 0
+    stdout: [/^notty-[0-9]+$/]
+  # etc/tlog/tlog-rec-session.conf: the journal writer, and the input too.
+  # Run as the wrapper would, but on a pipe: a terminal needs a pty, and the
+  # image has no tool to make one (REFERENCES.md, "tlog").
+  a recorded session reaches the journal with its input:
+    exec: |
+      m=rec-$(date +%s%N)
+      (printf 'echo %s\nexit\n' "${m}"; sleep 2) |
+          runuser -u rootless -- /usr/bin/tlog-rec-session >/dev/null 2>&1
+      for i in 1 2 3 4 5; do
+          journalctl _UID=1501 TLOG_USER=rootless -o cat --no-pager |
+              grep -q "\"in_txt\":\"[^\"]*echo ${m}" && exit 0
+          sleep 1
+      done
+      exit 1
+    exit-status: 0
   # etc/hostname, while nothing replaced it (the test VM): its wildcards
   # filled from the machine ID.
   the default hostname is the machine's:
@@ -157,7 +186,7 @@ user:
     uid: 1500
     gid: 1500
     home: /var/home/rootless
-    shell: /bin/bash
+    shell: /usr/libexec/tlog-login
     groups: [wheel]
   # usr/lib/sysusers.d/tlog.conf: the setuid owner of tlog-rec-session.
   tlog:
@@ -166,6 +195,10 @@ user:
     gid: 1501
     home: /run/tlog
     shell: /sbin/nologin
+  # Containerfile: usermod, so that console and sudo sessions are recorded.
+  root:
+    exists: true
+    shell: /usr/libexec/tlog-login
   core: {exists: false}
 
 service:

@@ -42,6 +42,7 @@ file:
     exists: true
     contents: ["/^ *use-sigstore-attachments: true$/"]
   /etc/sudoers.d/99-rootless: {exists: true, filetype: file, mode: "0440"}
+  /usr/libexec/tlog-login: {exists: true, filetype: file, mode: "0755"}
   # The default hostname, wildcards systemd fills from the machine ID.
   /etc/hostname:
     exists: true
@@ -120,6 +121,22 @@ command:
     exec: getent passwd tlog
     exit-status: 0
     stdout: ["/^tlog:x:1501:1501:[^:]*:/run/tlog:/sbin/nologin$/"]
+  # Containerfile: usermod. rootless's is in usr/lib/sysusers.d/rootless.conf,
+  # made at boot (test/system/node.yaml).
+  root's login shell is the tlog wrapper:
+    exec: getent passwd root
+    exit-status: 0
+    stdout: ["/:/usr/libexec/tlog-login$/"]
+  # usr/libexec/tlog-login: tlog accepts the image's configuration, and a
+  # session without a terminal runs bash. logger finds no journal here.
+  tlog-login runs a command without a terminal:
+    exec: /usr/libexec/tlog-login -c 'echo ok' </dev/null 2>/dev/null
+    exit-status: 0
+    stdout: ["/^ok$/"]
+  tlog accepts the image's configuration:
+    exec: tlog-rec-session --configuration </dev/null
+    exit-status: 0
+    stdout: ['/"input":\s*true/', '/"writer":\s*"journal"/']
   rootless sudoers parse:
     exec: visudo -cf /etc/sudoers.d/99-rootless
     exit-status: 0

@@ -1,0 +1,54 @@
+#!/bin/bash
+# Login shell of rootless and root (usr/lib/sysusers.d/rootless.conf, the
+# Containerfile's usermod): records sessions on a terminal with tlog into the
+# journal (REFERENCES.md, "tlog"). Any other session runs bash unrecorded and
+# is logged (authpriv, tag tlog-login) for usr/libexec/tlog-stats to count:
+#   - no terminal on stdin: tlog loses the output of the command when stdin
+#     reaches EOF before the command ends (`ssh -n`, `</dev/null`, `| ssh`),
+#   - tlog can't start: its own failure ends the login with status 1, which
+#     can't be told from the shell's.
+#
+# sshd and login run this file as `<shell> -c <command>`, or with no argument
+# for an interactive login. The kernel drops the login dash of argv[0] when it
+# starts a script, so an empty command line stands for the login shell, and a
+# command is never run by a login shell (`runuser -l`, `sudo -i <command>`
+# skip /etc/profile).
+
+# The leading dash makes tlog, then bash, start a login shell.
+dash=
+if (($# == 0)); then dash=-; fi
+
+# Runs bash unrecorded with the script's arguments, after logging why: the
+# reason, then the arguments, the command being the second of them. Programs
+# that start $SHELL must not start this file again.
+unrecorded() {
+    local reason=$1
+    shift
+    logger -p authpriv.notice -t tlog-login \
+        "session of $(id -un) NOT recorded, ${reason//$'\n'/ }, command: ${2:-<login shell>}"
+    export SHELL=/bin/bash
+    exec -a "${dash}bash" /bin/bash "$@"
+}
+
+if [[ ! -t 0 ]]; then
+    unrecorded "no terminal" "$@"
+fi
+
+# tlog reads TLOG_REC_SESSION_* variables (shell, notice, writer, config): none
+# inherited may change the recording.
+unset "${!TLOG_@}"
+
+# An sshd session has no locale and the node has no /etc/locale.conf: bash's
+# profile sets one, but after tlog started, which then warns at every login
+# and assumes UTF-8. C.UTF-8 is glibc's, in every install.
+if [[ -z ${LC_ALL:-}${LC_CTYPE:-}${LANG:-} ]]; then
+    export LANG=C.UTF-8
+fi
+
+# Loads the configuration, checks the locale and builds the shell's command
+# line, then exits before locking or recording.
+if err=$(/usr/bin/tlog-rec-session --configuration 2>&1 >/dev/null </dev/null); then
+    exec -a "${dash}tlog-rec-session" /usr/bin/tlog-rec-session "$@"
+fi
+
+unrecorded "tlog failed: ${err}" "$@"

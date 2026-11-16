@@ -171,6 +171,60 @@ Read each at the version this repository pins.
   (`/sbin/nologin`). Both `tlog-rec-session` (setuid) and `libutempter`'s
   `utempter` (setgid `utmp`) get an audit rule from the `image` stage's
   `52-privileged.rules`.
+- **Terminal sessions are recorded by tlog, through a login shell
+  wrapper** (`usr/libexec/tlog-login`, tlog's `tlog-rec-session.conf(5)`,
+  `lib/tlog/rec.c` at v14, the tag Fedora ships). `rootless` (sysusers) and
+  `root` (`usermod` in the Containerfile) have it as their shell, so that
+  ssh, the console and `sudo -i` are all recorded, without SSSD (its `files`
+  provider is deprecated in 2.9 and removed in 2.11, the other way to
+  scope tlog). `tlog-rec-session` runs the user's shell as a child and
+  writes to the journal (`writer` default), input included
+  (`etc/tlog/tlog-rec-session.conf`: a password typed at a prompt that
+  doesn't echo is recorded; the journal and the collector are as protected
+  as root).
+  - **Only sessions with a terminal on stdin.** tlog v14 (v15 doesn't touch
+    it) loses every byte the command prints once its stdin has reached EOF:
+    `ssh -n host cmd`, `ssh host cmd </dev/null`, `printf x | ssh host cmd`,
+    `ssh host cmd < file`. The command runs, the status comes back, the
+    output and the recording are empty (`tlog_rec_transfer`, `rec.c`: the
+    loop ends as soon as the child has exited and the last packet read was
+    an EOF, here the input's, before the output was read; `tlog-rec -c` has
+    the same bug). Probed under sshd in the image. Silent loss being worse
+    than no recording, those sessions run bash, unrecorded, and the wrapper
+    logs them: `logger -p authpriv.notice -t tlog-login`, `session of
+    <user> NOT recorded, no terminal, command: <command>`. Automation
+    (`ssh host cmd`, scp, sftp, the test suite) is therefore not recorded,
+    but its command lines are in the journal, and `ssh -t` is recorded. If
+    tlog is ever fixed or patched, drop the `[[ ! -t 0 ]]` branch.
+  - **A broken tlog doesn't lock out.** tlog's own failure exits 1, like a
+    shell would, so the wrapper first runs `tlog-rec-session
+    --configuration`, which loads the configuration, checks the locale and
+    builds the shell's command line, then exits before recording. Failing,
+    it runs bash unrecorded and logs the same message with `tlog failed: <why>`.
+    A configuration naming a missing shell passes that check and fails
+    after it: not covered, the image's shell is `/bin/bash`.
+  - **The login dash is lost.** The kernel drops `argv[0]` when it starts a
+    script, so the wrapper treats "no argument" as a login shell
+    (`-tlog-rec-session` makes tlog and bash start one). A command is never
+    run by a login shell: `runuser -l`, `sudo -i <command>` skip
+    `/etc/profile`. `sudo -i` alone is a login.
+  - **Locale:** an sshd session has none and the node has no
+    `/etc/locale.conf`; tlog then warns and assumes UTF-8 at every login,
+    so the wrapper defaults `LANG=C.UTF-8`. `TLOG_*` variables are
+    unset: they override the configuration.
+  - **Nesting:** inside a recorded session `sudo -i` and `su` get a bare
+    shell: tlog locks the audit session and the inner one is part of the
+    outer recording.
+  - **Bypass:** `kubectl debug node/<node>` and any pod with the host's
+    namespaces don't go through the login shell. Audit (`50-cis.rules`) and
+    the Kubernetes audit log cover them, not tlog.
+  - **Collector contract**, for what reads the journal: messages with
+    `_UID=1501` (tlog's), `MESSAGE` a JSON document
+    (`ver`, `host`, `rec`, `user`, `term`, `session`, `id`, `pos`, `time`,
+    `timing`, `in_txt`, `in_bin`, `out_txt`, `out_bin`) and the fields
+    `TLOG_USER`, `TLOG_SESSION`, `TLOG_REC`, `TLOG_ID`. `tlog-play -r
+    journal -M TLOG_REC=<rec>` replays one. `tlog-login`'s own messages
+    are `SYSLOG_IDENTIFIER=tlog-login`.
 - **SSH keys from the image only:** `AuthorizedKeysFile` is
   `/usr/lib/ssh/authorized_keys/%u`, read-only: a key comes and goes with an
   image. Keys that Ignition, Afterburn or an OpenStack keypair write (to
