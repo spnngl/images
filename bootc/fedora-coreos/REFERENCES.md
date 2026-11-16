@@ -820,15 +820,16 @@ Scale-GPU-3 dedicated servers (NVIDIA L4). The GPU Operator runs on it
 with `driver.enabled=false` and `toolkit.enabled=false`; CUDA comes with
 the workloads' images, never on the host.
 
-- **Driver and toolkit pinned in the Containerfile, Renovate proposes
-  them, a person merges** (`ARG NVIDIA_VERSION`,
-  `ARG NVIDIA_CONTAINER_TOOLKIT_VERSION`): CI builds the modules but
+- **Driver and toolkit pinned in `docker-bake.hcl`, Renovate proposes
+  them, a person merges** (`NVIDIA_DRIVER`, `NVIDIA_CONTAINER_TOOLKIT`,
+  each after its `# renovate:` comment; they reach the Containerfile as
+  `ARG NVIDIA_VERSION` and `ARG NVIDIA_CONTAINER_TOOLKIT_VERSION`): CI builds the modules but
   runs no GPU, so only a node of the GPU image tells a driver that
   loads from one that doesn't. Renovate reads each RPM repository's
   `repodata/` through its `rpm` datasource (`registryUrl` is the
   folder holding `repomd.xml`, `lib/modules/datasource/rpm/repomd.ts`),
   which returns `<version>-<release>` (`620.70.06-1.fc44`): `extractVersion`
-  drops the release, as the Containerfile pins the version, and
+  drops the release, as the Bake file pins the version, and
   every package of the driver is installed at it (NVIDIA's RPMs
   require each other at one version, epoch 3).
 - **Driver branch R620 only** (`allowedVersions: "/^620\\./"`): NVIDIA's
