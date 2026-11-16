@@ -14,7 +14,7 @@ target "kustomize" {
     ]
     helm = [
       # renovate: datasource=github-tags depName=helm/helm extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "4.3.1", checksum = "c0d08d0d6d9424d4a14febb5e8a3e51b0dd00dff" },
+      { version = "4.3.2", checksum = "8346aaa55e7161f7c547212d0a87f01367976727" },
     ]
   }
   args = merge(containerfile_args(debian), {
