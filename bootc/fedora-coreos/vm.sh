@@ -5,7 +5,7 @@
 # Usage: bootc/fedora-coreos/vm.sh up [ignition.ign]
 #        bootc/fedora-coreos/vm.sh check [ignition.ign]
 #        bootc/fedora-coreos/vm.sh cluster
-#        bootc/fedora-coreos/vm.sh ssh [command...]
+#        bootc/fedora-coreos/vm.sh ssh [-t] [command...]
 #        bootc/fedora-coreos/vm.sh reboot
 #        bootc/fedora-coreos/vm.sh log
 #        bootc/fedora-coreos/vm.sh down
@@ -18,7 +18,8 @@
 #   cluster  run kubeadm init in the VM, then install Cilium from the
 #         workbench, through the forwarded API port
 #   ssh   run a command on the VM, or a script read from stdin
-#         when there is no command
+#         when there is no command. -t: in a terminal, which tlog records
+#         (usr/libexec/tlog-login)
 #   reboot  reboot the VM, wait until it answers over SSH again
 #   log   print the VM's serial console
 #   down  stop the VM and delete its disk
@@ -194,13 +195,19 @@ up)
     ;;
 ssh)
     shift
+    # -T is what ssh does anyway: workbench.sh exec gives it no terminal.
+    tty=-T
+    if [[ ${1:-} == -t ]]; then
+        tty=-tt
+        shift
+    fi
     # Timeouts: QEMU's port forward accepts the connection even while the
     # VM reboots, and a session the reboot cuts never closes. Without
     # them, a wait for the VM (reboot, test.sh greenboot) can hang.
     "${workbench}" exec ssh -i /work/vm/key -p 2222 -o StrictHostKeyChecking=no \
         -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o BatchMode=yes \
         -o ConnectTimeout=10 -o ServerAliveInterval=10 -o ServerAliveCountMax=6 \
-        rootless@127.0.0.1 "$@"
+        "${tty}" rootless@127.0.0.1 "$@"
     ;;
 reboot)
     # The SSH session dies with the VM: its exit status says nothing.

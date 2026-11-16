@@ -129,6 +129,10 @@ command:
     exec: getent passwd root
     exit-status: 0
     stdout: ["/:/usr/libexec/tlog-login$/"]
+  # Containerfile: or su and chsh take it for a restricted shell.
+  the tlog wrapper is a valid login shell:
+    exec: grep -xF /usr/libexec/tlog-login /etc/shells
+    exit-status: 0
   # usr/libexec/tlog-login: tlog accepts the image's configuration, and a
   # session without a terminal runs bash. logger finds no journal here.
   tlog-login runs a command without a terminal:

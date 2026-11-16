@@ -43,19 +43,23 @@ command:
     stdout: [/^TMOUT=900$/, "!writable"]
     stderr: {have-len: 0}
   # usr/libexec/tlog-login: without a terminal, tlog loses the command's
-  # output when stdin reaches EOF, so bash runs, unrecorded, and says so.
+  # output when stdin reaches EOF, so bash runs, unrecorded, and says so;
+  # with its own reason when there is no command either (`ssh -T`).
   a session without a terminal is unrecorded and logged:
     exec: |
       m=notty-$(date +%s%N)
       runuser -u rootless -- /usr/libexec/tlog-login -c "echo ${m}" </dev/null
+      echo "echo ${m}-login" | runuser -u rootless -- /usr/libexec/tlog-login
       for i in 1 2 3 4 5; do
-          journalctl -t tlog-login -o cat --no-pager |
-              grep -qF "session of rootless NOT recorded, no terminal, command: echo ${m}" && exit 0
+          l=$(journalctl -t tlog-login -o cat --no-pager)
+          printf '%s\n' "${l}" | grep -qF "session of rootless NOT recorded, no terminal, command: echo ${m}" &&
+              printf '%s\n' "${l}" | grep -qF 'session of rootless NOT recorded, no terminal, login shell,' &&
+              exit 0
           sleep 1
       done
       exit 1
     exit-status: 0
-    stdout: [/^notty-[0-9]+$/]
+    stdout: [/^notty-[0-9]+$/, /^notty-[0-9]+-login$/]
   # etc/tlog/tlog-rec-session.conf: the journal writer, and the input too.
   # Run as the wrapper would, but on a pipe: a terminal needs a pty, and the
   # image has no tool to make one (REFERENCES.md, "tlog").
@@ -65,7 +69,7 @@ command:
       (printf 'echo %s\nexit\n' "${m}"; sleep 2) |
           runuser -u rootless -- /usr/bin/tlog-rec-session >/dev/null 2>&1
       for i in 1 2 3 4 5; do
-          journalctl _UID=1501 TLOG_USER=rootless -o cat --no-pager |
+          journalctl _EXE=/usr/bin/tlog-rec-session TLOG_USER=rootless -o cat --no-pager |
               grep -q "\"in_txt\":\"[^\"]*echo ${m}" && exit 0
           sleep 1
       done
@@ -129,12 +133,14 @@ command:
       (printf 'echo stats\nexit\n'; sleep 2) |
           runuser -u rootless -- /usr/bin/tlog-rec-session >/dev/null 2>&1
       runuser -u rootless -- /usr/libexec/tlog-login -c 'echo stats' </dev/null >/dev/null
+      echo true | runuser -u rootless -- /usr/libexec/tlog-login
       sleep 2
       systemctl start tlog-stats.service || exit 1
       p=/var/lib/tlog-stats/tlog-stats.prom
       grep -q '^tlog_last_run_timestamp_seconds ' "${p}" &&
           grep -qE '^tlog_recordings_total\{user="rootless"\} [1-9]' "${p}" &&
           grep -qE '^tlog_unrecorded_sessions_total\{user="rootless",reason="no_terminal"\} [1-9]' "${p}" &&
+          grep -qE '^tlog_unrecorded_sessions_total\{user="rootless",reason="no_terminal_login"\} [1-9]' "${p}" &&
           grep -qx '# TYPE tlog_recordings_total counter' "${p}"
     exit-status: 0
     timeout: 120000

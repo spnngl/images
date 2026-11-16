@@ -5,7 +5,8 @@
 # what is cloud-init, AppArmor or Ubuntu specific.
 #
 # Usage: bootc/fedora-coreos/test.sh node|wx|cluster|greenboot|nvidia [<user>@<host>]
-#   node     the booted node: kernel, users, sshd, services, sysctls, scans
+#   node     the booted node: kernel, users, sshd, services, sysctls, scans,
+#            then tlog's recording of an ssh session with a terminal
 #   wx       W^X: noexec mounts and their exceptions
 #   cluster  once vm.sh cluster ran: the node is Ready, runs a pod that
 #            executes scripts from an emptyDir and a configMap, etcd's units
@@ -138,4 +139,21 @@ if [[ $1 == nvidia ]]; then
 else
     COPYFILE_DISABLE=1 tar --format ustar -C "${tmp}" -cf - . |
         "${vm}" ssh "sudo bash -c $(printf %q "${run}") _ $1"
+fi
+
+# usr/libexec/tlog-login: an ssh session with a terminal is recorded, its
+# output in the journal. goss runs without a terminal, and the image has no
+# tool to make one.
+if [[ $1 == node ]]; then
+    m=tty-$(date +%s%N)
+    "${vm}" ssh -t "echo ${m}" >/dev/null
+    for _ in $(seq 10); do
+        if "${vm}" ssh "sudo journalctl _EXE=/usr/bin/tlog-rec-session TLOG_USER=rootless -o cat --no-pager |
+            grep -qE '\"out_txt\":\"[^\"]*${m}'"; then
+            echo "ok: an ssh session with a terminal is recorded"
+            exit
+        fi
+        sleep 1
+    done
+    die "the ssh session with a terminal (${m}) is not in tlog's journal entries"
 fi

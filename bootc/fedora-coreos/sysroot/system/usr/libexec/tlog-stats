@@ -21,9 +21,10 @@ use /usr/share/nushell/prometheus.nu [metric save-metrics]
 
 const DIR = '/var/lib/tlog-stats'
 
-# tlog's user, usr/lib/sysusers.d/tlog.conf: journald stamps it on the entries
-# of tlog-rec-session (setuid to it), which no other user can write.
-const TLOG_UID = '1501'
+# tlog's program: journald reads _EXE from /proc, a user can't forge it. Not
+# _UID=1501 (tlog's user): the kernel stamps a message with the sender's real
+# UID, the recorded user's, setuid or not.
+const TLOG_EXE = '/usr/bin/tlog-rec-session'
 
 # The image's two logins (usr/lib/sysusers.d/rootless.conf and the
 # Containerfile's usermod): their series exist from 0, so that increase()
@@ -32,7 +33,11 @@ const LOGINS = [rootless root]
 
 # What the wrapper logs, `session of <user> NOT recorded, <reason>, ...`, and
 # the label each reason gets.
-const REASONS = {'no terminal': no_terminal, 'tlog failed': tlog_failed}
+const REASONS = {
+    'no terminal, login shell': no_terminal_login
+    'no terminal': no_terminal
+    'tlog failed': tlog_failed
+}
 
 def main [] {
     cd $DIR
@@ -56,7 +61,7 @@ def main [] {
                     value: ($unrecorded | where user == $u and reason == $reason | length)
                 }
             }
-        } | flatten | metric --counter tlog_unrecorded_sessions_total 'Sessions the login shell ran without tlog since boot, by user and reason: no_terminal (tlog loses the output of a command whose stdin ends), tlog_failed. Logged by the session itself, so a user can add to it.')
+        } | flatten | metric --counter tlog_unrecorded_sessions_total 'Sessions the login shell ran without tlog since boot, by user and reason: no_terminal (a command: tlog loses the output of one whose stdin ends), no_terminal_login (no command: `ssh -T` or a script piped to ssh, a shell typed into unrecorded), tlog_failed. Logged by the session itself, so a user can add to it.')
         ...([{labels: {}, value: (suppressed)}]
             | metric --counter tlog_journal_suppressed_messages_total 'Messages journald dropped since boot for exceeding the rate limit of a session scope, where tlog writes: recordings lost.')
     ] | flatten | save-metrics tlog-stats.prom
@@ -65,7 +70,7 @@ def main [] {
 # The current boot's entries of tlog-rec-session: one per message logged,
 # with its user, recording ID and time (seconds).
 def recordings []: nothing -> list {
-    journal --output json --output-fields=TLOG_USER,TLOG_REC $'_UID=($TLOG_UID)'
+    journal --output json --output-fields=TLOG_USER,TLOG_REC $'_EXE=($TLOG_EXE)'
         | lines
         | where {|l| $l | str starts-with '{' }
         | each {|l| $l | from json }
@@ -83,15 +88,16 @@ def recordings []: nothing -> list {
 def unrecorded []: nothing -> list {
     journal --output cat --identifier=tlog-login
         | lines
-        | parse --regex '^session of (?<user>\S+) NOT recorded, (?<reason>no terminal|tlog failed)'
+        | parse --regex '^session of (?<user>\S+) NOT recorded, (?<reason>no terminal, login shell|no terminal|tlog failed)'
         | each {|e| {user: $e.user, reason: ($REASONS | get $e.reason)} }
 }
 
-# Messages journald dropped: its "Suppressed N messages from session-X.scope".
+# Messages journald dropped: its "Suppressed N messages from <unit>", the unit
+# a session scope, name or cgroup path.
 def suppressed []: nothing -> int {
     journal --output cat _SYSTEMD_UNIT=systemd-journald.service
         | lines
-        | parse --regex '^Suppressed (?<count>[0-9]+) messages from session-\S+\.scope'
+        | parse --regex '^Suppressed (?<count>[0-9]+) messages from \S*session-[0-9]+\.scope'
         | each {|e| $e.count | into int }
         | append 0
         | math sum

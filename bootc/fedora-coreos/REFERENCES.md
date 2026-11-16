@@ -196,18 +196,32 @@ Read each at the version this repository pins.
     (`ssh host cmd`, scp, sftp, the test suite) is therefore not recorded,
     but its command lines are in the journal, and `ssh -t` is recorded. If
     tlog is ever fixed or patched, drop the `[[ ! -t 0 ]]` branch.
+  - **Not a lock: `ssh -T host` is a shell, unrecorded.** So is `ssh host
+    bash`, or a script piped to `ssh host`. `rootless` has passwordless
+    sudo anyway: tlog records the sessions people open the usual way, it
+    doesn't hold back one who avoids it. A shell started with neither a
+    terminal nor a command, which automation never asks for, is logged with
+    its own reason, `no terminal, login shell`, to alert on.
   - **A broken tlog doesn't lock out.** tlog's own failure exits 1, like a
-    shell would, so the wrapper first runs `tlog-rec-session
-    --configuration`, which loads the configuration, checks the locale and
-    builds the shell's command line, then exits before recording. Failing,
+    shell would, so the wrapper first checks what tlog needs and doesn't
+    check before recording, `/run/tlog` (its lock directory, tmpfiles) and
+    the journal's socket, both missing in an emergency shell started early,
+    then runs `tlog-rec-session --configuration`, which loads the
+    configuration, checks the locale and builds the shell's command line,
+    then exits before recording. Failing,
     it runs bash unrecorded and logs the same message with `tlog failed: <why>`.
     A configuration naming a missing shell passes that check and fails
     after it: not covered, the image's shell is `/bin/bash`.
   - **The login dash is lost.** The kernel drops `argv[0]` when it starts a
     script, so the wrapper treats "no argument" as a login shell
     (`-tlog-rec-session` makes tlog and bash start one). A command is never
-    run by a login shell: `runuser -l`, `sudo -i <command>` skip
-    `/etc/profile`. `sudo -i` alone is a login.
+    run by a login shell: `runuser -l -c`, `su - -c`, `sudo -i <command>`
+    skip `/etc/profile`, so they get umask 022, not `profile.d/umask.sh`'s
+    027, and the environment's `PATH`, not profile's. `sudo -i` alone is a
+    login. Passing the dash for commands too would fix them and make every
+    `ssh host cmd` a login shell: not done, a script that needs profile's
+    umask or `PATH` sets them. The wrapper is in `/etc/shells`, or
+    util-linux's `su` and `chsh` take it for a restricted shell.
   - **Locale:** an sshd session has none and the node has no
     `/etc/locale.conf`; tlog then warns and assumes UTF-8 at every login,
     so the wrapper defaults `LANG=C.UTF-8`. `TLOG_*` variables are
@@ -219,7 +233,7 @@ Read each at the version this repository pins.
     namespaces don't go through the login shell. Audit (`50-cis.rules`) and
     the Kubernetes audit log cover them, not tlog.
   - **Collector contract**, for what reads the journal: messages with
-    `_UID=1501` (tlog's), `MESSAGE` a JSON document
+    `_EXE=/usr/bin/tlog-rec-session`, `MESSAGE` a JSON document
     (`ver`, `host`, `rec`, `user`, `term`, `session`, `id`, `pos`, `time`,
     `timing`, `in_txt`, `in_bin`, `out_txt`, `out_bin`) and the fields
     `TLOG_USER`, `TLOG_SESSION`, `TLOG_REC`, `TLOG_ID`. `tlog-play -r
@@ -234,16 +248,20 @@ Read each at the version this repository pins.
     reads as a reset. `prometheus.nu`'s `metric --counter` writes the type;
     the other scripts' stay gauges.
     - `tlog_recordings_total{user}`: distinct `TLOG_REC`, from messages of
-      `_UID=1501`, which only `tlog-rec-session` (setuid) can send: upstream's
-      way to tell genuine tlog messages (README, "Filtering out tlog
-      messages"). A recording still running counts.
+      `_EXE=/usr/bin/tlog-rec-session`, which journald reads from `/proc`
+      and a user can't forge. Not `_UID=1501`, upstream's way (README,
+      "Filtering out tlog messages"): the kernel stamps a message with the
+      sender's real UID, the recorded user's even though tlog is setuid
+      (probed with tlog 14, Fedora 44). A recording still running counts.
     - `tlog_last_recording_timestamp_seconds{user}`: its newest message.
     - `tlog_unrecorded_sessions_total{user,reason}`: the wrapper's messages,
-      `reason` `no_terminal` or `tlog_failed`. Alert on `tlog_failed`: it
-      means the recording is broken. `no_terminal` is automation. Any user
+      `reason` `no_terminal`, `no_terminal_login` or `tlog_failed`. Alert on
+      `tlog_failed`, the recording is broken, and on `no_terminal_login`, a
+      shell typed into unrecorded. `no_terminal` is automation. Any user
       can run `logger -t tlog-login`: the count says what sessions claimed.
     - `tlog_journal_suppressed_messages_total`: journald's "Suppressed N
-      messages from session-X.scope", where tlog writes. With `limit.action`
+      messages from <unit>" (journald 259's string), the unit a session
+      scope, where tlog writes. With `limit.action`
       `pass`, tlog never throttles, and journald's rate limit is where
       recorded data is lost; it needs `increase(...[1h]) > 0` alerting.
     - `tlog_last_run_timestamp_seconds`: for a stale-metric alert.

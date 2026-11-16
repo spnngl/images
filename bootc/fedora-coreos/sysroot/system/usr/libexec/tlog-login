@@ -22,15 +22,19 @@ if (($# == 0)); then dash=-; fi
 # reason, then the arguments, the command being the second of them. Programs
 # that start $SHELL must not start this file again.
 unrecorded() {
-    local reason=$1
+    local reason=$1 command
     shift
+    command=${2:-<login shell>}
     logger -p authpriv.notice -t tlog-login \
-        "session of $(id -un) NOT recorded, ${reason//$'\n'/ }, command: ${2:-<login shell>}"
+        "session of $(id -un) NOT recorded, ${reason//$'\n'/ }, command: ${command//$'\n'/ }"
     export SHELL=/bin/bash
     exec -a "${dash}bash" /bin/bash "$@"
 }
 
+# Automation always passes a command: a shell without one nor a terminal is
+# someone typing unrecorded (`ssh -T`), or a script piped to `ssh host`.
 if [[ ! -t 0 ]]; then
+    if (($# == 0)); then unrecorded "no terminal, login shell"; fi
     unrecorded "no terminal" "$@"
 fi
 
@@ -45,9 +49,16 @@ if [[ -z ${LC_ALL:-}${LC_CTYPE:-}${LANG:-} ]]; then
     export LANG=C.UTF-8
 fi
 
-# Loads the configuration, checks the locale and builds the shell's command
-# line, then exits before locking or recording.
-if err=$(/usr/bin/tlog-rec-session --configuration 2>&1 >/dev/null </dev/null); then
+# What tlog needs and doesn't check before it records: its lock directory
+# (usr/lib/tmpfiles.d/tlog.conf) and the journal's socket, both missing in an
+# emergency shell started early. Then --configuration: loads the
+# configuration, checks the locale and builds the shell's command line, and
+# exits before locking or recording.
+if [[ ! -d /run/tlog ]]; then
+    err='no /run/tlog'
+elif [[ ! -S /run/systemd/journal/socket ]]; then
+    err='no journal socket'
+elif err=$(/usr/bin/tlog-rec-session --configuration 2>&1 >/dev/null </dev/null); then
     exec -a "${dash}tlog-rec-session" /usr/bin/tlog-rec-session "$@"
 fi
 

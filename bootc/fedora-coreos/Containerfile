@@ -150,9 +150,10 @@ chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
 chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan,tlog-login,tlog-stats}
 # root's login shell records its console and sudo sessions (rootless's is in
-# usr/lib/sysusers.d/rootless.conf). Fail if the wrapper is not executable.
+# usr/lib/sysusers.d/rootless.conf). In /etc/shells, or util-linux's su and
+# chsh take it for a restricted shell.
 usermod -s /usr/libexec/tlog-login root
-test -x /usr/libexec/tlog-login
+echo /usr/libexec/tlog-login >> /etc/shells
 
 # SELinux permissive, containerd runs with enable_selinux = false. It still labels files and logs denials.
 # TODO add it back ?
