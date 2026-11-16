@@ -48,7 +48,7 @@ Read each at the version this repository pins.
   (`https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64/`,
   `https://nvidia.github.io/libnvidia-container/stable/rpm/`: the packages'
   requirements are in each `repodata/*-primary.xml.gz`),
-  `github.com/NVIDIA/gpu-operator`, `github.com/NVIDIA/nvidia-container-toolkit`,
+  `github.com/kubernetes-sigs/dra-driver-nvidia-gpu`, `github.com/NVIDIA/nvidia-container-toolkit`,
   `github.com/NVIDIA/open-gpu-kernel-modules`, and
   `github.com/coreos/fedora-bootc-nvidia`
 - Shared bootc sources: `bootc/REFERENCES.md`
@@ -816,9 +816,15 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
 
 `fedora-coreos-nvidia`: this image plus NVIDIA's open kernel modules,
 the driver's compute userspace and the Container Toolkit, for the OVH
-Scale-GPU-3 dedicated servers (NVIDIA L4). The GPU Operator runs on it
-with `driver.enabled=false` and `toolkit.enabled=false`; CUDA comes with
-the workloads' images, never on the host.
+Scale-GPU-3 dedicated servers (NVIDIA L4). Node Feature Discovery, the
+DRA driver (`kubernetes-sigs/dra-driver-nvidia-gpu`) and dcgm-exporter run
+on it; CUDA comes with the workloads' images, never on the host.
+`infra-services-gpu`'s `helmfile/99-nvidia-gpu/TESTS.md` has the charts and
+the test results.
+
+A GPU reaches a pod through a ResourceClaim (or `nvidia.com/gpu`, which
+the DRA driver's DeviceClass maps to a claim), never through a
+RuntimeClass.
 
 - **Driver and toolkit pinned in `docker-bake.hcl`, Renovate proposes
   them, a person merges** (`NVIDIA_DRIVER`, `NVIDIA_CONTAINER_TOOLKIT`,
@@ -911,10 +917,13 @@ the workloads' images, never on the host.
   `nvidia-container-toolkit-base`): `nvidia-smi`, NVML, the CUDA driver
   library, `nvidia-persistenced`, `nvidia-cuda-mps-control` and
   `nvidia-cuda-mps-server` (the DRA driver's MPS sharing runs them from
-  the host, in a chroot of `/`), `nvidia-container-runtime`,
-  `nvidia-ctk`. No graphics, no CUDA toolkit: the workloads' images carry
-  their CUDA, and the GPU Operator's toolkit pod (which writes to
-  `/usr/local` and the read-only containerd config) stays disabled.
+  the host, in a chroot of `/`), `nvidia-ctk`,
+  `nvidia-cdi-hook`. The toolkit's base package is there for
+  `nvidia-cdi-refresh` (device nodes, module loading) and as the DRA
+  driver's prerequisite (toolkit 1.18 or later); its
+  `nvidia-container-runtime` stays unused. No graphics, no CUDA toolkit: the workloads' images carry
+  their CUDA, and no toolkit pod rewrites containerd's read-only config or
+  writes to `/usr/local`.
   The RUN fails if `dkms`, `gcc` or `kernel-devel` came in, and removes
   what `nvidia-driver-selinux`'s policy install leaves in `/run` and
   `/etc`. It puts `/etc`'s account files back as they were: the install
@@ -953,17 +962,22 @@ the workloads' images, never on the host.
   the GPU image. They sit outside `*/build.yaml`, which would run them in
   both.
 
-- **containerd: a runtime `nvidia` next to `runc`, which stays the
-  default** (`sysroot/nvidia/usr/lib/containerd/conf.d/60-nvidia.toml`):
-  the GPU Operator's pods name the `nvidia` RuntimeClass, and a pod
-  without a GPU needs no wrapper. The default runtime of the fleet's
-  Flatcar nodes is `nvidia`: a pod relying on it for a GPU, with no
-  `runtimeClassName`, breaks on this image (step "replace the nodes"
-  of `PLAN.nvidia.md` lists them first). CDI (`enable_cdi = true`,
-  `/etc/cdi` and `/var/run/cdi`) is containerd 2.x's default: no
-  setting, and no extra unit for the management spec (the runtime's
-  `auto` mode makes the spec it needs). `test/nvidia-build.yaml` checks
-  the merged config, as containerd ignores a mistyped key.
+- **containerd: `runc` only, no runtime `nvidia`:** the DRA driver's
+  kubelet plugin writes a CDI spec per claim to `/var/run/cdi`, and
+  containerd injects it. With a handler `nvidia`, a RuntimeClass of that
+  name, or `NVIDIA_VISIBLE_DEVICES=all` in an image, hands every GPU to a
+  pod (the runtime's `jit-cdi` mode accepts the variable from an
+  unprivileged pod), past the scheduler's accounting; with no handler,
+  only a claim does. The default runtime of the fleet's Flatcar nodes is
+  `nvidia`: a pod relying on it for a GPU, with no claim, breaks on this
+  image. CDI (`enable_cdi = true`, `/etc/cdi` and `/var/run/cdi`) is
+  containerd 2.x's default: no setting. `nvidia-cdi-refresh` still writes
+  `nvidia.yaml` there; containerd injects a device only for a claim, so
+  it is inert. The plugin runs the `nvidia-cdi-hook` that it copies to
+  `/var/lib/kubelet/plugins/`, an exec mount, as `/var/run/cdi` is
+  `noexec`.
+  `test/nvidia-build.yaml` checks the merged config, as containerd
+  ignores a mistyped key.
 
 - **Pushed and released with fedora-coreos, failing alone** (`push` and
   `disk-image` jobs of `build-bootc.yml`): the GPU image has its own
@@ -990,5 +1004,5 @@ the workloads' images, never on the host.
   as many GPUs as the PCI bus has NVIDIA display devices, the driver
   is this image's, the CDI spec and `/dev/nvidia*` exist, `nvidia-ctk
   cdi list` has `nvidia.com/gpu=all`, containerd's merged config has
-  the runtime, and nouveau is not loaded. `ctr run` with a CUDA
+  CDI and no `nvidia` runtime, and nouveau is not loaded. `ctr run` with a CUDA
   container is not in it: it needs a registry and an image.

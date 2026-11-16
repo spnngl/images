@@ -36,22 +36,20 @@ command:
       [[ $(nvidia-smi --query-gpu=driver_version --format=csv,noheader | sort -u) == "$(rpm -q --qf '%{VERSION}' nvidia-driver-cuda)" ]]
     exit-status: 0
     timeout: 60000
-  # Written before containerd starts (nvidia-cdi-refresh), for the runtime's
-  # CDI mode.
+  # Written before containerd starts (nvidia-cdi-refresh).
   the CDI spec lists the GPUs:
     exec: nvidia-ctk cdi list
     exit-status: 0
     stdout: ["nvidia.com/gpu=all"]
     timeout: 60000
   # containerd ignores a mistyped plugin key: check the merged config.
-  containerd has the nvidia runtime and CDI:
+  containerd has CDI and no nvidia runtime:
     exec: containerd --config /usr/lib/containerd/config.toml config dump
     exit-status: 0
     timeout: 60000
     stdout:
-      - runtimes.nvidia.options]
-      - BinaryName = '/usr/bin/nvidia-container-runtime'
       - enable_cdi = true
+      - "!runtimes.nvidia"
   # nouveau and nova-core would claim the GPU first.
   nouveau and nova-core are not loaded:
     exec: "! grep -qE '^(nouveau|nova_core) ' /proc/modules"
