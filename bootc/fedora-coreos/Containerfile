@@ -55,7 +55,7 @@ echo "%_netsharedpath /usr/share/scap-security-guide:${skip}" > /etc/rpm/macros.
 dnf -yq install --setopt=install_weak_deps=False \
     sysstat rootlesskit net-tools qemu-guest-agent greenboot \
     greenboot-default-health-checks systemd-networkd openscap-scanner scap-security-guide \
-    audispd-plugins grype nushell
+    audispd-plugins grype nushell strings
 
 rm -f /etc/rpm/macros.ssg
 
@@ -276,8 +276,8 @@ kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
 # kernel-devel of the base's kernel: Fedora's updates, or their archive when
 # the kernel is no longer the newest; Koji when FCOS ships a kernel before
 # it reaches them (a fast-tracked fix). The base has no kernel-devel.
-dnf -yq install --setopt=install_weak_deps=False "kernel-devel-${kver}" ||
-    dnf -yq install --setopt=install_weak_deps=False \
+dnf -yq install --setopt=install_weak_deps=False "kernel-devel-${kver}" \
+    || dnf -yq install --setopt=install_weak_deps=False \
         "https://kojipkgs.fedoraproject.org/packages/kernel/$(rpm -q --qf '%{VERSION}/%{RELEASE}/%{ARCH}' kernel-core)/kernel-devel-${kver}.rpm"
 dnf -yq install --setopt=install_weak_deps=False \
     dkms make rpm-build "kmod-nvidia-open-dkms-3:${NVIDIA_VERSION}"
@@ -304,7 +304,7 @@ for m in nvidia nvidia-drm nvidia-modeset nvidia-peermem nvidia-uvm; do
     test "${license}" != NVIDIA
 done
 
-cat > /tmp/nvidia-kmod-open.spec <<EOF
+cat > /tmp/nvidia-kmod-open.spec << EOF
 %global debug_package %{nil}
 %global __os_install_post %{nil}
 %global _build_id_links none
