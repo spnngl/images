@@ -14,8 +14,8 @@ reason for each choice: [REFERENCES.md](REFERENCES.md).
   `nodejs<major>`): change them together, by hand. pnpm is upstream's
   `packageManager`, through corepack.
 - `--ignore-scripts` stays. `sqlite3` is the one package built from
-  source (`node-gyp rebuild`, npm's node-gyp): its script downloads an
-  unverified binary. When another package needs a script, rebuild that
+  source (`node-gyp rebuild`, the lockfile's node-gyp): its script
+  downloads an unverified binary. When another package needs a script, rebuild that
   one, and say why in `REFERENCES.md`.
 - The image ships what the server reads at run time (`dist`, `.next`,
   the production `node_modules`, `public`, `package.json`,
@@ -34,9 +34,9 @@ The build stage runs it, on the pruned production tree: the server on
 loopback with a temp config folder; `/api/v1/status` reports
 `<BASE_VERSION>`; `/_next/image` answers a WebP (`sharp`); the image
 proxy accepts upstream's hosts (`next.config.mjs` is read); `/` answers;
-`bcrypt` and `sqlite3` work. The final stage's last `RUN` loads the
-three addons against distroless' libraries and checks its Node against
-`engines.node`.
+`bcrypt` and `sqlite3` work. A `commandTests` entry of
+`structure-test.yaml` loads the three addons against distroless'
+libraries and checks its Node against `engines.node`.
 
 ## Updates
 
