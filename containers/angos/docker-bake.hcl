@@ -8,7 +8,7 @@ target "angos" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=project-angos/angos extractVersion=^v(?<version>\d+\.\d+\.\d+)$
-      { version = "1.12.4", checksum = "c4cad324360967746fabf3ebf9528601bede7ae6" },
+      { version = "1.12.5", checksum = "5a36eed198a3cfa123629496afa686933c705bfc" },
     ]
   }
   args = merge(apt_args(debian), {
