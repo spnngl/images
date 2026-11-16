@@ -77,6 +77,6 @@ if [[ -f config.toml ]]; then
 else
     echo "no config.toml: the disk image has no user" >&2
 fi
-"${run[@]}" ghcr.io/osbuild/image-builder-cli:v90.0.0 "${build[@]}" qcow2
+"${run[@]}" ghcr.io/osbuild/image-builder-cli:v91.0.0 "${build[@]}" qcow2
 
 echo "disk image: output/${id}/${id}.qcow2"
