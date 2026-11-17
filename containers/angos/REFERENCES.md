@@ -63,4 +63,12 @@
 - **`RUST_LOG` unset**, as upstream's image: errors only by default.
 - **Never automerged:** upstream's patch releases carry breaking
   changes (`how-to/upgrade.md`, 1.12.1, 1.12.3).
+- **The version check stays exact; a release with a stale `Cargo.toml`
+  waits:** upstream's release commit has left the crate's version
+  behind (1.0.1 to 1.0.3, 1.1.1, 1.4.2, 1.5.1, 1.12.5:
+  `project-angos/angos#363`), so the binary, upstream's own included,
+  and the SBOM name the previous release. `ADD --checksum` already pins
+  the commit: the check guards the version the SBOM names. Setting
+  `Cargo.toml` to `BASE_VERSION` would make it compare that value with
+  itself.
 - **No `HEALTHCHECK`:** no curl in the image, and Kubernetes ignores it.
