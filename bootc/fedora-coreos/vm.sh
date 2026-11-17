@@ -160,7 +160,7 @@ export KUBECONFIG=/work/vm/admin.conf
 # 1.20+: older Cilium releases fail on the BPF verifier of kernel 7.x
 # ("failed to probe helper ... call bpf_set_retval#187: R1 is not a scalar").
 helm repo add cilium https://helm.cilium.io >/dev/null
-helm upgrade --install cilium cilium/cilium --version 1.20.4 -n kube-system \
+helm upgrade --install cilium cilium/cilium --version 1.20.5 -n kube-system \
     --set k8sServiceHost=10.0.2.15 --set k8sServicePort=6443 \
     --set kubeProxyReplacement=true --set ipam.mode=cluster-pool \
     --set operator.replicas=1 --wait --timeout 8m >/dev/null
