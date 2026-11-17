@@ -40,3 +40,9 @@ before the new version starts. Before merging, read upstream's
 the build against `.github/workflows/build.yaml` (release binary job)
 and `Dockerfile`. Merging changes the image tag: deployments stay on
 the old one until moved.
+
+A release whose `Cargo.toml` upstream left at the previous version
+fails the smoke test's version check (it reads `angos <previous>`): it
+waits for upstream's fix. Leave the PR open with the cause in a
+comment, and report it upstream: Renovate moves the PR to the next
+release, or to the tag moved onto a bumped commit.
