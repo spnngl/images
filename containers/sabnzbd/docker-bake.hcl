@@ -17,7 +17,7 @@ target "sabnzbd" {
     ]
     uv = [
       # renovate: datasource=docker depName=ghcr.io/astral-sh/uv
-      { version = "0.13.8" },
+      { version = "0.13.9" },
     ]
   }
   args = {
