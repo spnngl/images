@@ -11,7 +11,7 @@ target "haproxy" {
     debian = ["13"]
     base = [
       # renovate: datasource=git-tags depName=haproxy-2.8 packageName=https://git.haproxy.org/git/haproxy-2.8.git versioning=semver extractVersion=^v(?<version>2\.8\.\d+)$ depType=automerge
-      { version = "2.8.31", checksum = "5260599cc7f0ae2a058200cdfab2feda1403c48a" },
+      { version = "2.8.32", checksum = "6b68c8145ebbdc9131eeecdedc94145190d0daff" },
       # renovate: datasource=git-tags depName=haproxy-3.0 packageName=https://git.haproxy.org/git/haproxy-3.0.git versioning=semver extractVersion=^v(?<version>3\.0\.\d+)$ depType=automerge
       { version = "3.0.30", checksum = "47d806bd287e4d3d6e9c1be490f0173076f3e8c2" },
       # renovate: datasource=git-tags depName=haproxy-3.2 packageName=https://git.haproxy.org/git/haproxy-3.2.git versioning=semver extractVersion=^v(?<version>3\.2\.\d+)$ depType=automerge
