@@ -2,9 +2,12 @@
 # cilium_net, cilium_vxlan, and any veth. Each link networkd manages costs it
 # sockets.
 #
+# tmp* is the pod's end of a pair, in the host namespace until Cilium moves it
+# into the pod (eth0). Pairs leaked by a killed CNI ADD stay there.
+#
 # 99-vm-dhcp.network skips them already (Kind=!*); this keeps them out whatever else matches.
 [Match]
-Name=lxc* cilium_* veth* cali*
+Name=lxc* tmp* cilium_* veth* cali*
 
 [Link]
 Unmanaged=yes
