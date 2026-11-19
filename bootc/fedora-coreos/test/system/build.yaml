@@ -73,6 +73,8 @@ file:
   # again if they were only disabled.
   /etc/systemd/system/systemd-homed.service: {exists: true, filetype: symlink, linked-to: /dev/null}
   /etc/systemd/system/systemd-homed-activate.service: {exists: true, filetype: symlink, linked-to: /dev/null}
+  # Audit records reach the journal once, through audit's syslog plugin.
+  /etc/systemd/system/systemd-journald-audit.socket: {exists: true, filetype: symlink, linked-to: /dev/null}
   /usr/lib/systemd/system/zincati.service: {exists: false}
   /usr/lib/systemd/system/docker.socket: {exists: false}
   # network-online waits for one routable link, not for all of them.
