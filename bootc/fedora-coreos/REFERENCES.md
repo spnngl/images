@@ -511,8 +511,8 @@ Read each at the version this repository pins.
   `CAP_AUDIT_CONTROL` or on a netlink error, and the kernel lets it set
   the flag with the rules locked (`-e 2`). No `log_passwd`: password
   prompts stay out; what is typed with echo on, a pasted token too, is
-  kept, in `/var/log/audit` and twice in the journal (the `syslog`
-  plugin, `systemd-journald-audit.socket`), readable by `wheel`. sudo's
+  kept, in `/var/log/audit` and in the journal (the `syslog` plugin),
+  readable by `wheel`. sudo's
   I/O logs (`log_input`, `sudoreplay`) were rejected: TTY auditing
   already records `sudo` sessions. Each session logs `CONFIG_CHANGE
   op=tty_set` at open and close: that type no longer means a change of
@@ -521,8 +521,14 @@ Read each at the version this repository pins.
 - **`/etc/securetty`, one empty line:** no PAM module of Fedora reads it;
   `no_direct_root_logins` wants it.
 - **Audit syslog plugin** (`audispd-plugins`, `active = yes`): audit events
-  reach the journal. Its `/var/spool/audit` is removed, as `/var` ships
-  empty.
+  reach the journal (`auditd_audispd_syslog_plugin_activated`). Its
+  `/var/spool/audit` is removed, as `/var` ships empty.
+  `systemd-journald-audit.socket` is masked: it copied the kernel's
+  records into the journal a second time (on a node, 8547 lines an hour
+  beside the plugin's 10051). Its copy has the structured fields
+  (`_AUDIT_TYPE`); the plugin's is text, `journalctl --grep
+  'type=TTY'`. Masked, not disabled: `preset-all` at first boot would
+  enable it again (`journald.conf(5)`, `Audit=`).
 - **Audit rules of CIS 6.3.3** (`etc/audit/rules.d/`), written from
   scap-security-guide's remediations, its field order kept so its checks
   read them. Fedora's `audit.rules` goes: its `-a task,never` turns syscall

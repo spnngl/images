@@ -172,6 +172,10 @@ grep -q '&& umask 027$' /etc/bashrc
 # Audit events to the journal too. Fail if the plugin's line was not found.
 sed -i 's/^active = no$/active = yes/' /etc/audit/plugins.d/syslog.conf
 grep -qx 'active = yes' /etc/audit/plugins.d/syslog.conf
+# Once: journald's audit socket copies the kernel's records into the journal
+# too, keystrokes included. The plugin stays, OpenSCAP checks it. Masked:
+# preset-all would enable a disabled socket again (journald.conf(5), Audit=).
+systemctl mask systemd-journald-audit.socket
 
 # Audit rules: etc/audit/rules.d/. Fedora's audit.rules turns syscall
 # auditing off (-a task,never). 51-cis-x86_64.rules names syscalls only
