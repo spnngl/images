@@ -51,6 +51,10 @@ file:
   /etc/ssh/sshd_config.d/00-hardening.conf:
     exists: true
     contents: ["/^AuthorizedKeysFile /usr/lib/ssh/authorized_keys/%u$/"]
+  # rootless's input is audited (Containerfile).
+  /etc/pam.d/sshd:
+    exists: true
+    contents: ["/^session\\s+required\\s+pam_tty_audit\\.so disable=\\* enable=rootless$/"]
 
   # Units are enabled by links in /usr/lib (Containerfile): `systemctl
   # is-enabled` would call them disabled.

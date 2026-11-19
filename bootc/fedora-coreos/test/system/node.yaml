@@ -31,6 +31,13 @@ command:
   "audit: firewall changes of sessions only":
     exec: auditctl -l | grep -qxF -- '-a always,exclude -F msgtype=NETFILTER_CFG -F auid=-1'
     exit-status: 0
+  # /etc/pam.d/sshd (Containerfile): the SSH sessions of this test, as
+  # rootless, turned TTY auditing on. Raw records say res=1.
+  "audit: rootless's sessions audit their input":
+    exec: |
+      ausearch --input-logs --start boot -m CONFIG_CHANGE -ua rootless --raw |
+          grep -q 'op=tty_set old-enabled=0 new-enabled=1 .*res=1'
+    exit-status: 0
   rootless password is locked:
     exec: passwd -S rootless
     exit-status: 0
