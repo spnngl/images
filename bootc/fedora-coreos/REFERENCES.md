@@ -415,6 +415,9 @@ Read each at the version this repository pins.
   refused, which `-c` loads past and `-e 2` keeps out until a reboot.
   auditd's comes from its state report (`auditctl --signal state`, in
   `/run/audit/auditd.state`): its log, disk space and plugin queue.
+  auditd stopped, or silent 10 s: `auditd_up 0`, its other metrics left
+  out, the kernel's and the counters still written; the kernel's say
+  whether events are lost meanwhile.
   `report_interval` of `auditd.conf` was rejected: it edits a file the
   package owns, which has no drop-in folder; `audisp-statsd` too: 16
   metrics, over StatsD, needing a statsd_exporter. Every 5 minutes, not
@@ -433,10 +436,13 @@ Read each at the version this repository pins.
   report of the whole log was rejected: its counts drop at each
   rotation; a time window (`--start`) too: its edges lose or repeat
   events. Checkpoint lost from the logs (exit 10 to 12): the run counts
-  from its time, which counts its event twice. The checkpoint and raw
-  records stay in the runtime directory, out of the folder node-exporter
-  mounts. Bounded labels: an account the node lacks is `unknown`, the name
-  an SSH client sent with no login yet (metal nodes have public IPs); an
+  from its time, which counts its event twice. `state.nuon` unreadable, or
+  a checkpoint ausearch still rejects: the run warns and counts the
+  retained logs again, which Prometheus reads as a counter reset; failing
+  every run until someone removes the file was rejected. The checkpoint
+  and raw records stay in the runtime directory, out of the folder
+  node-exporter mounts. Bounded labels: an account the node lacks is
+  `unknown`, the name an SSH client sent with no login yet (metal nodes have public IPs); an
   AVC target keeps its SELinux type, its MCS categories differ per
   container. Reports by file, host, pid, terminal and command are left
   out: unbounded. The others of aureport (config changes, anomalies, MAC,
