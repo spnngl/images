@@ -118,10 +118,15 @@ command:
   rootless sudoers parse:
     exec: visudo -cf /etc/sudoers.d/99-rootless
     exit-status: 0
+  # Each line that isn't a comment is an ED25519 key, and there is one at
+  # least. ssh-keygen -l skips a line it can't read, so its keys are counted
+  # against the file's. Keys are added and removed with no test change.
   rootless keys:
-    exec: grep -c ^ssh-ed25519 /usr/lib/ssh/authorized_keys/rootless
+    exec: |
+      f=/usr/lib/ssh/authorized_keys/rootless
+      keys=$(grep -cv -e '^#' -e '^$' "$f")
+      [ "$keys" -ge 1 ] && [ "$(ssh-keygen -lf "$f" | grep -c ' (ED25519)$')" = "$keys" ]
     exit-status: 0
-    stdout: ["/^2$/"]
 
   # sshd: the first value wins, so check what it resolves to. UsePAM must
   # stay yes (etc/ssh/sshd_config.d/00-hardening.conf). `sshd -T` needs a
