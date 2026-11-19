@@ -1,11 +1,14 @@
 #!/usr/bin/nu --no-config-file
-# The audit subsystem's state, as metrics: the kernel's (auditctl -s, -l) and
-# auditd's (its state report). See usr/lib/systemd/system/audit-metrics.service.
+# The audit subsystem's state, as metrics: the kernel's (auditctl -s, -l),
+# auditd's (its state report), and counters of the logged events (aureport).
+# See usr/lib/systemd/system/audit-metrics.service.
 #
 # Output, in /var/lib/audit-metrics:
 #   audit.prom  for node-exporter's textfile collector: mount
 #               /var/lib/audit-metrics into its pod, and give that path to
 #               --collector.textfile.directory
+#   state.nuon  ausearch's checkpoint, and the counters' totals up to it;
+#               removed, the next run counts the retained logs again
 #
 # Nushell of Fedora's package (0.99): no syntax of a later release.
 
@@ -13,6 +16,26 @@ use /usr/share/nushell/prometheus.nu [metric save-metrics]
 
 const DIR = '/var/lib/audit-metrics'
 const LOG_DIR = '/var/log/audit'
+# RuntimeDirectory= of the service, which systemd removes after the run: raw
+# audit records stay out of the folder node-exporter's pod mounts.
+const CHECKPOINT = '/run/audit-metrics/checkpoint'
+const INCREMENT = '/run/audit-metrics/increment.raw'
+# The event counters: aureport's summary, and the label of its values.
+# aureport -i names numbers: types, syscalls, users.
+const REPORTS = [
+    [flag name label help];
+    ['-e' audit_events_total type 'Audit events, by record type.']
+    ['-k' audit_rule_events_total key 'Audit events of the audit rules, by their key (-k).']
+    ['-s' audit_syscall_events_total syscall 'Audit events of system calls, by system call.']
+    ['-x' audit_executable_events_total exe 'Audit events, by executable: (null) for those without one.']
+    ['-u' audit_user_events_total user 'Audit events, by login user: unset for tasks without a login.']
+    ['-au' audit_authentications_total account 'Authentications (USER_AUTH), by account: unknown for one the node lacks.']
+    ['-l' audit_logins_total account 'Logins (USER_LOGIN), by account: unknown for one the node lacks.']
+    ['-a' audit_avc_total target_type 'SELinux access decisions (AVC), by target type: success granted, failed denied.']
+]
+# The counters' result label: an event's success=, res= or AVC decision; none
+# for an event without one.
+const RESULT_HELP = ' Result: success, failed, or none.'
 # auditd rewrites it on SIGCONT (src/auditd.c, cont_handler()), from its event
 # loop: after `auditctl --signal state` returns. Its last line, written, it is
 # whole.
@@ -52,6 +75,7 @@ def main [] {
     [
         ...(kernel)
         ...(daemon)
+        ...(events)
         ...(oldest-event)
         ...((date now | format date '%s') | one
             | metric audit_metrics_last_run_timestamp_seconds 'Last run of audit-metrics.')
@@ -164,6 +188,100 @@ def number []: string -> int {
     let n = $parsed | first
     let unit = match $n.unit { 'KiB' => 1024, 'MiB' => 1048576, _ => 1 }
     ($n.n | into int) * $unit
+}
+
+# Counters of the events logged since the last run (the increment), added to
+# the totals of state.nuon. Not a report of the whole log: its counts drop at
+# each rotation.
+def events []: nothing -> list<string> {
+    let state = if ('state.nuon' | path exists) {
+        open state.nuon
+    } else {
+        {checkpoint: null, totals: []}
+    }
+    if $state.checkpoint != null { $state.checkpoint | save --force $CHECKPOINT }
+    let counts = if (increment) {
+        let accounts = ^getent passwd | lines | each {|l| $l | split row ':' | first }
+        $REPORTS | each {|r| report $r $accounts } | flatten
+    } else { [] }
+    # By metric and labels.
+    let totals = $state.totals | append $counts
+        | group-by {|c| {name: $c.name, labels: $c.labels} | to nuon }
+        | values
+        | each {|c| {name: $c.0.name, labels: $c.0.labels, value: ($c.value | math sum)} }
+    let checkpoint = open --raw $CHECKPOINT
+    # The totals and the checkpoint they count up to change together: written
+    # whole, then renamed.
+    {checkpoint: $checkpoint, totals: $totals} | to nuon | save --force state.nuon.tmp
+    mv --force state.nuon.tmp state.nuon
+    [
+        ...($REPORTS | each {|r|
+            $totals | where name == $r.name | sort-by value --reverse
+                | metric $r.name $"($r.help)($RESULT_HELP)" --counter
+        } | flatten)
+        # `output=<node> <epoch>.<ms>:<serial> <type>`; 0.000 before any event.
+        ...($checkpoint | parse --regex 'output=\S+ (?<time>\d+\.\d+):'
+            | where time != '0.000' | get time.0?
+            | one | metric audit_last_event_timestamp_seconds 'Last audit event counted.')
+    ]
+}
+
+# The events after the checkpoint, raw, in INCREMENT; false for none.
+# ausearch writes the checkpoint on success only.
+def increment []: nothing -> bool {
+    let search = {|start: list<string>|
+        ^ausearch --input-logs --checkpoint $CHECKPOINT ...$start --raw | complete
+    }
+    mut out = do $search []
+    # 10, 11, 12: the checkpoint's log or event left the logs (rotated). From
+    # its time: an event of the same millisecond counts twice.
+    if $out.exit_code in [10 11 12] { $out = do $search [--start checkpoint] }
+    # 1, silent: no event since the checkpoint (src/ausearch.c, main()).
+    if $out.exit_code == 1 and $out.stderr == '' { return false }
+    if $out.exit_code != 0 {
+        error make {msg: $"ausearch exited ($out.exit_code): ($out.stderr) - removing ($DIR)/state.nuon counts the retained logs again"}
+    }
+    $out.stdout | save --force $INCREMENT
+    true
+}
+
+# A report's counts of the increment, by value and result: rows of
+# {name, labels, value}.
+def report [r: record, accounts: list<string>]: nothing -> list<record> {
+    let all = summary $r.flag []
+    let success = summary $r.flag [--success]
+    let failed = summary $r.flag [--failed]
+    $all | each {|a|
+        let s = $success | where value == $a.value | get total.0? | default 0
+        let f = $failed | where value == $a.value | get total.0? | default 0
+        let label = $a.value | label-value $r.label $accounts
+        [[result value]; [success $s] [failed $f] [none ($a.total - $s - $f)]]
+            | where value > 0
+            | each {|c| {name: $r.name, labels: ({} | insert $r.label $label | insert result $c.result), value: $c.value} }
+    } | flatten
+}
+
+# aureport's `<total>  <value>` lines; its title and header lines start
+# otherwise.
+def summary [flag: string, filter: list<string>]: nothing -> list<record> {
+    let out = ^aureport -i -if $INCREMENT $flag --summary ...$filter | complete
+    if $out.exit_code != 0 {
+        error make {msg: $"aureport ($flag) ($filter | str join ' ') exited ($out.exit_code): ($out.stderr)"}
+    }
+    $out.stdout | lines | parse --regex '^(?<total>\d+)  (?<value>.+)$'
+        | update total {|t| $t.total | into int }
+}
+
+# A label's value, bounded: an account the node lacks is the name an SSH
+# client sent, any; an AVC target keeps its type, its MCS categories differ
+# per container.
+def label-value [label: string, accounts: list<string>]: string -> string {
+    let value = $in
+    match $label {
+        'account' => (if $value in $accounts { $value } else { 'unknown' })
+        'target_type' => ($value | split row ':' | get 2? | default $value)
+        _ => $value
+    }
 }
 
 # The first event of the oldest log: how far back the logs go.

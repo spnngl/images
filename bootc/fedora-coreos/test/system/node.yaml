@@ -92,6 +92,20 @@ command:
           grep -q '^auditd_disk_free_bytes ' /var/lib/audit-metrics/audit.prom
     exit-status: 0
     timeout: 120000
+  # Each run counts the events since the last: sudo between two, a
+  # privileged program of a session (52-privileged.rules).
+  audit-metrics.service counts the audit events:
+    exec: |
+      count() {
+          grep '^audit_rule_events_total{key="privileged",result="success"} ' \
+              /var/lib/audit-metrics/audit.prom | cut -d' ' -f2
+      }
+      systemctl start audit-metrics.service && before="$(count)" &&
+          sudo -n true &&
+          systemctl start audit-metrics.service &&
+          [ "$(count)" -gt "${before:-0}" ]
+    exit-status: 0
+    timeout: 120000
   etc-diff.service lists /etc's drift:
     exec: |
       systemctl start etc-diff.service &&
