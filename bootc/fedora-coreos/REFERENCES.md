@@ -62,6 +62,21 @@ Read each at the version this repository pins.
   already in it; cri-tools, kubernetes-cni, greenboot and qemu-guest-agent
   aren't. Renovate proposes its stable releases only: the tags also hold the
   `testing` (`.2.`) and `next` (`.1.`) streams.
+- **Held on the base's major while the stable stream is on the next one,
+  with Fedora's security updates (`dnf upgrade --security` in
+  `system`):** NVIDIA's repository for the next major has no R620 driver
+  yet ("GPU image"), and FCOS publishes no release of a major once stable
+  has left it. Security updates only: the least drift from the package
+  set FCOS tested. Not the kernel's: a new kernel has broken Cilium's BPF
+  programs before ("Cilium ≥ 1.20 in `vm.sh cluster`"), and `nvidia-kmod`
+  builds for the base's kernel; its fixes wait for the next major. The
+  updates come from the base's own `updates` repository, unpinned, the
+  one exception to Renovate tracking every version: Fedora keeps no
+  snapshot to pin. They refresh with the `system` stage ("Layers");
+  `push` publishes fedora-coreos only after the VM tests pass ("Disk
+  images, build and test"). The `dnf upgrade` goes with the move to the
+  next major, once NVIDIA's repository has the R620 driver: FCOS's
+  releases bring the updates again.
 - **containerd from the base:** the runtime of `capi-image-builder`, updated
   with the base. Our config is `/usr/lib/containerd/config.toml` (version 3,
   imports `conf.d/*.toml` from `/usr/lib` then `/etc`), selected by
@@ -846,8 +861,8 @@ RuntimeClass.
   branch changes the kernel module and the CUDA the workloads run
   against: a person moves to it. The repository's URL holds the base's
   Fedora major, which `repos/nvidia.conf` takes from the base (`$releasever`);
-  `renovate.json5`'s URL for the driver is the one literal, a person
-  changes it with a new base major (its PR says so).
+  the driver's `registryUrl` in `docker-bake.hcl` is the one literal, a
+  person changes it with a new base major (its PR says so).
 - **`repos/nvidia.conf`, bind-mounted, never written into a layer:** both
   stages that install from NVIDIA read the one file, and no RUN has to
   remove it. Both repositories check package signatures: NVIDIA's own
