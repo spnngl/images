@@ -23,13 +23,14 @@
   and glibc (OpenSSL and its CA store are built in): the runtime
   dependencies. Its `/usr/local/LICENSE` ships with it. Debian's
   security updates don't reach it: Node's patch releases come through
-  Renovate alone, hence automerged.
+  Renovate alone, hence automerged. Node 26 no longer includes Corepack,
+  so install the version pinned in upstream's `Dockerfile`.
 - **Modules from npm in the build's sandbox network step:**
   `pnpm-lock.yaml`, upstream's, pins each one by hash. Not Dalec's
   `nodemod` generator: it runs `npm install`, which ignores
-  `pnpm-lock.yaml`. pnpm through the image's corepack, at the version of
-  `docker-bake.hcl`, checked against npm's signing keys (as
-  `containers/silo-server`).
+  `pnpm-lock.yaml`. Use the pnpm version from upstream's
+  `packageManager`, pinned in `docker-bake.hcl`, through Corepack so npm's
+  signing keys verify the download (as `containers/silo-server`).
 - **`CONFIGARR_VERSION` at build time:** `esbuild.ts` writes it into the
   bundle; unset, configarr logs `dev`.
 - **`dumb-init` as PID 1, as upstream:** node as PID 1 installs no
