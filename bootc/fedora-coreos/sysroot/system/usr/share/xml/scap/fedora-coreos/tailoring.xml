@@ -131,8 +131,9 @@
 
     <!-- Each also wants the argument in /etc/default/grub's GRUB_CMDLINE_LINUX,
          a file bootc has no use for: bootc puts usr/lib/bootc/kargs.d's
-         arguments in the boot entries. The scan's audit_enabled and
-         audit_backlog_limit metrics report what the kernel got. -->
+         arguments in the boot entries. audit_enabled and
+         audit_backlog_limit_events of audit.prom (usr/libexec/audit-metrics)
+         report what the kernel got. -->
     <select idref="xccdf_org.ssgproject.content_rule_grub2_audit_argument" selected="false"/>
     <select idref="xccdf_org.ssgproject.content_rule_grub2_audit_backlog_limit_argument" selected="false"/>
 

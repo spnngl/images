@@ -406,15 +406,35 @@ Read each at the version this repository pins.
 - **One series per selected rule** (`openscap_rule`, about 280 per node),
   with its title, severity, CIS section and result: an alert names the
   failed rule.
-- **The kernel's audit state, with the scan** (`audit_*` of
-  `openscap.prom`, from `auditctl -s` and `-l`): the scan reads the rules'
-  files only. `audit_lost_events` counts the events dropped since boot;
+- **The audit subsystem's state, every 5 minutes** (`audit-metrics.timer`,
+  `usr/libexec/audit-metrics`, `audit.prom` in `/var/lib/audit-metrics`):
+  the scan reads the rules' files only, not what the kernel loaded nor
+  whether events are lost. The kernel's state comes from `auditctl -s` and
+  `-l`: `audit_lost_events_total` counts the events dropped since boot;
   `audit_rules_rejected`, the rules of `/etc/audit/audit.rules` the kernel
   refused, which `-c` loads past and `-e 2` keeps out until a reboot.
+  auditd's comes from its state report (`auditctl --signal state`, in
+  `/run/audit/auditd.state`): its log, disk space and plugin queue.
+  `report_interval` of `auditd.conf` was rejected: it edits a file the
+  package owns, which has no drop-in folder; `audisp-statsd` too: 16
+  metrics, over StatsD, needing a statsd_exporter. Every 5 minutes, not
+  with the daily scan: the alerts on lost events, a full plugin queue or
+  a full disk need fresh values. Names: `audit_` for the kernel,
+  `auditd_` for the daemon, base units, `_total` on the kernel's
+  since-boot counters (a reboot reads as a counter reset).
+- **`audit-metrics.service` is sandboxed**: root, for `/var/log/audit`
+  and `/run/audit` (0700), with `CAP_AUDIT_CONTROL` only, for `auditctl`.
+  The host's network namespace stays: audit's netlink socket exists in no
+  other. No `ProtectKernelModules=`: it hides `/usr/lib/modules`, whose
+  `config` gives the kernel's `HZ`, the backlog wait times' unit; without
+  `CAP_SYS_MODULE` no module loads anyway. `Nice=19` and the lowest
+  best-effort I/O priority, not the idle classes of `openscap.service`:
+  an idle run starves on a saturated node, when its alerts matter.
+  `audit_metrics_last_run_timestamp_seconds` shows a stale file.
 - **Nushell** (Fedora's package) writes the metrics: XCCDF is XML, which
   bash and jq can't read. Fedora's release is 0.99, older than the current
   one: the scripts use no later syntax. `usr/share/nushell/prometheus.nu`
-  holds the text format, for both scripts.
+  holds the text format, for every script.
 - **`/etc` drift, hourly** (`etc-diff.timer`, `usr/libexec/etc-diff`,
   `ostree admin config-diff`): `/usr` is the image's and read-only, `/etc`
   is what changes on a node. It stands in for AIDE (`aide_build_database`
@@ -483,8 +503,8 @@ Read each at the version this repository pins.
   `grub2_audit_argument` and `grub2_audit_backlog_limit_argument` are
   off: besides the boot entries, they want the argument in
   `/etc/default/grub`, which bootc doesn't read; an unread copy there
-  would only satisfy the check. The scan's `audit_enabled` and
-  `audit_backlog_limit` metrics report the kernel's values.
+  would only satisfy the check. `audit_enabled` and
+  `audit_backlog_limit_events` of `audit.prom` report the kernel's values.
 - **auditd suspends and rotates** (tailoring's values): a full disk or a
   write error stops logging instead of halting the node or dropping it to
   single-user mode, and logs rotate instead of filling `/var`. CIS level

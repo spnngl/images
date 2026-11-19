@@ -1,0 +1,175 @@
+#!/usr/bin/nu --no-config-file
+# The audit subsystem's state, as metrics: the kernel's (auditctl -s, -l) and
+# auditd's (its state report). See usr/lib/systemd/system/audit-metrics.service.
+#
+# Output, in /var/lib/audit-metrics:
+#   audit.prom  for node-exporter's textfile collector: mount
+#               /var/lib/audit-metrics into its pod, and give that path to
+#               --collector.textfile.directory
+#
+# Nushell of Fedora's package (0.99): no syntax of a later release.
+
+use /usr/share/nushell/prometheus.nu [metric save-metrics]
+
+const DIR = '/var/lib/audit-metrics'
+const LOG_DIR = '/var/log/audit'
+# auditd rewrites it on SIGCONT (src/auditd.c, cont_handler()), from its event
+# loop: after `auditctl --signal state` returns. Its last line, written, it is
+# whole.
+const STATE_REPORT = '/run/audit/auditd.state'
+const STATE_REPORT_END = 'glibc fordblks '
+const STATE_REPORT_TIMEOUT = 10sec
+# The state report's lines, and their metric. A line auditd leaves out (no log
+# written, the partition unreadable: src/auditd-event.c,
+# write_logging_state()) gives no metric.
+const DAEMON = [
+    [line name help];
+    ['writing to logs' auditd_writing_logs 'auditd writes its log: 1 yes, 0 no.']
+    ['current log size' auditd_log_size_bytes "Size of auditd's current log."]
+    ['max log size' auditd_log_max_size_bytes 'Size at which auditd rotates its log (max_log_file).']
+    ['logs detected last rotate/shift' auditd_rotated_log_files 'Log files auditd counted at its last rotation.']
+    ['Logging partition free space' auditd_disk_free_bytes "Free space of the log's partition."]
+    ['space_left setting' auditd_space_left_bytes 'Free space of the log partition under which auditd takes its space_left_action.']
+    ['admin_space_left setting' auditd_admin_space_left_bytes 'Free space of the log partition under which auditd takes its admin_space_left_action.']
+    ['space left on partition' auditd_space_left "The log's partition had room at auditd's last write: 1 yes, 0 full."]
+    ['logging suspended' auditd_logging_suspended 'auditd stopped writing its log (a full disk, a write error): 1 yes, 0 no.']
+    ['file system space action performed' auditd_space_action_performed 'auditd took its space_left_action: 1 yes, 0 no.']
+    ['admin space action performed' auditd_admin_space_action_performed 'auditd took its admin_space_left_action: 1 yes, 0 no.']
+    ['disk error detected' auditd_disk_error 'auditd failed to write its log: 1 yes, 0 no.']
+    ['Number of active plugins' auditd_plugins "auditd's plugins running."]
+    ['current plugin queue depth' auditd_plugin_queue_depth "Events in auditd's queue to its plugins."]
+    ['max plugin queue depth used' auditd_plugin_queue_max_depth "Most events in auditd's queue to its plugins since it started."]
+    ['plugin queue size' auditd_plugin_queue_size "Events auditd's queue to its plugins holds at most (q_depth)."]
+    ['plugin queue overflow detected' auditd_plugin_queue_overflow "auditd's queue to its plugins overflowed, events lost to them: 1 yes, 0 no."]
+    ['plugin queueing suspended' auditd_plugin_queueing_suspended 'auditd stopped queueing events to its plugins: 1 yes, 0 no.']
+    ['glibc arena' auditd_memory_arena_bytes "auditd's memory from the system (glibc's arena)."]
+    ['glibc uordblks' auditd_memory_in_use_bytes "auditd's memory in use (glibc's uordblks)."]
+    ['glibc fordblks' auditd_memory_free_bytes "auditd's memory free, kept from the system (glibc's fordblks)."]
+]
+
+def main [] {
+    cd $DIR
+    [
+        ...(kernel)
+        ...(daemon)
+        ...(oldest-event)
+        ...((date now | format date '%s') | one
+            | metric audit_metrics_last_run_timestamp_seconds 'Last run of audit-metrics.')
+    ] | save-metrics audit.prom
+}
+
+# A metric's one row, without labels; none for null.
+def one []: any -> list<record> {
+    if $in == null { [] } else { [{labels: {}, value: $in}] }
+}
+
+# The kernel's state, and whether it has every rule: the rules' files say what
+# should be audited, not what the kernel loaded.
+def kernel []: nothing -> list<string> {
+    # One `<key> <value>` a line; `loginuid_immutable 0 unlocked`.
+    let status = ^auditctl -s | lines | parse --regex '^(?<key>\S+) (?<value>\S+)'
+        | transpose --header-row --as-record
+    let hz = hz
+    # -a and -w lines: augenrules' file, then the kernel's.
+    let rule = '^-[aw] '
+    let written = open --raw /etc/audit/audit.rules | lines | where $it =~ $rule | length
+    let loaded = ^auditctl -l | lines | where $it =~ $rule | length
+    [
+        ...($status.enabled? | one
+            | metric audit_enabled 'Kernel audit: 0 off, 1 on, 2 on and its rules locked until reboot.')
+        ...($status.failure? | one
+            | metric audit_failure_mode 'What the kernel does when it loses an audit event: 0 nothing, 1 logs it, 2 panics.')
+        ...($status.lost? | one
+            | metric audit_lost_events_total --counter 'Audit events the kernel dropped since boot: its backlog full, the rate limit passed, no memory.')
+        ...($status.backlog? | one
+            | metric audit_backlog_events 'Audit events the kernel holds for auditd.')
+        ...($status.backlog_limit? | one
+            | metric audit_backlog_limit_events 'Audit events the kernel holds at most for auditd: past it, a process waits up to the backlog wait time, then its event is lost.')
+        ...($status.rate_limit? | one
+            | metric audit_rate_limit_events_per_second 'Audit events a second the kernel sends at most, 0 unlimited; past it, they are lost.')
+        ...($status.backlog_wait_time? | seconds $hz | one
+            | metric audit_backlog_wait_time_seconds 'How long a process waits for room in a full audit backlog before its event is lost.')
+        ...($status.backlog_wait_time_actual? | seconds $hz | one
+            | metric audit_backlog_wait_time_actual_seconds_total --counter 'Time processes waited for room in a full audit backlog, since boot.')
+        ...($status.loginuid_immutable? | one
+            | metric audit_loginuid_immutable 'Login uids, once set, can not change: 1 yes, 0 no.')
+        ...($loaded | one
+            | metric audit_rules 'Audit rules the kernel has.')
+        ...(($written - $loaded) | one
+            | metric audit_rules_rejected 'Audit rules of /etc/audit/audit.rules the kernel lacks: rejected at boot, they stay out until the next one (-c, -e 2).')
+    ]
+}
+
+# The kernel's ticks a second, the unit of the backlog wait times
+# (kernel/audit.c). Not `getconf CLK_TCK`: USER_HZ, another unit.
+def hz []: nothing -> int {
+    open --raw $'/usr/lib/modules/(^uname -r | str trim)/config' | lines
+        | parse --regex '^CONFIG_HZ=(?<hz>\d+)$' | first | get hz | into int
+}
+
+# Jiffies as seconds; null stays null.
+def seconds [hz: int]: any -> any {
+    if $in == null { null } else { ($in | into int) / $hz }
+}
+
+# auditd's state report: its version, logging, plugin queue and memory.
+def daemon []: nothing -> list<string> {
+    let report = state-report
+    let values = [
+        ...($report | parse --regex '^(?<line>[^=]+?) = (?<value>.*)$')
+        # `glibc arena (total memory) is: 2620 KiB, was: 0 KiB`: now, and at
+        # the last report.
+        ...($report | parse --regex '^(?<line>glibc \w+) .* is: (?<value>\d+ KiB),')
+    ]
+    [
+        ...($values | where line == 'audit version' | each {|v| {labels: {version: $v.value}, value: 1} }
+            | metric auditd_info 'auditd, with its version. Value: 1.')
+        ...($DAEMON | each {|d|
+            let value = $values | where line == $d.line
+            if ($value | is-empty) { [] } else {
+                $value | first | get value | number | one | metric $d.name $d.help
+            }
+        } | flatten)
+    ]
+}
+
+# The lines of a state report auditd wrote after this call.
+def state-report []: nothing -> list<string> {
+    let start = date now
+    ^auditctl --signal state
+    mut lines = []
+    loop {
+        if ($STATE_REPORT | path exists) and ((ls $STATE_REPORT | first | get modified) > $start) {
+            $lines = open --raw $STATE_REPORT | lines
+            if ($lines | is-not-empty) and ($lines | last | str starts-with $STATE_REPORT_END) { break }
+        }
+        if (date now) > ($start + $STATE_REPORT_TIMEOUT) {
+            error make {msg: $"no state report in ($STATE_REPORT) ($STATE_REPORT_TIMEOUT) after `auditctl --signal state`"}
+        }
+        sleep 100ms
+    }
+    $lines
+}
+
+# A state report's value as a number: yes and no as 1 and 0, KiB and MiB as
+# bytes.
+def number []: string -> int {
+    let value = $in
+    if $value == 'yes' { return 1 }
+    if $value == 'no' { return 0 }
+    let parsed = $value | parse --regex '^(?<n>\d+)(?: (?<unit>KiB|MiB))?$'
+    if ($parsed | is-empty) {
+        error make {msg: $"unexpected value in ($STATE_REPORT): ($value)"}
+    }
+    let n = $parsed | first
+    let unit = match $n.unit { 'KiB' => 1024, 'MiB' => 1048576, _ => 1 }
+    ($n.n | into int) * $unit
+}
+
+# The first event of the oldest log: how far back the logs go.
+def oldest-event []: nothing -> list<string> {
+    let first = ls $LOG_DIR | where name =~ '/audit\.log(\.\d+)?$' | sort-by modified
+        | each {|log| ^head -n 1 $log.name | parse --regex 'msg=audit\((?<time>\d+\.\d+):' }
+        | flatten | get time.0?
+    $first | one | metric audit_log_oldest_event_timestamp_seconds 'First event of the oldest audit log kept: how far back the logs go.'
+}

@@ -82,10 +82,16 @@ command:
     exec: |
       systemctl start openscap.service || exit 1
       ! grep -E '<result>(fail|error)</result>' /var/lib/openscap/results.xml &&
-          grep -q '^openscap_rule{rule=' /var/lib/openscap/openscap.prom &&
-          grep -qx 'audit_rules_rejected 0' /var/lib/openscap/openscap.prom
+          grep -q '^openscap_rule{rule=' /var/lib/openscap/openscap.prom
     exit-status: 0
     timeout: 900000
+  audit-metrics.service writes the audit state:
+    exec: |
+      systemctl start audit-metrics.service &&
+          grep -qx 'audit_rules_rejected 0' /var/lib/audit-metrics/audit.prom &&
+          grep -q '^auditd_disk_free_bytes ' /var/lib/audit-metrics/audit.prom
+    exit-status: 0
+    timeout: 120000
   etc-diff.service lists /etc's drift:
     exec: |
       systemctl start etc-diff.service &&
