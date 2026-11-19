@@ -144,12 +144,18 @@ SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 # Our policy.json, about to replace the base's, must still be the base's
 # plus our changes (fedora/policy.jq). AlmaLinux 9's differs from 10's, so
 # ours is per release (sysroot/<BASE_VERSION>/); a new release has none yet
-# and fails here.
+# and fails here. The base's is in /etc, or in /usr/share/containers since
+# AlmaLinux 10.3 (containers-common 6.1): the fallback when
+# /etc/containers/policy.json, ours, doesn't exist (containers-policy.json(5)).
 ARG BASE_VERSION
 RUN --mount=type=bind,source=fedora/policy.jq,target=/tmp/policy.jq \
     --mount=type=bind,source=almalinux/sysroot,target=/tmp/sysroot \
-    jq -e --slurpfile ours "/tmp/sysroot/${BASE_VERSION}/etc/containers/policy.json" \
-        -f /tmp/policy.jq /etc/containers/policy.json
+    <<EORUN
+base=/etc/containers/policy.json
+test -e "${base}" || base=/usr/share/containers/policy.json
+jq -e --slurpfile ours "/tmp/sysroot/${BASE_VERSION}/etc/containers/policy.json" \
+    -f /tmp/policy.jq "${base}"
+EORUN
 
 # Keep the build context's modes (0755 directories, 0644 files). No --chmod:
 # buildah applies it to directories too, and 0644 on /usr, /etc... breaks
