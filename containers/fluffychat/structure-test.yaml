@@ -19,6 +19,8 @@ metadataTest:
       value: "true"
     - key: SERVER_COMPRESSION_STATIC
       value: "true"
+    - key: SERVER_CONFIG_FILE
+      value: "/etc/sws.toml"
     - key: SERVER_LOG_LEVEL
       value: "info"
 fileExistenceTests:
@@ -29,6 +31,12 @@ fileExistenceTests:
     uid: 0
     gid: 0
     permissions: "-rwxr-xr-x"
+  - name: "static-web-server config"
+    path: /etc/sws.toml
+    shouldExist: true
+    uid: 0
+    gid: 0
+    permissions: "-rw-r--r--"
   # Shell-less (containers/AGENTS.md, "Rules").
   - name: /bin/sh
     path: /bin/sh

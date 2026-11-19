@@ -106,13 +106,15 @@
   `flutter.js` and `version.json` have no hash in their names and must
   follow a release.
 - **Security headers on, unlike upstream:** SWS's set
-  (`src/security_headers.rs`): HSTS (two years, `includeSubDomains`,
-  `preload`), `X-Frame-Options: DENY`, `X-Content-Type-Options:
-  nosniff`, `Content-Security-Policy: frame-ancestors 'self'`. The app
-  embeds no page (no iframe in `lib/` or `web/`; calls are LiveKit's
-  SDK, sign-in returns through `auth.html` in a popup), so nothing
-  breaks; `containers/cinny` turns them off for Element Call's frame.
-  HSTS assumes TLS on the host and its subdomains.
+  (`src/security_headers.rs`): `X-Frame-Options: DENY`,
+  `X-Content-Type-Options: nosniff`, and
+  `Content-Security-Policy: frame-ancestors 'self'`. SWS sends built-in
+  HSTS only over TLS; this image terminates TLS in a proxy, so `sws.toml`
+  adds HSTS for the proxy to forward. The app embeds no page
+  (no iframe in `lib/` or `web/`; calls are LiveKit's SDK, sign-in
+  returns through `auth.html` in a popup), so nothing breaks;
+  `containers/cinny` turns security headers off for Element Call's
+  frame. HSTS assumes TLS on the host and its subdomains.
 - **Build leftovers removed:** `flutter build web` copies all of `web/`
   and dart2js writes `.deps` files (the build's paths), Flutter a
   `.last_build_id`; no page asks for them, upstream ships them.

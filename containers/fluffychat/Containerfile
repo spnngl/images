@@ -15,11 +15,11 @@
 # Missing files answer 404: the app routes in the URL's fragment
 # (/#/...). Other settings are static-web-server's SERVER_* environment
 # variables. TLS and CORS are off, as upstream's: terminate TLS in a
-# proxy. Security headers are on (SERVER_SECURITY_HEADERS): HSTS, for
-# two years with includeSubDomains and preload, so serve it from a host
-# whose subdomains all have TLS; no framing by other sites. Runs with a
-# read-only root filesystem, no capability and no-new-privileges: it
-# writes nothing.
+# proxy. Security headers are on (SERVER_SECURITY_HEADERS); the shipped
+# SWS config adds HSTS for the TLS-terminating proxy to forward. Serve it
+# from a host whose subdomains all have TLS; no framing by other sites.
+# Runs with a read-only root filesystem, no capability and
+# no-new-privileges: it writes nothing.
 # https://static-web-server.net/configuration/environment-variables/
 
 # Versions come from containers/fluffychat/docker-bake.hcl: build with
@@ -296,11 +296,12 @@ EORUN
 # kill (DL3001) stops the server this step started, not a container's.
 # hadolint ignore=DL3001
 RUN --mount=type=bind,from=web,source=/build/build/web,target=/app \
+    --mount=type=bind,source=sws.toml,target=/etc/sws.toml \
     <<EORUN
 /out/static-web-server --version | grep -F "${SWS_VERSION}"
 export SERVER_ROOT=/app SERVER_HOST=127.0.0.1 SERVER_PORT=8080 \
     SERVER_HEALTH=true SERVER_CACHE_CONTROL_HEADERS=false SERVER_SECURITY_HEADERS=true \
-    SERVER_COMPRESSION_STATIC=true SERVER_LOG_LEVEL=info
+    SERVER_COMPRESSION_STATIC=true SERVER_CONFIG_FILE=/etc/sws.toml SERVER_LOG_LEVEL=info
 /out/static-web-server > /tmp/server.log 2>&1 &
 server=$!
 url=http://127.0.0.1:8080
@@ -343,6 +344,7 @@ LABEL org.opencontainers.image.version="${BASE_VERSION}" \
 # can't rewrite them. No CA bundle: no outbound TLS.
 COPY --link --from=build --chown=0:0 /out/static-web-server /static-web-server
 COPY --link --from=web --chown=0:0 /build/build/web/ /app/
+COPY --link --chown=0:0 sws.toml /etc/sws.toml
 COPY --link --from=source /LICENSE /usr/share/doc/fluffychat/
 COPY --link --from=sws-source /LICENSE-MIT /LICENSE-APACHE /usr/share/doc/static-web-server/
 
@@ -360,6 +362,7 @@ ENV SERVER_ROOT=/app \
     SERVER_CACHE_CONTROL_HEADERS=false \
     SERVER_SECURITY_HEADERS=true \
     SERVER_COMPRESSION_STATIC=true \
+    SERVER_CONFIG_FILE=/etc/sws.toml \
     SERVER_LOG_LEVEL=info
 
 EXPOSE 8080/tcp
