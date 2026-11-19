@@ -467,8 +467,8 @@ mkdir -p /reports/goss
     > /reports/goss/build.tap || [[ $? == 1 ]]
 EORUN
 
-# The verdict on the reports: a failed OpenSCAP rule, a fixable Critical
-# vulnerability or a failed goss check. It never fails the build, so that the
+# The verdict on the reports: a failed OpenSCAP rule or a failed goss check;
+# grype's findings are counted only. It never fails the build, so that the
 # reports are exported either way: it writes summary.txt, and failed, only
 # when something failed, for the caller to stop on (the build-bootc.yml
 # workflow, and bootc/fedora-coreos/AGENTS.md's build check, which print it).
@@ -499,9 +499,6 @@ failed=""
 } > /reports/summary.txt
 if grep -qE '<result>(fail|error)</result>' /scan/openscap/results.xml; then
     failed+=" OpenSCAP rules failed: openscap/report.html."
-fi
-if grep -q '^grype_vulnerability{.*severity="Critical"' /scan/grype/grype.prom; then
-    failed+=" Fixable Critical vulnerabilities: grype/grype.prom."
 fi
 if ! grep -qE '^1\.\.[1-9]' /goss/goss/build.tap; then
     failed+=" goss ran no check: goss/build.tap."

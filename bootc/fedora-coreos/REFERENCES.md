@@ -513,8 +513,10 @@ Read each at the version this repository pins.
   score; EPSS and CVSS by id; counts of every match by severity and fix
   state, and of the ignored ones by id, so an ignore rule stays visible;
   the database's age. `grype.json` keeps every match.
-- **CI fails on a fixable Critical** (the `check` stage): the job stops
-  after exporting the reports, as for OpenSCAP.
+- **A report, not a build check** (the `check` stage's `summary.txt`):
+  the image holds a whole distribution, whose fixes come with the base's
+  next release, and a failed build would keep the older, more vulnerable
+  image on the nodes.
 - **Ignore rules for what the image can't fix**
   (`usr/share/grype/ignore.yaml`): Kubernetes' and Fedora's builds, and
   false positives. In the image, so the nodes ignore the same. Each names

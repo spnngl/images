@@ -39,7 +39,7 @@ jobs `discover`, `hadolint`, `build` and `push` run `bake-discover`,
   off (`bootc/fedora-coreos/REFERENCES.md`).
 - **fedora-coreos's reports:** its amd64 build also exports the
   `-reports` target (artifact `reports_<id>`), whose `check` stage fails
-  the job on a failed rule, a fixable Critical or a failed goss check.
+  the job on a failed rule or a failed goss check.
 - **fedora-coreos's VM tests gate its push** (job `vm-test`, on pull
   requests too, the targets of the `vm-test` group): `vm-test` boots the
   amd64 image in a test VM and runs the goss suites
@@ -75,10 +75,6 @@ jobs `discover`, `hadolint`, `build` and `push` run `bake-discover`,
   change with the images, so no ruleset can require them.
 - **Native builds, no QEMU:** arm64 as fast as amd64, in parallel. Each
   platform downloads geo-blocking data itself: it can differ slightly.
-- **fedora-coreos's scan is a build check, not a report:** a fixable
-  Critical fails every build (pull request, push, weekly); an image the
-  build can't fix is ignored at its exact version
-  (`bootc/fedora-coreos/REFERENCES.md`).
 
 ## `build-apps.yml`
 
@@ -323,10 +319,8 @@ data, and their sources differ.
 - **Pull requests, bootc:** each build job scans its image as the
   applications' do, but never fails (`fail: false`): a bootc image holds
   a whole distribution, whose fixes come with the base's next release.
-  fedora-coreos's own scans fail every build instead (pull request,
-  push, weekly) on a fixable Critical: its `check` stage writes
-  `reports/failed`, which fails the build job; an image the build can't
-  fix is ignored at its exact version (`bootc/fedora-coreos/REFERENCES.md`).
+  fedora-coreos's own grype scan only reports too
+  (`bootc/fedora-coreos/REFERENCES.md`).
 - **Pull requests, applications:** each build job scans its image (OCI
   layout) and fails on a Critical vulnerability with a fix that the pushed image of
   the same tag and platform lacks. The rest is reported: without a fix,

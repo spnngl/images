@@ -68,7 +68,7 @@ each choice: [REFERENCES.md](REFERENCES.md).
 - **grype** lists the CVEs of `/usr` and `/etc`, at build and daily on
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;
-  the `check` stage fails on a fixable Critical. One
+  the `check` stage counts them, as a report only. One
   the image can't fix is ignored in `sysroot/system/usr/share/grype/ignore.yaml`,
   at the package's exact version, with its reason.
 - **Checks:** in the layer that ships what they check: what holds for
