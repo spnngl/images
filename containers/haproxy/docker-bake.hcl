@@ -17,7 +17,7 @@ target "haproxy" {
       # renovate: datasource=git-tags depName=haproxy-3.2 packageName=https://git.haproxy.org/git/haproxy-3.2.git versioning=semver extractVersion=^v(?<version>3\.2\.\d+)$ depType=automerge
       { version = "3.2.26", checksum = "3e0f11a846f5dfc886840c90814da9695e28d2c1" },
       # renovate: datasource=git-tags depName=haproxy-3.4 packageName=https://git.haproxy.org/git/haproxy-3.4.git versioning=semver extractVersion=^v(?<version>3\.4\.\d+)$ depType=automerge
-      { version = "3.4.7", checksum = "8872a2604595140544774c2a6309a41186fc0f44" },
+      { version = "3.4.8", checksum = "1b15b69acec79bf16daa46267d0aacfe49478007" },
     ]
   }
   args = merge(apt_args(debian), {
