@@ -46,6 +46,23 @@ ADD --link \
 # upstream's WebAssembly build script, in the wasm stage.
 FROM docker.io/library/node:24.22-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS node
 
+# The source's pinned pnpm dependencies. Both the WebAssembly build
+# script and the frontend need them.
+FROM node AS dependencies
+
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+ENV HOME=/tmp
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+RUN corepack enable pnpm
+
+USER 65532:65532
+WORKDIR /build
+COPY --link --from=source --chown=65532:65532 / /build/
+
+RUN --mount=type=cache,id=pnpm-store-65532,uid=65532,gid=65532,target=/tmp/pnpm-store \
+    pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/pnpm-store
+
 # Debian trixie: its musl-tools build the server's C libraries.
 FROM docker.io/library/rust:1.100-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS rust
 
@@ -70,6 +87,7 @@ COPY --link --from=node /usr/local/bin/node /usr/local/bin/
 USER 65532:65532
 WORKDIR /build
 COPY --link --from=source --chown=65532:65532 / /build/
+COPY --link --from=dependencies --chown=65532:65532 /build/node_modules/ /build/node_modules/
 
 # wasm-bindgen and binaryen's wasm-opt: the releases upstream's mise
 # installs, as its .mise/mise.lock names them for this platform, with
@@ -111,36 +129,19 @@ RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/l
     node scripts/build/build-wasm.mjs --release
 
 # The web app: static files.
-FROM node AS frontend
+FROM dependencies AS frontend
 
 ARG BASE_VERSION
-ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-# HOME for the build user below (no passwd entry): corepack and pnpm keep
-# their caches there. Before SHELL: hadolint (2.15.1) checks the RUNs
-# after an ENV or ARG as /bin/sh, whatever SHELL says.
-ENV HOME=/tmp
-SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
-
-# pnpm: upstream's (package.json's packageManager), which corepack
-# downloads and verifies. The shim goes in /usr/local/bin: root's.
-RUN corepack enable pnpm
-
-# Built as the image's user, in its own copy: neither the packages nor
-# the build get root.
-USER 65532:65532
-WORKDIR /build
-COPY --link --from=source --chown=65532:65532 / /build/
 # --chown: a --link layer holds the parent folders too, root's otherwise.
 COPY --link --from=wasm --chown=65532:65532 /build/src/generated/wasm/ /build/src/generated/wasm/
 
-# Upstream's release build (.forgejo/actions/setup): pnpm install
-# --frozen-lockfile, then vite build, with mise's NODE_OPTIONS and the
-# release workflow's variables, its Sentry DSN left out (as its forks):
-# Sentry stays off and its settings hidden. VITE_SENTRY_ENVIRONMENT:
-# the stable release's, which makes the sourcemaps hidden (no
-# sourceMappingURL in the bundle); they are then deleted: devtools only,
-# 15% of the image. --frozen-lockfile:
-# pnpm-lock.yaml's versions and integrity hashes. --ignore-scripts: no
+# Upstream's release build (.forgejo/actions/setup): vite build, with
+# mise's NODE_OPTIONS and the release workflow's variables, its Sentry
+# DSN left out (as its forks): Sentry stays off and its settings hidden.
+# VITE_SENTRY_ENVIRONMENT: the stable release's, which makes the
+# sourcemaps hidden (no sourceMappingURL in the bundle); they are then
+# deleted: devtools only, 15% of the image. Dependencies were installed
+# from pnpm-lock.yaml in the dependencies stage. --ignore-scripts: no
 # install script runs (REFERENCES.md); prepare (svelte-kit sync, git
 # hooks) is vite build's own sync. The build downloads the DeepFilterNet
 # assets and checks their sha256 (scripts/build/fetch-deepfilternet.mjs).
@@ -148,9 +149,7 @@ COPY --link --from=wasm --chown=65532:65532 /build/src/generated/wasm/ /build/sr
 # core's WebAssembly holds the string); the bundle holds the release
 # VITE_APP_VERSION names as a string, the About page's "v<version>"
 # (unset, it reads "vdev").
-# The store is a cache of its own, as the cargo caches.
-RUN --mount=type=cache,id=pnpm-store-65532,uid=65532,gid=65532,target=/tmp/pnpm-store <<EORUN
-pnpm install --frozen-lockfile --ignore-scripts --store-dir /tmp/pnpm-store
+RUN <<EORUN
 VITE_APP_VERSION="${BASE_VERSION}" SABLE_BUILD_FLAVOR=stable VITE_SENTRY_ENVIRONMENT=production \
     NODE_OPTIONS=--max-old-space-size=4096 pnpm exec vite build
 find dist -name '*.map' -delete
