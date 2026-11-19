@@ -96,6 +96,15 @@ command:
     exit-status: 0
     stdout:
       - /^/var/cache /var/lib /var/lib/systemd /var/log /var/run /var/spool /var/tmp$/
+  # selinux-policy-targeted's modules, which it ships in /var/lib/selinux,
+  # are the ones in the policy's store, /etc/selinux: an update installed
+  # without the Containerfile's symlink leaves the store on the old ones.
+  SELinux store holds the installed policy's modules:
+    exec: >-
+      rpm -q --qf '[%{FILEDIGESTS}|%{FILENAMES}\n]' selinux-policy-targeted |
+      awk -F'|' '$1 != "" && sub("^/var/lib/selinux/", "/etc/selinux/", $2) && $2 ~ "/active/modules/" { print $1 "  " $2 }' |
+      sha256sum -c --quiet
+    exit-status: 0
   # The scans read Fedora's data stream alone (Containerfile, macros.ssg).
   scap-security-guide, Fedora's data stream alone:
     exec: test "$(ls /usr/share/xml/scap/ssg/content)" = ssg-fedora-ds.xml

@@ -365,7 +365,8 @@
             "matchDepNames": ["quay.io/fedora/fedora-coreos"],
             "matchUpdateTypes": ["major"],
             "prBodyNotes": [
-                "Change `fedora<major>` in the `registryUrl=` of the `NVIDIA_DRIVER` comment of `bootc/fedora-coreos/docker-bake.hcl` to the new major, and check that NVIDIA's repository for it holds an R620 driver (`bootc/fedora-coreos/REFERENCES.md`, \"GPU image\")."
+                "Change `fedora<major>` in the `registryUrl=` of the `NVIDIA_DRIVER` comment of `bootc/fedora-coreos/docker-bake.hcl` to the new major, and check that NVIDIA's repository for it holds an R620 driver (`bootc/fedora-coreos/REFERENCES.md`, \"GPU image\").",
+                "If the `system` stage of `bootc/fedora-coreos/Containerfile` runs `dnf upgrade`, remove it: it only stands in for the releases FCOS no longer publishes for the old major (`bootc/fedora-coreos/REFERENCES.md`, \"Base and Kubernetes\")."
             ]
         },
         {

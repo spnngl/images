@@ -74,15 +74,26 @@ rpm -e dnsmasq rsync
 # dependants go with it, mount.nfs stays (nfs-common-utils).
 rpm -e rpcbind nfsv3-client-utils nfs-client-utils
 
-# This file sets kernel.yama.ptrace_scope to 0, against 990-cis.conf, and
-# CIS reads every sysctl.d file. Its package stays: elfutils-libs requires it.
-rm /usr/lib/sysctl.d/10-default-yama-scope.conf
-
 # NetworkManager's extras. NetworkManager itself stays installed but masked
 # (below): ignition, dracut-network, afterburn-dracut and kdump-utils
 # require it, and FCOS's initramfs runs it to fetch the Ignition config.
 # ModemManager isn't installed.
 dnf -yq remove nmstate NetworkManager-team NetworkManager-tui NetworkManager-cloud-setup
+
+# Fedora's security updates, all but the kernel's: the base gets no new FCOS
+# release (REFERENCES.md, "Base and Kubernetes"). After the removals: no
+# download for what goes. The symlink is the node's
+# (tmpfiles.d/rpm-ostree-0-integration.conf): selinux-policy-targeted ships
+# its modules in /var/lib/selinux, and semanage compiles the policy from its
+# store, /etc/selinux (semanage.conf); without it, the policy would keep the
+# old modules (test/system/build.yaml checks).
+ln -s ../../etc/selinux /var/lib/selinux
+dnf -yq upgrade --security --exclude='kernel*' --setopt=install_weak_deps=False
+
+# This file sets kernel.yama.ptrace_scope to 0, against 990-cis.conf, and
+# CIS reads every sysctl.d file. Its package stays: elfutils-libs requires it.
+# After the updates: one of elfutils-default-yama-scope would bring it back.
+rm /usr/lib/sysctl.d/10-default-yama-scope.conf
 
 # chrony.conf has no include directory: replace its default pool with a
 # sources directory, filled by etc/chrony/sources.d/. Fail if the pool line
@@ -95,16 +106,18 @@ grep -qx 'sourcedir /etc/chrony/sources.d' /etc/chrony.conf
 # (ignition-conf-fcos, also NetworkManager-cloud-setup on AWS, Azure and
 # GCP, removed above). rootless is the only login. The arguments are the
 # base's (usr/lib/dracut/build-parameter.txt).
-kver="$(ls /usr/lib/modules)"
+kver="$(rpm -q --qf '%{VERSION}-%{RELEASE}.%{ARCH}' kernel-core)"
 dracut --force --reproducible --no-hostonly --omit 'ignition-conf ignition-conf-fcos' \
     --tmpdir /tmp --kver "${kver}" "/usr/lib/modules/${kver}/initramfs.img"
 
 # /var ships empty.
 dnf -yq clean all
 rm -rf /var/log/* /var/cache/* /var/lib/dnf /tmp/* /run/dnf* /run/selinux-policy
-# State directories the packages ship: sysstat's pcp-libs and audisp-remote
-# create theirs at runtime.
-rm -rf /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated /var/spool/audit
+# State the packages leave: sysstat's pcp-libs, audisp-remote and tmpfiles.d
+# create theirs at runtime; openssh-server's migration flag, and the
+# selinux symlink above.
+rm -rf /var/lib/pcp /var/lib/rpm-state /var/lib/systemd/migrated /var/spool/audit \
+    /var/lib/selinux /var/lib/fwupd /var/lib/lastlog /var/lib/sss /var/lib/.ssh-host-keys-migration
 # moby-engine's group, left behind by its removal.
 if getent group docker >/dev/null; then groupdel docker; fi
 EORUN
