@@ -26,6 +26,11 @@ command:
   "audit rules: the kernel has all of them":
     exec: '[ "$(grep -cE "^-[aw] " /etc/audit/audit.rules)" = "$(auditctl -l | grep -cE "^-[aw] ")" ]'
     exit-status: 0
+  # 10-base.rules: the firewall changes of pods and services are left out,
+  # a session's kept. auditctl prints auid=unset as -1.
+  "audit: firewall changes of sessions only":
+    exec: auditctl -l | grep -qxF -- '-a always,exclude -F msgtype=NETFILTER_CFG -F auid=-1'
+    exit-status: 0
   rootless password is locked:
     exec: passwd -S rootless
     exit-status: 0

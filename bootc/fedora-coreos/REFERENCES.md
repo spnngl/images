@@ -467,7 +467,13 @@ Read each at the version this repository pins.
   the kernel tracks every syscall of each process it audits, measured at
   about +60 ns a call and +200 ns one with a path (aarch64, kernel 7.0;
   the number of rules hardly matters). Tetragon and Falco watch the
-  pods. x86_64-only
+  pods. Their NETFILTER_CFG records go too (`-a always,exclude -F
+  msgtype=NETFILTER_CFG -F auid=unset`): the kernel writes one for each
+  nftables change, whatever the syscall rules, and a pod's `iptables`
+  rewriting its `filter` table every ~30 minutes made 24470 of a node's
+  29871 events over 7 days (82%), a week of history in auditd's 40 MB.
+  No check of scap-security-guide's Fedora content reads them; a
+  session's firewall change is still logged. x86_64-only
   syscalls are in a file of their own, deleted on other architectures.
   `52-privileged.rules` is written in the build from the image's setuid
   and setgid programs, all in `/usr`: the check wants exactly those.

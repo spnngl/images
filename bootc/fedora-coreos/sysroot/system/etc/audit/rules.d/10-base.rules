@@ -14,3 +14,7 @@
 ## every syscall of every process it audits: about +60 ns a call, +200 ns one
 ## with a path (REFERENCES.md). Sessions, and what they run, stay audited.
 -a task,never -F auid=unset
+## Nor their firewall changes: the kernel logs every nftables change whatever
+## the rules above say, and a pod's iptables, rewriting its rules every ~30
+## min, made most of the log (REFERENCES.md). A session's change stays audited.
+-a always,exclude -F msgtype=NETFILTER_CFG -F auid=unset
