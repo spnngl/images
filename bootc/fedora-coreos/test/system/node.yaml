@@ -101,7 +101,9 @@ command:
     exit-status: 0
     timeout: 120000
   # Each run counts the events since the last: sudo between two, a
-  # privileged program of a session (52-privileged.rules).
+  # privileged program of a session (52-privileged.rules). ausearch holds
+  # an event back until a record 2 s newer is logged (auditd.conf,
+  # end_of_event_timeout): a second sudo, 3 s later, logs one.
   audit-metrics.service counts the audit events:
     exec: |
       count() {
@@ -109,7 +111,7 @@ command:
               /var/lib/audit-metrics/audit.prom | cut -d' ' -f2
       }
       systemctl start audit-metrics.service && before="$(count)" &&
-          sudo -n true &&
+          sudo -n true && sleep 3 && sudo -n true &&
           systemctl start audit-metrics.service &&
           [ "$(count)" -gt "${before:-0}" ]
     exit-status: 0
