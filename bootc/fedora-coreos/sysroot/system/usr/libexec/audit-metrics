@@ -8,7 +8,8 @@
 #               /var/lib/audit-metrics into its pod, and give that path to
 #               --collector.textfile.directory
 #   state.nuon  ausearch's checkpoint, and the counters' totals up to it;
-#               removed, the next run counts the retained logs again
+#               removed or unreadable, the next run counts the retained
+#               logs again
 #
 # Nushell of Fedora's package (0.99): no syntax of a later release.
 
@@ -20,6 +21,8 @@ const LOG_DIR = '/var/log/audit'
 # audit records stay out of the folder node-exporter's pod mounts.
 const CHECKPOINT = '/run/audit-metrics/checkpoint'
 const INCREMENT = '/run/audit-metrics/increment.raw'
+# Before the first run: no checkpoint, ausearch reads the retained logs.
+const NO_STATE = {checkpoint: null, totals: []}
 # The event counters: aureport's summary, and the label of its values.
 # aureport -i names numbers: types, syscalls, users.
 const REPORTS = [
@@ -136,9 +139,14 @@ def seconds [hz: int]: any -> any {
     if $in == null { null } else { ($in | into int) / $hz }
 }
 
-# auditd's state report: its version, logging, plugin queue and memory.
+# auditd's state report: its version, logging, plugin queue and memory. auditd
+# stopped or hung gives auditd_up 0 and the other metrics still: the kernel's
+# say whether it loses events meanwhile.
 def daemon []: nothing -> list<string> {
     let report = state-report
+    let up = (if $report == null { 0 } else { 1 }) | one
+        | metric auditd_up 'auditd answered `auditctl --signal state` with its state report: 1 yes, 0 no.'
+    if $report == null { return $up }
     let values = [
         ...($report | parse --regex '^(?<line>[^=]+?) = (?<value>.*)$')
         # `glibc arena (total memory) is: 2620 KiB, was: 0 KiB`: now, and at
@@ -146,6 +154,7 @@ def daemon []: nothing -> list<string> {
         ...($report | parse --regex '^(?<line>glibc \w+) .* is: (?<value>\d+ KiB),')
     ]
     [
+        ...$up
         ...($values | where line == 'audit version' | each {|v| {labels: {version: $v.value}, value: 1} }
             | metric auditd_info 'auditd, with its version. Value: 1.')
         ...($DAEMON | each {|d|
@@ -157,10 +166,15 @@ def daemon []: nothing -> list<string> {
     ]
 }
 
-# The lines of a state report auditd wrote after this call.
-def state-report []: nothing -> list<string> {
+# The lines of a state report auditd wrote after this call; null, with a
+# warning, when auditd does not answer.
+def state-report []: nothing -> any {
     let start = date now
-    ^auditctl --signal state
+    let signal = ^auditctl --signal state | complete
+    if $signal.exit_code != 0 {
+        print --stderr $"no auditd state report: `auditctl --signal state` exited ($signal.exit_code): ($signal.stderr | str trim)"
+        return null
+    }
     mut lines = []
     loop {
         if ($STATE_REPORT | path exists) and ((ls $STATE_REPORT | first | get modified) > $start) {
@@ -168,7 +182,8 @@ def state-report []: nothing -> list<string> {
             if ($lines | is-not-empty) and ($lines | last | str starts-with $STATE_REPORT_END) { break }
         }
         if (date now) > ($start + $STATE_REPORT_TIMEOUT) {
-            error make {msg: $"no state report in ($STATE_REPORT) ($STATE_REPORT_TIMEOUT) after `auditctl --signal state`"}
+            print --stderr $"no auditd state report in ($STATE_REPORT) ($STATE_REPORT_TIMEOUT) after `auditctl --signal state`"
+            return null
         }
         sleep 100ms
     }
@@ -194,13 +209,15 @@ def number []: string -> int {
 # the totals of state.nuon. Not a report of the whole log: its counts drop at
 # each rotation.
 def events []: nothing -> list<string> {
-    let state = if ('state.nuon' | path exists) {
-        open state.nuon
-    } else {
-        {checkpoint: null, totals: []}
+    let loaded = load-state
+    let found = increment $loaded.checkpoint
+    let rejected = $found == null
+    if $rejected {
+        print --stderr $"ausearch rejects the checkpoint of ($DIR)/state.nuon: counting the retained logs again"
     }
-    if $state.checkpoint != null { $state.checkpoint | save --force $CHECKPOINT }
-    let counts = if (increment) {
+    let state = if $rejected { $NO_STATE } else { $loaded }
+    let found = if $rejected { increment null } else { $found }
+    let counts = if $found {
         let accounts = ^getent passwd | lines | each {|l| $l | split row ':' | first }
         $REPORTS | each {|r| report $r $accounts } | flatten
     } else { [] }
@@ -226,9 +243,29 @@ def events []: nothing -> list<string> {
     ]
 }
 
-# The events after the checkpoint, raw, in INCREMENT; false for none.
-# ausearch writes the checkpoint on success only.
-def increment []: nothing -> bool {
+# state.nuon, or NO_STATE when it is missing or unreadable (with a warning).
+# Counting the retained logs again blocks no run; a counter can drop, which
+# Prometheus reads as a reset.
+def load-state []: nothing -> record {
+    if not ('state.nuon' | path exists) { return $NO_STATE }
+    try {
+        let state = open state.nuon
+        if ($state.checkpoint | describe) not-in [string nothing] {
+            error make {msg: 'its checkpoint is not a string'}
+        }
+        {checkpoint: $state.checkpoint, totals: ($state.totals | select name labels value)}
+    } catch {|e|
+        print --stderr $"($DIR)/state.nuon unreadable, counting the retained logs again: ($e.msg)"
+        $NO_STATE
+    }
+}
+
+# The events after the checkpoint, raw, in INCREMENT: true; false for none;
+# null when ausearch rejects the checkpoint (malformed). ausearch writes the
+# checkpoint on success only.
+def increment [checkpoint: any]: nothing -> any {
+    rm --force $CHECKPOINT
+    if $checkpoint != null { $checkpoint | save $CHECKPOINT }
     let search = {|start: list<string>|
         ^ausearch --input-logs --checkpoint $CHECKPOINT ...$start --raw | complete
     }
@@ -236,10 +273,12 @@ def increment []: nothing -> bool {
     # 10, 11, 12: the checkpoint's log or event left the logs (rotated). From
     # its time: an event of the same millisecond counts twice.
     if $out.exit_code in [10 11 12] { $out = do $search [--start checkpoint] }
+    # Still rejected: a malformed checkpoint.
+    if $checkpoint != null and $out.exit_code in [10 11 12] { return null }
     # 1, silent: no event since the checkpoint (src/ausearch.c, main()).
     if $out.exit_code == 1 and $out.stderr == '' { return false }
     if $out.exit_code != 0 {
-        error make {msg: $"ausearch exited ($out.exit_code): ($out.stderr) - removing ($DIR)/state.nuon counts the retained logs again"}
+        error make {msg: $"ausearch exited ($out.exit_code): ($out.stderr)"}
     }
     $out.stdout | save --force $INCREMENT
     true

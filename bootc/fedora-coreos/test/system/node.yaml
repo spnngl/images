@@ -89,6 +89,7 @@ command:
     exec: |
       systemctl start audit-metrics.service &&
           grep -qx 'audit_rules_rejected 0' /var/lib/audit-metrics/audit.prom &&
+          grep -qx 'auditd_up 1' /var/lib/audit-metrics/audit.prom &&
           grep -q '^auditd_disk_free_bytes ' /var/lib/audit-metrics/audit.prom
     exit-status: 0
     timeout: 120000
