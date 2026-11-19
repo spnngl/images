@@ -432,8 +432,10 @@ Read each at the version this repository pins.
   lines only. `ausearch --format csv` was rejected: its values are
   unquoted, a comma in a path breaks a row. Each run reads the events
   since the last one (`ausearch --checkpoint`) and adds them to totals in
-  `state.nuon`, written with the checkpoint, whole, then renamed. A
-  report of the whole log was rejected: its counts drop at each
+  `state.nuon`, written with the checkpoint, whole, then renamed.
+  ausearch gives an event once complete, at its last record or a record
+  2 s newer (`end_of_event_timeout`): the last events of a quiet log
+  wait for a later run. A report of the whole log was rejected: its counts drop at each
   rotation; a time window (`--start`) too: its edges lose or repeat
   events. Checkpoint lost from the logs (exit 10 to 12): the run counts
   from its time, which counts its event twice. `state.nuon` unreadable, or
