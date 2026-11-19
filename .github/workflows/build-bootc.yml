@@ -215,7 +215,7 @@ jobs:
           no-cache: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
 
       # The reports of the build (OpenSCAP, grype, goss): kept, and the job
-      # fails on a failed rule, a fixable Critical or a failed check
+      # fails on a failed rule or a failed check
       # (bootc/fedora-coreos/REFERENCES.md): the `check` stage wrote
       # reports/failed then.
       - if: always() && hashFiles('reports/**') != ''
