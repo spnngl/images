@@ -37,8 +37,9 @@ RUN <<EORUN
 # - greenboot checks an update boots and rolls back when it doesn't.
 # - openscap-scanner and scap-security-guide check the image (scan stage,
 #   below) and the nodes (openscap.timer); audispd-plugins holds audit's
-#   syslog plugin; nushell runs usr/libexec/openscap-scan and
-#   usr/libexec/etc-diff, which write their results as metrics.
+#   syslog plugin; nushell runs usr/libexec/openscap-scan,
+#   usr/libexec/etc-diff and usr/libexec/audit-metrics, which write their
+#   results as metrics.
 # - grype lists the CVEs of the image (scan stage, below) and of the nodes
 #   (grype.timer).
 #
@@ -137,7 +138,7 @@ grep -qx 'GSSAPIAuthentication yes' /etc/ssh/sshd_config.d/50-redhat.conf
 sed -i '/^GSSAPIAuthentication yes$/d' /etc/ssh/sshd_config.d/50-redhat.conf
 chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
-chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan}
+chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan,audit-metrics}
 
 # SELinux permissive, containerd runs with enable_selinux = false. It still labels files and logs denials.
 # TODO add it back ?

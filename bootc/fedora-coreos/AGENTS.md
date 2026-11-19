@@ -64,7 +64,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
   report. The
   nodes scan daily (`openscap.timer`, results in `/var/lib/openscap`), and
   list `/etc`'s drift hourly (`etc-diff.timer`, `/var/lib/etc-diff`); the
-  paths the node writes on purpose are in `usr/libexec/etc-diff`.
+  paths the node writes on purpose are in `usr/libexec/etc-diff`. The
+  audit subsystem's state is written every 5 minutes
+  (`audit-metrics.timer`, `/var/lib/audit-metrics`).
 - **grype** lists the CVEs of `/usr` and `/etc`, at build and daily on
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;

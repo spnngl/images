@@ -1,0 +1,44 @@
+# Run by audit-metrics.timer, apart from the OpenSCAP scan (openscap.timer):
+# it takes a second, and the alerts on lost events, a full plugin queue or a
+# full disk need fresh values.
+# Root: the logs and auditd's state report are root's (/var/log/audit and
+# /run/audit, 0700); of root's capabilities, auditctl needs CAP_AUDIT_CONTROL
+# only. The host's network namespace stays: audit's netlink socket exists in
+# no other. No ProtectKernelModules: it hides /usr/lib/modules, whose config
+# gives the kernel's HZ; without CAP_SYS_MODULE no module loads anyway.
+# audit.prom is 0644, like the other scans': node-exporter reads it.
+# Nice and the lowest best-effort I/O priority, not openscap.service's idle
+# classes: an idle run starves on a saturated node, when the metrics matter.
+# TimeoutStartSec: a oneshot waits forever by default, and a hung run holds
+# back every later one.
+# LC_ALL=C: the tools' output in the locale the script parses.
+[Unit]
+Description=Audit subsystem's state as metrics
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/audit-metrics
+StateDirectory=audit-metrics
+Environment=LC_ALL=C
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=2min
+CapabilityBoundingSet=CAP_AUDIT_CONTROL
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_NETLINK AF_UNIX
+SystemCallFilter=@system-service
+SystemCallArchitectures=native
