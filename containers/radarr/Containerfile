@@ -144,7 +144,7 @@ api=http://127.0.0.1:7878
 server=$!
 curl -fsS --retry 60 --retry-delay 1 --retry-connrefused "${api}/ping"
 curl -fsS -H "X-Api-Key: ${Radarr__Auth__ApiKey}" "${api}/api/v3/system/status" | tee /tmp/status
-grep -F "\"version\": \"${BASE_VERSION}\"," /tmp/status
+grep -F "\"version\":\"${BASE_VERSION}\"" /tmp/status
 curl -fsS -H "X-Api-Key: ${Radarr__Auth__ApiKey}" -H 'Content-Type: application/json' \
     -d '{"label":"smoke"}' "${api}/api/v3/tag"
 curl -fsS -H "X-Api-Key: ${Radarr__Auth__ApiKey}" "${api}/api/v3/tag" | grep -F '"label": "smoke"'
