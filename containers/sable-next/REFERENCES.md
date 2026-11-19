@@ -73,12 +73,15 @@
   `sourceMappingURL` in the bundle; they serve devtools only and were
   29 MB, 15% of the image. Upstream's `main` skips them with
   `SABLE_FOSS=1`; the deletion covers both.
-- **`pnpm install --ignore-scripts`:** the builds `allowBuilds`
-  permits are for the desktop app or the CLIs of other jobs (electron,
-  `@sentry/cli`, workerd); esbuild and lightningcss ship their binaries
-  in platform packages. `prepare` runs `svelte-kit sync`, which `vite
-  build` runs itself, and installs git hooks. The build and the test
-  show nothing needs them.
+- **`pnpm install --frozen-lockfile --ignore-scripts`:** upstream's
+  setup installs before building WASM and the frontend. The v26 WASM
+  script imports `proper-lockfile`, a dev dependency, so both builds
+  share the installed `node_modules` from the dependencies stage.
+  `allowBuilds` permits are for the desktop app or the CLIs of other
+  jobs (electron, `@sentry/cli`, workerd); esbuild and lightningcss ship
+  their binaries in platform packages. `prepare` runs `svelte-kit sync`,
+  which `vite build` runs itself, and installs git hooks. The build and
+  the test show nothing needs them.
 - **DeepFilterNet downloaded by the build:** `vite build` fetches two
   assets and checks their sha256 (`fetch-deepfilternet.mjs`): upstream
   pins them, so no pin here. They are in neither the SBOM nor the
