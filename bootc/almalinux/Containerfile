@@ -53,9 +53,10 @@ ADD --chmod=0644 \
 # Romain Marcoux -- aggregated malicious IPs (40 K)
 ADD --chmod=0644 \
     https://raw.githubusercontent.com/romainmarcoux/malicious-ip/refs/heads/main/full-40k.txt /out/usr/share/geoblock/blocklists/malicious-ip.txt
-# Data-Shield -- critical threat IPs (~101 K)
+# Data-Shield -- Community Standard threat IPs (~108 K); its Critical list is
+# paid since 2026-11
 ADD --chmod=0644 \
-    https://raw.githubusercontent.com/duggytuxy/Data-Shield_IPv4_Blocklist/refs/heads/main/prod_critical_data-shield_ipv4_blocklist.txt /out/usr/share/geoblock/blocklists/data-shield.txt
+    https://raw.githubusercontent.com/duggytuxy/Data-Shield_IPv4_Blocklist/refs/heads/main/prod_data-shield_ipv4_blocklist.txt /out/usr/share/geoblock/blocklists/data-shield.txt
 # CINS Army -- top attackers by CINS score (~15 K)
 ADD --chmod=0644 \
     https://cinsscore.com/list/ci-badguys.txt /out/usr/share/geoblock/blocklists/cinsscore.txt
