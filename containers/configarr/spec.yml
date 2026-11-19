@@ -29,6 +29,8 @@ args:
   # The node image, by tag and digest, and its Node.js version.
   NODE_IMAGE: ""
   NODE_VERSION: ""
+  # Corepack is not included in Node 26.
+  COREPACK_VERSION: ""
   # The pnpm release that installs the build's modules.
   PNPM_VERSION: ""
 
@@ -49,8 +51,8 @@ sources:
       # The tag must resolve to this commit: tags can be moved.
       checksum: ${BASE_CHECKSUM}
   # Node.js at upstream's major (its Dockerfile), for the build and at
-  # runtime: trixie's nodejs is older. The image's /usr/local: node, its
-  # LICENSE, and corepack for pnpm.
+  # runtime: trixie's nodejs is older. The image's /usr/local: node and
+  # its LICENSE.
   node:
     image:
       ref: ${NODE_IMAGE}
@@ -73,10 +75,12 @@ build:
     # Dalec expands args in env, not in the command.
     - env:
         CONFIGARR_VERSION: ${BASE_VERSION}
+        COREPACK_VERSION: ${COREPACK_VERSION}
         PNPM: pnpm@${PNPM_VERSION}
       command: |
         export PATH="${PWD}/node/bin:${PATH}"
         cd configarr
+        npm install --global "corepack@${COREPACK_VERSION}"
         corepack "${PNPM}" install --frozen-lockfile --store-dir /tmp/pnpm-store
         corepack "${PNPM}" run build
 

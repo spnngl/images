@@ -11,16 +11,20 @@ target "configarr" {
       # renovate: datasource=github-tags depName=raydak-labs/configarr extractVersion=^v(?<version>.+)$
       { version = "1.39.2", checksum = "c02056c7ef371fb12df18be6f976cd8ba0c3a921" },
     ]
-    # The build's Node.js and the image's: upstream's major (AGENTS.md,
-    # Updates).
+    # The build's Node.js and the image's: upstream's major (AGENTS.md).
     node = [
       # renovate: datasource=docker depName=docker.io/library/node
-      { tag = "24.22.2-trixie-slim", digest = "sha256:0820eaa85e07d0490446dd01d14707e17e6108a36988cf374899cd057eb3812d" },
+      { tag = "26.13.1-trixie-slim", digest = "sha256:e6bedef217677b276c591795e169840edd9096dbf13f29df8ef8d1856b8820bc" },
     ]
-    # Upstream's major (its Dockerfile's corepack prepare).
+    # Node 26 no longer includes Corepack; use upstream's Dockerfile version.
+    corepack = [
+      # renovate: datasource=npm depName=corepack
+      { version = "0.36.0" },
+    ]
+    # Upstream's packageManager version (package.json).
     pnpm = [
       # renovate: datasource=npm depName=pnpm depType=automerge
-      { version = "12.16.1" },
+      { version = "12.21.0" },
     ]
   }
   args = {
@@ -29,6 +33,7 @@ target "configarr" {
     NODE_IMAGE    = "docker.io/library/node:${node.tag}@${node.digest}"
     # The tag's version, before its first "-".
     NODE_VERSION = split("-", node.tag)[0]
+    COREPACK_VERSION = corepack.version
     PNPM_VERSION = pnpm.version
   }
   tags = tags("configarr", [base.version])

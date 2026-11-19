@@ -10,8 +10,8 @@ choice: [REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- Node.js and pnpm stay at upstream's majors: its `Dockerfile`'s `FROM
-  node:` and `corepack prepare pnpm@`.
+- Node.js stays at upstream's Dockerfile `FROM node:` major; pnpm stays
+  at the `packageManager` version in upstream's `package.json`.
 - Upstream's paths (`/app/config`, `/app/repos`): its docs apply as
   written.
 
@@ -34,8 +34,9 @@ success.
 ## Updates
 
 configarr is never automerged. Before merging its PR: compare upstream's
-`Dockerfile` (Node and pnpm majors, the `apk add` line: the tools it
-runs) and `src/env.ts` (paths) with the spec. A checksum-only update
+`Dockerfile` (Node major, Corepack requirement and version, and the
+`apk add` line: the tools it runs), `package.json` (pnpm version) and
+`src/env.ts` (paths) with the spec. A checksum-only update
 means upstream moved the tag.
 
 Node.js and pnpm: minor and patch releases are automerged once the
