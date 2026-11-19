@@ -14,7 +14,7 @@ target "cinny" {
     ]
     sws = [
       # renovate: datasource=github-tags depName=static-web-server/static-web-server extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "2.44.2", checksum = "d6b90168a71b2eeaa80cdb9e7966863f14ce62df" },
+      { version = "2.44.3", checksum = "501cb7fcb6a01a4e73e6d5f541559e3334c39976" },
     ]
   }
   args = merge(apt_args(debian), {
