@@ -422,6 +422,27 @@ Read each at the version this repository pins.
   a full disk need fresh values. Names: `audit_` for the kernel,
   `auditd_` for the daemon, base units, `_total` on the kernel's
   since-boot counters (a reboot reads as a counter reset).
+- **Counters of the logged events** (`audit_*_total`, by type, rule key,
+  syscall, executable, login user, account, AVC target; each by
+  `result`): `aureport -i <report> --summary`, `--success` and
+  `--failed` classify the events; the script parses their `N  <value>`
+  lines only. `ausearch --format csv` was rejected: its values are
+  unquoted, a comma in a path breaks a row. Each run reads the events
+  since the last one (`ausearch --checkpoint`) and adds them to totals in
+  `state.nuon`, written with the checkpoint, whole, then renamed. A
+  report of the whole log was rejected: its counts drop at each
+  rotation; a time window (`--start`) too: its edges lose or repeat
+  events. Checkpoint lost from the logs (exit 10 to 12): the run counts
+  from its time, which counts its event twice. The checkpoint and raw
+  records stay in the runtime directory, out of the folder node-exporter
+  mounts. Bounded labels: an account the node lacks is `unknown`, the name
+  an SSH client sent with no login yet (metal nodes have public IPs); an
+  AVC target keeps its SELinux type, its MCS categories differ per
+  container. Reports by file, host, pid, terminal and command are left
+  out: unbounded. The others of aureport (config changes, anomalies, MAC,
+  ...) are sums of `audit_events_total` by `type`. The counters describe
+  sessions, the kernel's records and the daemons', never the pods'
+  syscalls: `10-base.rules` drops tasks without a login uid.
 - **`audit-metrics.service` is sandboxed**: root, for `/var/log/audit`
   and `/run/audit` (0700), with `CAP_AUDIT_CONTROL` only, for `auditctl`.
   The host's network namespace stays: audit's netlink socket exists in no

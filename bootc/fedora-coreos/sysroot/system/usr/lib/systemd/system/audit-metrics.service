@@ -12,6 +12,9 @@
 # TimeoutStartSec: a oneshot waits forever by default, and a hung run holds
 # back every later one.
 # LC_ALL=C: the tools' output in the locale the script parses.
+# RuntimeDirectory: ausearch's checkpoint and the raw records it reads, root's
+# only and removed after the run; /var/lib/audit-metrics, which node-exporter
+# mounts, keeps the totals.
 [Unit]
 Description=Audit subsystem's state as metrics
 
@@ -19,6 +22,8 @@ Description=Audit subsystem's state as metrics
 Type=oneshot
 ExecStart=/usr/libexec/audit-metrics
 StateDirectory=audit-metrics
+RuntimeDirectory=audit-metrics
+RuntimeDirectoryMode=0700
 Environment=LC_ALL=C
 Nice=19
 IOSchedulingClass=best-effort
