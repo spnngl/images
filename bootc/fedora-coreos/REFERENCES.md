@@ -497,6 +497,27 @@ Read each at the version this repository pins.
   `sssd` daemon package isn't installed, and `sssd.service`'s conditions
   skip it with no `/etc/sssd` config. `without-nullok`: no login with an
   empty password.
+- **TTY auditing of `rootless`'s sessions** (`pam_tty_audit`, in
+  `/etc/pam.d/sshd` after `pam_loginuid.so`): what it types reaches the
+  audit log as `TTY` records, read with `aureport --tty`. SSH is the
+  only login (the password is locked), and the session's processes,
+  `sudo` included, inherit the flag; under `sudo` the input is recorded
+  twice, on the session's terminal and on the one `use_pty` opens.
+  `system-auth` and `password-auth` were rejected: authselect owns them,
+  and a custom profile drifts from the base's `local`. `disable=*
+  enable=rootless`: the account that logs in; Red Hat's `enable=root`
+  records nothing where root never logs in. `required`: a session the
+  node can't audit is refused; the module fails only without
+  `CAP_AUDIT_CONTROL` or on a netlink error, and the kernel lets it set
+  the flag with the rules locked (`-e 2`). No `log_passwd`: password
+  prompts stay out; what is typed with echo on, a pasted token too, is
+  kept, in `/var/log/audit` and twice in the journal (the `syslog`
+  plugin, `systemd-journald-audit.socket`), readable by `wheel`. sudo's
+  I/O logs (`log_input`, `sudoreplay`) were rejected: TTY auditing
+  already records `sudo` sessions. Each session logs `CONFIG_CHANGE
+  op=tty_set` at open and close: that type no longer means a change of
+  the audit configuration, an alert on it would fire at each login. No
+  CIS check reads `pam_tty_audit`.
 - **`/etc/securetty`, one empty line:** no PAM module of Fedora reads it;
   `no_direct_root_logins` wants it.
 - **Audit syslog plugin** (`audispd-plugins`, `active = yes`): audit events

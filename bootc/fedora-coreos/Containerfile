@@ -136,6 +136,14 @@ chmod 0600 /etc/ssh/sshd_config.d/*.conf
 # line to say so: Fedora's `yes` goes. Fail if it was not found.
 grep -qx 'GSSAPIAuthentication yes' /etc/ssh/sshd_config.d/50-redhat.conf
 sed -i '/^GSSAPIAuthentication yes$/d' /etc/ssh/sshd_config.d/50-redhat.conf
+# What rootless types reaches the audit log (TTY records, `aureport --tty`):
+# SSH is the only login, and the session's processes, sudo included, inherit
+# the flag. Here, not in system-auth: authselect owns it. required: a session
+# the node can't audit is refused. Fail unless pam_loginuid's line is there
+# once, and ours after.
+[[ "$(grep -cE '^session\s+required\s+pam_loginuid\.so$' /etc/pam.d/sshd)" = 1 ]]
+sed -i -E '/^session\s+required\s+pam_loginuid\.so$/a session    required     pam_tty_audit.so disable=* enable=rootless' /etc/pam.d/sshd
+[[ "$(grep -cx 'session    required     pam_tty_audit.so disable=\* enable=rootless' /etc/pam.d/sshd)" = 1 ]]
 chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
 chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan,audit-metrics}
