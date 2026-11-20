@@ -39,12 +39,17 @@ git -C custom-coreos-disk-images checkout --quiet "${disk_images_commit}"
 rm -f fedora-coreos-*.qcow2 fedora-coreos-*.raw
 # --extra-kargs: the script's default for Fedora CoreOS, mitigations=auto,nosmt,
 # turns off half the CPUs; mitigations=auto is the kernel's default.
+# --metal-image-size: the disk osbuild copies the tree into, in MiB, before
+# the qemu and openstack pipelines grow it to the cloud size (10240); its
+# default, 4096, leaves the GPU image's tree no room. At most the cloud size:
+# those pipelines only grow the disk.
 custom-coreos-disk-images/custom-coreos-disk-images.sh \
     --osname fedora-coreos \
     --ociarchive "${PWD}/fedora-coreos.ociarchive" \
     --platforms "${platforms}" \
     --imgref "${imgref}" \
-    --extra-kargs mitigations=auto
+    --extra-kargs mitigations=auto \
+    --metal-image-size 8192
 
 # osbuild writes the qcow2 files uncompressed; compressed, they still boot
 # as they are, and a release asset must stay under 2 GiB.

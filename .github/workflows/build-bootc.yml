@@ -607,7 +607,8 @@ jobs:
       # both: renamed on the way out. fedora-coreos's disk first, and its
       # failure fails the job; the GPU image's runs in a shell of its own, so
       # that the release goes without its disk, and the job fails at its end
-      # (GPU_DISK): a re-run of the failed job adds it to the release.
+      # (GPU_DISK). The release is immutable once published: the next one
+      # has the disk.
       - run: |-
           sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
           disk() {
@@ -647,8 +648,9 @@ jobs:
           create-storage-record: false
       # A release asset must be under 2 GiB. gh creates a release as a draft,
       # uploads, then publishes it, and deletes the draft if an upload fails:
-      # a published release always has its disks. A re-run replaces the assets
-      # of its release, or publishes the draft a killed run left.
+      # a published release always has its disks. A re-run completes the
+      # draft a killed run left. A published release is immutable (the
+      # repository's setting): a re-run fails, saying so.
       # Outside the checkout, gh finds no repository: GH_REPO names it.
       - working-directory: ${{ runner.temp }}/disk
         env:
@@ -674,9 +676,13 @@ jobs:
             sha256sum "${asset}" > "${asset}.sha256"
             assets+=("${asset}" "${asset}.sha256")
           done
-          if gh release view "${release}" > /dev/null 2>&1; then
+          draft="$(gh release view "${release}" --json isDraft --jq .isDraft 2> /dev/null || true)"
+          if [[ ${draft} == true ]]; then
             gh release upload --clobber "${release}" "${assets[@]}"
             gh release edit "${release}" --draft=false
+          elif [[ ${draft} == false ]]; then
+            echo "::error::${release} is published, and immutable: a re-run can't change its disks, the next release has them"
+            exit 1
           else
             gh release create "${release}" "${prerelease[@]}" --target "${GITHUB_SHA}" --title "${release}" "${assets[@]}" \
               --notes "OpenStack disk images of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\` and, when it has one, of \`fedora-coreos-nvidia:${IMAGE_TAG}\` (the GPU nodes'): Fedora CoreOS ${BASE_VERSION}, Kubernetes ${KUBERNETES_VERSION}, commit ${GITHUB_SHA}. A node made from one follows its tag with \`bootc upgrade\`. Check a download with \`sha256sum -c <asset>.sha256\` and \`gh attestation verify <asset> -R ${GITHUB_REPOSITORY}\`."
@@ -817,7 +823,8 @@ jobs:
 
       # A release asset must be under 2 GiB. gh creates a release as a draft,
       # uploads, then publishes it: a published release always has its disk.
-      # A re-run replaces the asset, or publishes the draft a killed run left.
+      # A re-run completes the draft a killed run left. A published release
+      # is immutable (the repository's setting): a re-run fails, saying so.
       # Outside the checkout, gh finds no repository: GH_REPO names it.
       # The newest 3 releases of the image's tag stay, older ones go with
       # their tags, and drafts killed runs left.
@@ -838,9 +845,13 @@ jobs:
           sha256sum "${asset}" > "${asset}.sha256"
           prerelease=()
           if [[ -n ${TAG_SUFFIX} ]]; then prerelease=(--prerelease); fi
-          if gh release view "${release}" > /dev/null 2>&1; then
+          draft="$(gh release view "${release}" --json isDraft --jq .isDraft 2> /dev/null || true)"
+          if [[ ${draft} == true ]]; then
             gh release upload --clobber "${release}" "${asset}" "${asset}.sha256"
             gh release edit "${release}" --draft=false
+          elif [[ ${draft} == false ]]; then
+            echo "::error::${release} is published, and immutable: a re-run can't change its disk"
+            exit 1
           else
             gh release create "${release}" "${prerelease[@]}" --target "${GITHUB_SHA}" --title "${release}" "${asset}" "${asset}.sha256" \
               --notes "qcow2 disk image of \`${tag}\`, commit ${GITHUB_SHA}, booted in a test VM before this release. It has no user and no SSH key: give them at first boot (bootc/REFERENCES.md, \"Disks carry no user\"). A host made from it follows the tag with \`bootc upgrade\`. Check the download with \`sha256sum -c ${asset}.sha256\` and \`gh attestation verify ${asset} -R ${GITHUB_REPOSITORY}\`."

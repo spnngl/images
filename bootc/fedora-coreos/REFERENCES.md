@@ -634,6 +634,14 @@ Read each at the version this repository pins.
   `--extra-kargs mitigations=auto`, because `nosmt` turns off half the CPUs
   of a node. It installs from `ostree-image-signed:`, so the disk's
   origin checks CI's signature from the first boot.
+- **`--metal-image-size 8192`** (`disk-images.sh`): osbuild copies the
+  tree into a disk of that size (MiB), which the `qemu` and `openstack`
+  pipelines then grow to the cloud size, 10240
+  (`cosa-imports/platform.*.ipp.yaml`, `org.osbuild.truncate`). The
+  default, 4096, leaves about 3.5 GB to the root partition: the GPU
+  image's tree outgrew it (`No space left on device`). At most 10240,
+  as the pipelines only grow the disk; empty space compresses away in
+  the qcow2.
 - **qcow2 compressed after osbuild** (`qemu-img convert -c`): the
   OpenStack pipeline writes it uncompressed, and a GitHub release asset
   must be under 2 GiB.
@@ -1004,7 +1012,9 @@ RuntimeClass.
   the `disk-image` job no longer waits for every push to succeed, only
   for fedora-coreos's digest, and warns when the GPU image's is missing.
   A GPU disk that fails or passes 2 GiB is left out of the release, and
-  the job fails after it: re-running it adds the disk to the release.
+  the job fails after it. The release is published all the same, and
+  the repository's releases are immutable: no re-run adds the disk, the
+  next release has it.
   A GPU image that fails to build or push never holds back the other
   nodes' release. The OpenStack image, not a metal one: OVH's
   bring-your-own-image installs it with an OpenStack config drive,
