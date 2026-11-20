@@ -176,6 +176,14 @@ command:
     exec: systemctl is-enabled systemd-coredump.socket || true
     exit-status: 0
     stdout: ["/^[a-z-]+$/", "!masked"]
+  # zram-generator.conf.d/50-swap.conf parses: in its test mode
+  # (ZRAM_GENERATOR_ROOT, no container check, no device made) the generator
+  # writes zram0's swap unit.
+  zram-generator makes zram0's swap:
+    exec: |
+      ZRAM_GENERATOR_ROOT=/ /usr/lib/systemd/system-generators/zram-generator /tmp/zram-generator 2>/dev/null &&
+          grep -x What=/dev/zram0 /tmp/zram-generator/dev-zram0.swap
+    exit-status: 0
   resolved settings:
     exec: systemd-analyze cat-config systemd/resolved.conf
     exit-status: 0

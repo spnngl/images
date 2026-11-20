@@ -126,10 +126,22 @@ command:
     exec: systemctl start grype.service && grep -q '^grype_last_scan_timestamp_seconds ' /var/lib/grype/grype.prom
     exit-status: 0
     timeout: 900000
-  no swap:
-    exec: swapon --noheadings
+  # zram-generator.conf.d/50-swap.conf: the one swap is zram's, zstd, a
+  # fifth of RAM (the kernel rounds it to a page).
+  swap on zram only, zstd, 20% of RAM:
+    exec: |
+      [ "$(swapon --noheadings --raw --show=NAME)" = /dev/zram0 ] || { swapon; exit 1; }
+      grep -F '[zstd]' /sys/block/zram0/comp_algorithm || exit 1
+      want=$(awk '/^MemTotal:/ { printf "%d", $2 * 1024 * 0.2 }' /proc/meminfo)
+      got=$(cat /sys/block/zram0/disksize)
+      diff=$((got - want))
+      [ "${diff#-}" -le 1048576 ] || { echo "disksize ${got}, want ${want}"; exit 1; }
     exit-status: 0
-    stdout: {have-len: 0}
+  # zstd's level goes to algorithm_params, which can't be read back:
+  # zram-generator only warns, in the kernel log, when it isn't taken.
+  zram took zstd's level:
+    exec: "! journalctl -b -k --no-pager -o cat | grep -F 'Warning: algorithm'"
+    exit-status: 0
   # systemd-networkd, not NetworkManager (capi-image-builder's systemd.yml).
   # `masked`, which goss' service resource can't tell from disabled.
   NetworkManager units are masked:

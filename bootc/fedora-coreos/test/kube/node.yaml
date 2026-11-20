@@ -82,6 +82,11 @@ command:
     exec: lsmod
     exit-status: 0
     stdout: [/^overlay /, /^br_netfilter /]
+  # kube.slice's MemorySwapMax=0: containerd and the kubelet stay in RAM.
+  kube.slice never swaps:
+    exec: cat /sys/fs/cgroup/kube.slice/memory.swap.max
+    exit-status: 0
+    stdout: [/^0$/]
 
 file:
   /run/containerd/debug.sock:

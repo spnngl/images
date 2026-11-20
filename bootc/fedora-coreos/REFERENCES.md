@@ -25,6 +25,9 @@ Read each at the version this repository pins.
   (`cmd/kubelet/app/server.go`, `pkg/kubelet/kuberuntime/`,
   `pkg/kubelet/allocation/handlers.go`);
   <https://kubernetes.io/docs/concepts/cluster-administration/swap-memory-management/>
+- zram: `github.com/systemd/zram-generator` (`man/`, `src/config.rs`,
+  `src/setup.rs`, `zram-generator.conf.example`), at the version of the
+  base's package; <https://docs.kernel.org/admin-guide/blockdev/zram.html>
 - Node settings being ported from the previous node images (Ubuntu, called
   `capi-image-builder` below): `github.com/kubernetes-sigs/image-builder`
   (`images/capi/ansible/roles/{containerd,kubernetes,node,sysprep}/`)
@@ -875,6 +878,30 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
   turns into an eviction. bootc/k3s chose `NoSwap` for that
   (`bootc/k3s/REFERENCES.md`); a memory `resizePolicy` of
   `RestartContainer` passes the check.
+- **Swap on zram, every node** (`usr/lib/systemd/zram-generator.conf.d/50-swap.conf`,
+  `system`): without swap the kernel reclaims file pages only, programs'
+  code included. The base ships zram-generator without a config, so no
+  device; ours is a drop-in, applied key by key over the package's
+  `zram-generator.conf` should Fedora ship one. Control planes too: their
+  critical pods never swap. `systemd.zram=0` on the kernel command line
+  turns it off on one node.
+- **`ram * 0.2`, no cap:** node sizes differ, and a fifth is within
+  zram-generator's advised 0.1 to 0.5. Full, at zstd's usual 3 to 4
+  times, it takes 5 to 7% of RAM, which no cgroup is charged for.
+- **`zstd(level=5)`:** smaller than the kernel's default `lzo-rle`, for
+  more CPU; level 5 over zstd's 3 compresses better and slower, while
+  decompression, which a swap-in waits for, stays as fast.
+  zram-generator writes the level to `algorithm_params` after
+  `comp_algorithm`, and only warns when the kernel refuses it (`algorithm
+  … supplemental data … not written`, `src/setup.rs`):
+  `test/system/node.yaml` fails on that warning, the file being
+  write-only.
+- **`kube.slice` never swaps** (`MemorySwapMax=0`): containerd, its
+  shims and the kubelet stay in RAM, as Kubernetes' swap guide advises for
+  the node's critical daemons. Pods are in `kubepods.slice`, untouched.
+- **The kernel's `vm.swappiness` (60) and `vm.page-cluster` (3)**, until
+  production metrics say otherwise. bootc/k3s uses 180 and 0, tuned to
+  zram (`bootc/K3S.md`, "Swap").
 
 ### GPU image
 
