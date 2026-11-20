@@ -39,6 +39,17 @@ file:
   /usr/lib/systemd/system/kubelet.service.d/00-slice.conf:
     exists: true
     contents: ["/^Slice=kube.slice$/"]
+  # 20-config-dir.conf repeats kubeadm's KUBELET_CONFIG_ARGS: a kubeadm
+  # release that changes it fails here instead of losing its --config.
+  /usr/lib/systemd/system/kubelet.service.d/10-kubeadm.conf:
+    exists: true
+    contents: ['/^Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml"$/']
+  /usr/lib/systemd/system/kubelet.service.d/20-config-dir.conf:
+    exists: true
+    contents: ['/^Environment="KUBELET_CONFIG_ARGS=--config=/var/lib/kubelet/config.yaml --config-dir=/usr/lib/kubelet/conf.d"$/']
+  /usr/lib/kubelet/conf.d/50-swap.conf:
+    exists: true
+    contents: ["/^failSwapOn: false$/", "/^  swapBehavior: LimitedSwap$/"]
   /usr/lib/systemd/system/containerd.service.d/20-config.conf:
     exists: true
     contents: ["/^ExecStart=/usr/bin/containerd --config /usr/lib/containerd/config.toml$/"]
