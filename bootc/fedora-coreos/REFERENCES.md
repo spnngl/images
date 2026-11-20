@@ -76,7 +76,9 @@ Read each at the version this repository pins.
   `push` publishes fedora-coreos only after the VM tests pass ("Disk
   images, build and test"). The `dnf upgrade` goes with the move to the
   next major, once NVIDIA's repository has the R620 driver: FCOS's
-  releases bring the updates again.
+  releases bring the updates again. The weekly rebuild warns when it
+  does (`build-bootc.yml`, `nvidia-next-major` job): nothing else
+  watches that repository, Renovate's URL naming the base's major.
 - **containerd from the base:** the runtime of `capi-image-builder`, updated
   with the base. Our config is `/usr/lib/containerd/config.toml` (version 3,
   imports `conf.d/*.toml` from `/usr/lib` then `/etc`), selected by
