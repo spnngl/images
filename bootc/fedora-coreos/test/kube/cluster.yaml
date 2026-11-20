@@ -9,6 +9,16 @@ command:
     exec: kubectl wait --for=condition=Ready node --all --timeout=60s
     exit-status: 0
     timeout: 90000
+  # usr/lib/kubelet/conf.d/50-swap.conf, read through --config-dir, wins
+  # over the config file kubeadm wrote.
+  kubelet allows swap, LimitedSwap:
+    exec: |
+      for n in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+          kubectl get --raw "/api/v1/nodes/${n}/proxy/configz" |
+              jq -e '.kubeletconfig | .failSwapOn == false and .memorySwap.swapBehavior == "LimitedSwap"' >/dev/null ||
+              { echo "${n}"; exit 1; }
+      done
+    exit-status: 0
   pod runs scripts from an emptyDir and a configMap:
     exec: |
       kubectl delete pod,configmap exec-test --ignore-not-found >/dev/null

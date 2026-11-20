@@ -21,6 +21,10 @@ Read each at the version this repository pins.
   the base kernel's `/usr/lib/modules/<version>/config` for its defaults
 - Kubernetes packages: `https://pkgs.k8s.io/core:/stable:/v<minor>/rpm/`
   (kubelet, kubeadm, kubectl, cri-tools, kubernetes-cni)
+- The kubelet and swap: `github.com/kubernetes/kubernetes`
+  (`cmd/kubelet/app/server.go`, `pkg/kubelet/kuberuntime/`,
+  `pkg/kubelet/allocation/handlers.go`);
+  <https://kubernetes.io/docs/concepts/cluster-administration/swap-memory-management/>
 - Node settings being ported from the previous node images (Ubuntu, called
   `capi-image-builder` below): `github.com/kubernetes-sigs/image-builder`
   (`images/capi/ansible/roles/{containerd,kubernetes,node,sysprep}/`)
@@ -844,6 +848,33 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
   mounted and unmounted by `test.sh`): `noexec` refuses `execve` and the
   exec `mmap` of its libraries' loader. A temporary mount leaves no
   exception on the node.
+
+### Swap and OOM
+
+- **The image, not the cluster, lets the kubelet swap**
+  (`usr/lib/kubelet/conf.d/50-swap.conf`): swap comes with the image, so
+  its kubelet settings come with it, in the same update. With swap on and
+  `failSwapOn: true` (the kubelet's default, and the cluster chart's), the
+  kubelet exits with "running with swap on is not supported", greenboot
+  fails and the node rolls back.
+- **Through `--config-dir`** (`kubelet.service.d/20-config-dir.conf`):
+  its `.conf` files are merged over the `--config` file, whichever
+  kubeadm or the cluster passes (`mergeKubeletConfigurations()`,
+  `cmd/kubelet/app/server.go`). kubeadm's `10-kubeadm.conf` has no
+  variable for an extra flag (`/etc/sysconfig/kubelet` resets
+  `KUBELET_EXTRA_ARGS`), so the drop-in repeats its
+  `KUBELET_CONFIG_ARGS`; `test/kube/build.yaml` fails if kubeadm's
+  changes.
+- **`LimitedSwap`, not `NoSwap`:** only Burstable containers whose memory
+  request is below their limit swap, critical pods never
+  (`pkg/kubelet/kuberuntime/kuberuntime_container_linux.go`). The cost:
+  the kubelet refuses an in-place memory resize of those containers,
+  "In-place resize of containers with swap is not supported"
+  (`disallowResizeForSwappableContainers`,
+  `pkg/kubelet/allocation/handlers.go`), which VPA's `InPlaceOrRecreate`
+  turns into an eviction. bootc/k3s chose `NoSwap` for that
+  (`bootc/k3s/REFERENCES.md`); a memory `resizePolicy` of
+  `RestartContainer` passes the check.
 
 ### GPU image
 
