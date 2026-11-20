@@ -22,10 +22,9 @@ dir="$1"
 platforms="$2"
 imgref="$3"
 
-# The tools of custom-coreos-disk-images.sh's header, git to fetch it, and
-# qemu-img to compress the qcow2 files.
+# The tools of custom-coreos-disk-images.sh's header, and git to fetch it.
 dnf -yq install osbuild osbuild-tools osbuild-ostree podman jq xfsprogs e2fsprogs \
-    dosfstools genisoimage squashfs-tools erofs-utils syslinux-nonlinux git qemu-img
+    dosfstools genisoimage squashfs-tools erofs-utils syslinux-nonlinux git
 
 cd "${dir}"
 if [[ ! -d custom-coreos-disk-images ]]; then
@@ -50,11 +49,3 @@ custom-coreos-disk-images/custom-coreos-disk-images.sh \
     --imgref "${imgref}" \
     --extra-kargs mitigations=auto \
     --metal-image-size 8192
-
-# osbuild writes the qcow2 files uncompressed; compressed, they still boot
-# as they are, and a release asset must stay under 2 GiB.
-for file in fedora-coreos-*.qcow2; do
-    [[ -e ${file} ]] || continue
-    qemu-img convert -c -O qcow2 "${file}" "${file}.tmp"
-    mv "${file}.tmp" "${file}"
-done

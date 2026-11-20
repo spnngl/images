@@ -12,8 +12,8 @@
 # any of its tags is pushed.
 #
 # Disk images (bootc/build.sh) carry no user: fedora-coreos's OpenStack qcow2
-# and fedora's and almalinux's are releases (release jobs), the latter after
-# a boot test.
+# (xz) and fedora's and almalinux's are releases (release jobs), the latter
+# after a boot test.
 name: build-bootc
 
 on:
@@ -636,7 +636,9 @@ jobs:
       # One image after the other, each in a folder of its own that goes once
       # its qcow2 is out: osbuild's trees and raw disk take the room the next
       # needs. disk-images.sh names the file after --osname, fedora-coreos for
-      # both: renamed on the way out. fedora-coreos's disk first, and its
+      # both: renamed on the way out, then compressed with xz, as a release
+      # asset must be under 2 GiB (bootc/fedora-coreos/REFERENCES.md, "Disk
+      # images, build and test"). fedora-coreos's disk first, and its
       # failure fails the job; the GPU image's runs in a shell of its own, so
       # that the release goes without its disk, and the job fails at its end
       # (GPU_DISK). The release is immutable once published: the next one
@@ -663,6 +665,7 @@ jobs:
               bash /disk-images.sh /work openstack "ostree-image-signed:docker://${repository}:${IMAGE_TAG}"
             sudo mv "${work}/fedora-coreos-openstack.x86_64.qcow2" "${RUNNER_TEMP}/disk/${image%-*-*}-openstack.x86_64.qcow2"
             sudo rm -rf "${work}"
+            sudo xz -T0 "${RUNNER_TEMP}/disk/${image%-*-*}-openstack.x86_64.qcow2"
           }
           disk "${ID}"
           if [[ ${GPU_DISK:-} != failed ]] && jq -e --arg id "${GPU_ID}" '.["disk-image"] | index($id)' <<< "${CHANGED}" > /dev/null; then
@@ -672,11 +675,11 @@ jobs:
             fi
           fi
           sudo chown -R "$(id -u):$(id -g)" "${RUNNER_TEMP}/disk"
-      # Provenance of the qcow2 files (workflow, commit, run): check it with
+      # Provenance of the disk files (workflow, commit, run): check it with
       # gh attestation verify <file> -R <owner>/<repo>.
       - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
-          subject-path: ${{ runner.temp }}/disk/*.qcow2
+          subject-path: ${{ runner.temp }}/disk/*.qcow2.xz
           create-storage-record: false
       # A release asset must be under 2 GiB. gh creates a release as a draft,
       # uploads, then publishes it, and deletes the draft if an upload fails:
@@ -693,7 +696,7 @@ jobs:
           prerelease=()
           if [[ -n ${TAG_SUFFIX} ]]; then prerelease=(--prerelease); fi
           assets=()
-          for asset in *.qcow2; do
+          for asset in *.qcow2.xz; do
             size="$(stat -c %s "${asset}")"
             if ((size >= 2 * 1024 ** 3)); then
               # Only fedora-coreos's disk is required: the GPU one is left out.
@@ -717,7 +720,7 @@ jobs:
             exit 1
           else
             gh release create "${release}" "${prerelease[@]}" --target "${GITHUB_SHA}" --title "${release}" "${assets[@]}" \
-              --notes "OpenStack disk images of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\` and, when it has one, of \`fedora-coreos-nvidia:${IMAGE_TAG}\` (the GPU nodes'): Fedora CoreOS ${BASE_VERSION}, Kubernetes ${KUBERNETES_VERSION}, commit ${GITHUB_SHA}. A node made from one follows its tag with \`bootc upgrade\`. Check a download with \`sha256sum -c <asset>.sha256\` and \`gh attestation verify <asset> -R ${GITHUB_REPOSITORY}\`."
+              --notes "OpenStack disk images of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\` and, when it has one, of \`fedora-coreos-nvidia:${IMAGE_TAG}\` (the GPU nodes'): Fedora CoreOS ${BASE_VERSION}, Kubernetes ${KUBERNETES_VERSION}, commit ${GITHUB_SHA}. A node made from one follows its tag with \`bootc upgrade\`. Check a download with \`sha256sum -c <asset>.sha256\` and \`gh attestation verify <asset> -R ${GITHUB_REPOSITORY}\`, then unpack it with \`unxz <asset>\`."
           fi
       # The newest 3 published releases of the line stay, older ones go with
       # their tags. Drafts killed runs left go too; they have no tag yet.

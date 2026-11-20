@@ -54,8 +54,8 @@ each choice: [REFERENCES.md](REFERENCES.md).
   `docker-bake.hcl` changed; the `check` stage scans amd64; on `main`,
   pushes and signs `ghcr.io/spnngl/images/fedora-coreos:<major>-v<minor>`
   once the VM tests of its line passed, and releases the OpenStack qcow2
-  (`disk-images.sh`), keeping the newest 3 releases of each line. The GPU
-  image's qcow2 is an asset of the same release.
+  (`disk-images.sh`) as `.qcow2.xz`, keeping the newest 3 releases of
+  each line. The GPU image's qcow2 is an asset of the same release.
 - **OpenSCAP** checks the image at build and the nodes against
   scap-security-guide's `cis` profile (CIS level 2), tailored in
   `sysroot/system/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the

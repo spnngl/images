@@ -642,11 +642,19 @@ Read each at the version this repository pins.
   (`cosa-imports/platform.*.ipp.yaml`, `org.osbuild.truncate`). The
   default, 4096, leaves about 3.5 GB to the root partition: the GPU
   image's tree outgrew it (`No space left on device`). At most 10240,
-  as the pipelines only grow the disk; empty space compresses away in
-  the qcow2.
-- **qcow2 compressed after osbuild** (`qemu-img convert -c`): the
-  OpenStack pipeline writes it uncompressed, and a GitHub release asset
-  must be under 2 GiB.
+  as the pipelines only grow the disk; the qcow2 stores none of the
+  empty space.
+- **Released as `.qcow2.xz`** (`xz` in the `release` job of
+  `build-bootc.yml`): a GitHub release asset must be under 2 GiB, and
+  the GPU image's qcow2, compressed by `qemu-img convert -c` (zlib), was
+  1.86 GB. xz makes 1.44 GB of it, and FCOS publishes its OpenStack disk
+  the same way. zstd inside the qcow2 only made 1.71 GB, and needs QEMU ≥
+  5.1. Whoever downloads the disk unpacks it (`unxz`) before giving it to
+  OpenStack or OVH, which take a plain qcow2. `disk-images.sh` leaves the
+  qcow2 uncompressed: the test VM boots it as is, and xz gains nothing on
+  a compressed one. Not rechunked (chunkah): files our layers delete or
+  replace stay on the disk (ostree keeps every layer), but they are only
+  3.5% of the image, not worth a stage and a push of their own.
 - **OpenStack qcow2 as a GitHub release, from CI** (`disk-image` job of
   `build-bootc.yml`, on `main`): one release per change of this folder,
   any file, docs and tests included (simplest rule), Renovate's version
@@ -1009,7 +1017,7 @@ RuntimeClass.
   digest artifact and manifest list, signed as the others, under
   `ghcr.io/spnngl/images/fedora-coreos-nvidia:<tag>` (fedora-coreos's tag:
   same Containerfile, same versions). Its OpenStack qcow2,
-  `fedora-coreos-nvidia-openstack.x86_64.qcow2`, is an asset of the
+  `fedora-coreos-nvidia-openstack.x86_64.qcow2.xz`, is an asset of the
   same release as fedora-coreos's, built after it and not instead of it:
   the `disk-image` job no longer waits for every push to succeed, only
   for fedora-coreos's digest, and warns when the GPU image's is missing.
