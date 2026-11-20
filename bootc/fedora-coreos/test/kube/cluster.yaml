@@ -69,6 +69,14 @@ command:
     exit-status: 0
     stdout: ["/^swap-burstable Succeeded [1-9][0-9]*$/", "/^swap-guaranteed Succeeded 0$/"]
     timeout: 300000
+  # kubepods.slice.d/50-oomd.conf reaches the slice the kubelet made
+  # (transient), and oomd watches it for swap only.
+  oomd watches kubepods.slice for swap only:
+    exec: |
+      systemctl show kubepods.slice -p ManagedOOMSwap -p ManagedOOMMemoryPressure
+      oomctl | awk '/^Swap Monitored/ { s = "swap" } /^Memory Pressure Monitored/ { s = "pressure" } /^\tPath: / { print s, $2 }'
+    exit-status: 0
+    stdout: [/^ManagedOOMSwap=kill$/, /^ManagedOOMMemoryPressure=auto$/, "/^swap /kubepods.slice$/", "!/^pressure /"]
   pod runs scripts from an emptyDir and a configMap:
     exec: |
       kubectl delete pod,configmap exec-test --ignore-not-found >/dev/null

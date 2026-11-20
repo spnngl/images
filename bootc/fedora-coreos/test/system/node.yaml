@@ -199,6 +199,7 @@ service:
   auditd: {running: true}
   chronyd: {running: true}
   systemd-networkd: {running: true}
+  systemd-oomd: {running: true}
   conntrackd: {running: false}
   NetworkManager: {running: false}
   NetworkManager-wait-online: {running: false}

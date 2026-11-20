@@ -67,6 +67,10 @@ file:
   /usr/lib/systemd/system/sysinit.target.wants/wx-remount.service: {exists: true, filetype: symlink, linked-to: ../wx-remount.service}
   /usr/lib/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service: {exists: true, filetype: symlink, linked-to: ../systemd-networkd-wait-online.service}
   /usr/lib/systemd/system/ostree-finalize-staged.service.requires/greenboot-set-rollback-trigger.service: {exists: true, filetype: symlink, linked-to: ../greenboot-set-rollback-trigger.service}
+  # The base's preset disables them ("We don't have swap by default").
+  /usr/lib/systemd/system/multi-user.target.wants/systemd-oomd.service: {exists: true, filetype: symlink, linked-to: ../systemd-oomd.service}
+  /usr/lib/systemd/system/sockets.target.wants/systemd-oomd.socket: {exists: true, filetype: symlink, linked-to: ../systemd-oomd.socket}
+  /usr/lib/systemd/system/dbus-org.freedesktop.oom1.service: {exists: true, filetype: symlink, linked-to: systemd-oomd.service}
   # Fedora's count of systems, enabled by the base (REFERENCES.md).
   /etc/systemd/system/timers.target.wants/rpm-ostree-countme.timer: {exists: true, filetype: symlink, linked-to: /usr/lib/systemd/system/rpm-ostree-countme.timer}
   # Masked: FCOS's `systemctl preset-all` at first boot would enable them
@@ -179,6 +183,13 @@ command:
   # zram-generator.conf.d/50-swap.conf parses: in its test mode
   # (ZRAM_GENERATOR_ROOT, no container check, no device made) the generator
   # writes zram0's swap unit.
+  # oomd watches kubepods.slice alone (kube layer). Fedora's
+  # systemd-oomd-defaults would have it watch -.slice too, and kill
+  # containerd.service, every container's shim with it: a base that brings
+  # it in fails here.
+  oomd doesn't watch the root slice:
+    exec: "! systemd-analyze cat-config systemd/system/-.slice 2>&1 | grep ManagedOOM"
+    exit-status: 0
   zram-generator makes zram0's swap:
     exec: |
       ZRAM_GENERATOR_ROOT=/ /usr/lib/systemd/system-generators/zram-generator /tmp/zram-generator 2>/dev/null &&
