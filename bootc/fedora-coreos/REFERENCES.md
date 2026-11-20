@@ -28,6 +28,9 @@ Read each at the version this repository pins.
 - zram: `github.com/systemd/zram-generator` (`man/`, `src/config.rs`,
   `src/setup.rs`, `zram-generator.conf.example`), at the version of the
   base's package; <https://docs.kernel.org/admin-guide/blockdev/zram.html>
+- systemd-oomd: `github.com/systemd/systemd` (`src/oom/`,
+  `units/systemd-oomd.service.in`), at the version of the base's package;
+  `man/systemd-oomd.service.xml`, `man/oomd.conf.xml`
 - Node settings being ported from the previous node images (Ubuntu, called
   `capi-image-builder` below): `github.com/kubernetes-sigs/image-builder`
   (`images/capi/ansible/roles/{containerd,kubernetes,node,sysprep}/`)
@@ -902,6 +905,33 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
 - **The kernel's `vm.swappiness` (60) and `vm.page-cluster` (3)**, until
   production metrics say otherwise. bootc/k3s uses 180 and 0, tuned to
   zram (`bootc/K3S.md`, "Swap").
+- **systemd-oomd enabled** (links in `system`'s `usr/lib/systemd/system`):
+  the base ships it disabled by preset (fedora-coreos-config's
+  `40-coreos-systemd.preset`, "We don't have swap by default"), which
+  only touches `/etc`. It acts on the cgroups whose unit asks, nothing
+  else: Fedora's `systemd-oomd-defaults`, which would have it watch
+  `-.slice`, isn't in the base, and `test/system/build.yaml` fails if a
+  root-slice drop-in appears.
+- **`kubepods.slice`, `ManagedOOMSwap=kill` only**
+  (`kubepods.slice.d/50-oomd.conf`, `kube`): with MemAvailable and free
+  swap both under 10% (`SwapUsedLimit=90%`), oomd kills the container
+  using the most swap, if over 5% of it (`oomd_kill_by_swap_usage()`,
+  `src/oom/oomd-util.c`). Under `LimitedSwap` critical and Guaranteed
+  pods never swap, so a swap kill can't pick them. No
+  `ManagedOOMMemoryPressure=kill`: it picks the cgroup reclaiming
+  fastest, blind to pod priority, QoS and `oom_score_adj`, so etcd or
+  the API server; memory pressure stays with the kubelet's eviction and
+  the kernel's OOM killer. Not `-.slice`: oomd kills whole leaf cgroups,
+  and `containerd.service` holds every shim. `kubepods.slice` is a
+  transient unit, made by the kubelet; drop-ins apply to it all the same,
+  which `test/kube/cluster.yaml` checks with `systemctl show` and
+  `oomctl`.
+- **An oomd kill isn't an `OOMKilled`:** oomd sends `SIGKILL` to the
+  cgroup's processes (`oomd_cgroup_kill()`, `src/oom/oomd-util.c`), no
+  memory-cgroup OOM event, so Kubernetes reports exit code 137, reason
+  `Error`. Its trace is the
+  `systemd-oomd` journal: `Killed /kubepods.slice/… due to memory used
+  …` (`src/oom/oomd-manager.c`).
 
 ### GPU image
 
