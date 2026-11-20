@@ -25,6 +25,9 @@ Read each at the version this repository pins.
   (`cmd/kubelet/app/server.go`, `pkg/kubelet/kuberuntime/`,
   `pkg/kubelet/allocation/handlers.go`);
   <https://kubernetes.io/docs/concepts/cluster-administration/swap-memory-management/>
+- VPA's in-place updates: `github.com/kubernetes/autoscaler`
+  (`vertical-pod-autoscaler/pkg/updater/`), at the version the clusters
+  run
 - zram: `github.com/systemd/zram-generator` (`man/`, `src/config.rs`,
   `src/setup.rs`, `zram-generator.conf.example`), at the version of the
   base's package; <https://docs.kernel.org/admin-guide/blockdev/zram.html>
@@ -871,16 +874,25 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
   `KUBELET_EXTRA_ARGS`), so the drop-in repeats its
   `KUBELET_CONFIG_ARGS`; `test/kube/build.yaml` fails if kubeadm's
   changes.
-- **`LimitedSwap`, not `NoSwap`:** only Burstable containers whose memory
-  request is below their limit swap, critical pods never
-  (`pkg/kubelet/kuberuntime/kuberuntime_container_linux.go`). The cost:
+- **`LimitedSwap`, not `NoSwap`:** only Burstable containers with a
+  memory request below their limit, or no limit, swap; critical pods
+  never (`GetContainerSwapBehavior()`,
+  `pkg/kubelet/kuberuntime/kuberuntime_container_linux.go`). The cost:
   the kubelet refuses an in-place memory resize of those containers,
   "In-place resize of containers with swap is not supported"
   (`disallowResizeForSwappableContainers`,
-  `pkg/kubelet/allocation/handlers.go`), which VPA's `InPlaceOrRecreate`
-  turns into an eviction. bootc/k3s chose `NoSwap` for that
-  (`bootc/k3s/REFERENCES.md`); a memory `resizePolicy` of
-  `RestartContainer` passes the check.
+  `pkg/kubelet/allocation/handlers.go`), and VPA's `InPlaceOrRecreate`
+  falls back to evicting the pod, PodDisruptionBudgets permitting
+  (`pkg/updater/restriction/pods_inplace_restriction.go`, "In-place
+  update infeasible, falling back to eviction"). CPU-only resizes stay
+  in place. Accepted: such a VPA then acts as `Recreate`, already the
+  usual mode; on hermes (VPA 1.8.1) 6 VPAs of 204 used
+  `InPlaceOrRecreate`, 144 `Recreate`. bootc/k3s chose `NoSwap` for
+  that (`bootc/k3s/REFERENCES.md`). A workload that can't afford the
+  restart has two ways out: a memory `resizePolicy` of
+  `RestartContainer`, which passes the check and restarts the container
+  in its pod, or a memory request equal to its limit, which never
+  swaps.
 - **Swap on zram, every node** (`usr/lib/systemd/zram-generator.conf.d/50-swap.conf`,
   `system`): without swap the kernel reclaims file pages only, programs'
   code included. The base ships zram-generator without a config, so no
