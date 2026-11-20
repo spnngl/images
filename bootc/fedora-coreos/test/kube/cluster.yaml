@@ -19,6 +19,56 @@ command:
               { echo "${n}"; exit 1; }
       done
     exit-status: 0
+  # The kubelet sees the zram swap (zram-generator.conf.d/50-swap.conf).
+  nodes report their swap:
+    exec: kubectl get nodes -o json | jq -e 'all(.items[]; .status.nodeInfo.swap.capacity > 0)'
+    exit-status: 0
+  # LimitedSwap: a Burstable container, its memory request below its limit,
+  # may swap; a Guaranteed one may not.
+  pods swap by QoS class, LimitedSwap:
+    exec: |
+      kubectl delete pod swap-burstable swap-guaranteed --ignore-not-found >/dev/null
+      kubectl apply -f - >/dev/null <<'YAML' || exit 1
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: swap-burstable
+      spec:
+        restartPolicy: Never
+        containers:
+          - name: test
+            image: docker.io/library/busybox:1.37
+            command: [cat, /sys/fs/cgroup/memory.swap.max]
+            resources:
+              requests: {memory: 64Mi}
+              limits: {memory: 128Mi}
+      ---
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: swap-guaranteed
+      spec:
+        restartPolicy: Never
+        containers:
+          - name: test
+            image: docker.io/library/busybox:1.37
+            command: [cat, /sys/fs/cgroup/memory.swap.max]
+            resources:
+              requests: {cpu: 10m, memory: 64Mi}
+              limits: {cpu: 10m, memory: 64Mi}
+      YAML
+      for p in swap-burstable swap-guaranteed; do
+          for _ in $(seq 120); do
+              phase=$(kubectl get pod "${p}" -o jsonpath='{.status.phase}')
+              [ "${phase}" = Succeeded ] || [ "${phase}" = Failed ] && break
+              sleep 2
+          done
+          echo "${p} ${phase} $(kubectl logs "${p}" 2>&1)"
+      done
+      kubectl delete pod swap-burstable swap-guaranteed >/dev/null
+    exit-status: 0
+    stdout: ["/^swap-burstable Succeeded [1-9][0-9]*$/", "/^swap-guaranteed Succeeded 0$/"]
+    timeout: 300000
   pod runs scripts from an emptyDir and a configMap:
     exec: |
       kubectl delete pod,configmap exec-test --ignore-not-found >/dev/null
