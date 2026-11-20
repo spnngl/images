@@ -113,6 +113,38 @@ jobs:
           echo "releases=$(jq -c '.["disk-image"] | map(sub("^fedora-coreos-nvidia-"; "fedora-coreos-")) | unique' <<< "${GROUPS_JSON}")" >> "${GITHUB_OUTPUT}"
           echo "disks=$(jq -c '[.[] | select(.file | test("^bootc/(fedora|almalinux)/"))]' <<< "${TARGETS}")" >> "${GITHUB_OUTPUT}"
 
+  # fedora-coreos stays on its Fedora major while NVIDIA's repository for
+  # the stable stream's newer one has no driver of the GPU image's branch
+  # (bootc/fedora-coreos/REFERENCES.md, "Base and Kubernetes"). The weekly
+  # rebuild warns once it has one: the major's update can go. The driver's
+  # repository from repos/nvidia.conf, $releasever being the container's
+  # Fedora major; amd64, the GPU image's platform.
+  nvidia-next-major:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-26.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - run: |-
+          args="$(docker buildx bake -f docker-bake.hcl -f bootc/docker-bake.hcl -f bootc/fedora-coreos/docker-bake.hcl --print disk-image |
+            jq -c '[.target[].args | select(.NVIDIA_VERSION)][0]')"
+          base="$(jq -r '.BASE_VERSION | split(".")[0]' <<< "${args}")"
+          branch="$(jq -r '.NVIDIA_VERSION | split(".")[0]' <<< "${args}")"
+          stable="$(curl -fsSL https://builds.coreos.fedoraproject.org/streams/stable.json |
+            jq -r '.architectures.x86_64.artifacts.qemu.release | split(".")[0]')"
+          if ((stable <= base)); then
+            exit 0
+          fi
+          versions="$(docker run --rm --platform linux/amd64 \
+            -v "${PWD}/bootc/fedora-coreos/repos/nvidia.conf:/etc/yum.repos.d/nvidia.repo:ro" \
+            "registry.fedoraproject.org/fedora:${stable}" \
+            dnf -q repoquery --repo=cuda --qf '%{version}\n' kmod-nvidia-open-dkms)"
+          if grep -q "^${branch}\." <<< "${versions}"; then
+            echo "::warning::NVIDIA's repository for Fedora ${stable} has the ${branch} driver: fedora-coreos can move to Fedora CoreOS ${stable} (bootc/fedora-coreos/REFERENCES.md, \"Base and Kubernetes\")"
+          fi
+
   # Same as build-apps.yml's, for the Containerfiles to build only: code
   # scanning keeps the others' alerts, from their last analysis.
   hadolint:
