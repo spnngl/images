@@ -15,11 +15,11 @@ target "radarr" {
     debian = ["13"]
     base = [
       # renovate: datasource=custom.servarr depName=Radarr/Radarr registryUrl=https://radarr.servarr.com/v1/update/master/changes?os=linux&runtime=netcore&arch=x64 versioning=loose depType=automerge
-      { version = "6.4.4.10685", checksum = "a1d726129535e739d4efaf93b5fdd771bb1c78349f55ceac70e365e37b5a12a3" },
+      { version = "7.0.3.10918", checksum = "1737e72150ea991c8f224fcf529c419b7e6c567ba672cbf27a61f11c9a51fe8e" },
     ]
     base_arm64 = [
       # renovate: datasource=custom.servarr depName=Radarr/Radarr registryUrl=https://radarr.servarr.com/v1/update/master/changes?os=linux&runtime=netcore&arch=arm64 versioning=loose depType=automerge
-      { version = "6.4.4.10685", checksum = "8bf3c336ebe03acb061a6162fa36499268095ea5e5140362faf49701588dca96" },
+      { version = "7.0.3.10918", checksum = "79c97999edd13bd34ee0f2cdb82de659f09daffda3be7548e07aedda56204538" },
     ]
   }
   args = merge(apt_args(debian), {
