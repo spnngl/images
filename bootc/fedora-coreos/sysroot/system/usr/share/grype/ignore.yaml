@@ -45,9 +45,6 @@ ignore:
       brotli of grype (0.117.0-2.fc44, Fedora's latest): a crafted stream exhausts the scanner's
       memory; next Fedora update
     package: {name: github.com/andybalholm/brotli, version: v1.2.0}
-  - vulnerability: FEDORA-2026-0609e13c0d
-    reason: fixed in ca-certificates 2026.2.92_v9.0.319-2.fc44; next FCOS release
-    package: {name: ca-certificates, version: 2026.2.92_v9.0.319-1.fc44}
 
   # False positives.
   - vulnerability: CVE-2026-94603
