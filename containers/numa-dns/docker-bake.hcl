@@ -8,7 +8,7 @@ target "numa-dns" {
     debian = ["13"]
     base = [
       # renovate: datasource=github-tags depName=razvandimescu/numa extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "0.25.1", checksum = "1073889d217c6ecc9ec1a560675b1e192100bd18" },
+      { version = "0.25.2", checksum = "e966c0658eb65211429a29b01d194e7c68d517c1" },
     ]
   }
   args = merge(apt_args(debian), {
