@@ -1,0 +1,172 @@
+# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# check=skip=InvalidDefaultArgInFrom
+#
+# Spéculaire (node agent: registry mirror, peer-to-peer blob sharing, NRI
+# image-verification gate) built from source at a commit of main, no
+# patch, one static-PIE musl binary on scratch: upstream's release build
+# (`just musl`, in its build image's toolchain), so the binary is the one
+# upstream's release image (packaging/Containerfile) copies. Same path,
+# entrypoint and user as that image.
+#
+# Runtime contract: a DaemonSet pod on the host network, root (UID/GID 0),
+# as upstream's systemd unit (D53): the runtime's sockets, content store
+# and registry config, the kubelet's key and the NRI socket are root's, so
+# it needs no capability. Runs with every capability dropped, a read-only
+# root filesystem and no-new-privileges: it writes only to host paths,
+# each mounted at its own path so the config's defaults hold (/etc/speculaire,
+# /var/lib/speculaire, /run/speculaire, /etc/containerd or CRI-O's
+# registries.conf.d, /var/lib/kubelet/pki). Arguments are a subcommand:
+# `agent` (the pod), `configure` (its init container), `unconfigure`
+# (uninstall), `check-config`, `verify`. Ports, on the host: 7480/tcp the
+# mirror (loopback), 7481/tcp peers, 7482/tcp metrics and the probes
+# (GET /livez, /readyz), 7483/tcp the reflector (role = "reflector").
+# Upstream: https://github.com/spnngl/speculaire, docs/operations.md.
+
+# Versions come from containers/speculaire/docker-bake.hcl: build with
+# `docker buildx bake` (containers/AGENTS.md). The rust image too, tag and
+# digest: its tag is the toolchain upstream's rust-toolchain.toml pins,
+# which the build checks below. No default, as for every version: hence
+# the skipped InvalidDefaultArgInFrom check (top of file), and outside
+# Bake the build fails here. Alpine, not Debian: upstream's build image
+# (build/Containerfile, D13, D57); its ca-certificates-bundle is the CA
+# bundle copied below.
+ARG RUST_TAG
+ARG RUST_DIGEST
+FROM docker.io/library/rust:${RUST_TAG}@${RUST_DIGEST} AS build
+
+ARG BASE_VERSION
+ARG BASE_CHECKSUM
+# The image's toolchain (RUST_VERSION, the rust image's), checked against
+# rust-toolchain.toml below: rustup would otherwise fetch the components
+# that file lists (clippy, rustfmt, llvm-tools), which the build doesn't
+# run. CARGO_TARGET_DIR: upstream's `just musl` path, so the paths the
+# build scripts' output embeds are upstream's.
+ENV RUSTUP_TOOLCHAIN=${RUST_VERSION}
+ENV CARGO_TARGET_DIR=/target
+# Alpine's shell, busybox's ash: POSIX, with pipefail. By its name, so
+# that hadolint knows it has pipefail (DL4006). After the stage's last
+# ENV and ARG: hadolint (2.15.1) checks the RUNs after either as /bin/sh.
+SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
+
+# Upstream's build stage packages: build-base (mimalloc's and aws-lc's
+# C, D46), lld (`.cargo/lld-cc` links with it on Alpine), protobuf-dev
+# (protoc and its well-known types, D34), file (the static-PIE check of
+# `just musl`). ca-certificates-bundle: copied into the image.
+# Not pinned (DL3018): Alpine keeps only the newest build of each package
+# in a release branch; the image digest pins the branch, Renovate moves
+# it, the weekly rebuild picks up fixes (containers/git/REFERENCES.md).
+# Checks first: outside Bake, the build fails here.
+# hadolint ignore=DL3018
+RUN <<EORUN
+: "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+apk add --no-cache build-base ca-certificates-bundle file lld protobuf-dev
+EORUN
+
+# Upstream has no release yet: a commit of main (REFERENCES.md).
+# --checksum: the commit fetched is the one pinned. No .git: the version
+# is Cargo.toml's.
+ADD --link \
+    --checksum=${BASE_CHECKSUM} \
+    https://github.com/spnngl/speculaire.git#${BASE_CHECKSUM} /src
+
+# The toolchain upstream pins (rust-toolchain.toml, D57): a commit that
+# moves it fails here (containers/speculaire/AGENTS.md, Updates).
+# cargo-auditable at the version of upstream's build image
+# (build/Containerfile), while root: it installs into CARGO_HOME.
+RUN <<EORUN
+channel="$(sed -n 's/^channel = "\(.*\)"$/\1/p' /src/rust-toolchain.toml)"
+if [ "${channel}" != "${RUST_VERSION}" ]; then
+    echo "rust-toolchain.toml pins ${channel}, the rust image has ${RUST_VERSION}: containers/speculaire/AGENTS.md, Updates" >&2
+    exit 1
+fi
+auditable="$(sed -n 's/^ARG CARGO_AUDITABLE_VERSION=//p' /src/build/Containerfile)"
+cargo install --locked "cargo-auditable@${auditable:?no CARGO_AUDITABLE_VERSION in build/Containerfile}"
+rm -r /usr/local/cargo/registry
+EORUN
+
+# Build and test as the image's user, not root: neither the crates' build
+# scripts nor the test get root, and the source stays root's. No passwd
+# entry needed: CARGO_HOME and RUSTUP_HOME are set, /usr/local/cargo is
+# writable by all. WORKDIR creates its folder owned by USER: /out takes
+# the build output.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src
+
+# Upstream's release build, `just musl <arch>-unknown-linux-musl`: cargo
+# auditable (the crate list in the binary, for the SBOM and the scans),
+# --release --locked, the musl target, whose `.cargo/config.toml` links
+# static-PIE with lld and remaps /src and CARGO_HOME out of the binary
+# (D46). mimalloc in secure mode is the musl build's allocator in
+# Cargo.toml, no feature to pass (D46). SOURCE_DATE_EPOCH=0, upstream's
+# build image's: mimalloc embeds the build date, so the binary is
+# upstream's byte for byte (D57). Caches: ids of their own
+# (containers/garage), the registry's shared with it, the same user.
+RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=speculaire-target-65532,uid=65532,gid=65532,target=/target \
+    <<EORUN
+target="$(uname -m)-unknown-linux-musl"
+SOURCE_DATE_EPOCH=0 cargo auditable build --release --locked --target "${target}" -p speculaire
+cp "/target/${target}/release/speculaire" /out/
+EORUN
+
+# Smoke test, here because scratch has no shell to run it: `just musl`'s
+# checks (static-PIE, the cargo-auditable section), the version line of a
+# musl build, then `configure` as the init container runs it, against a
+# containerd config and hosts.toml tree in /tmp: it writes the mirror's
+# certificates and puts the mirror in hosts.toml. No agent nor
+# `check-config`: they need the runtime's socket.
+RUN <<EORUN
+file /out/speculaire | grep -F 'static-pie linked'
+readelf -SW /out/speculaire | grep -F ' .dep-v0 '
+/out/speculaire version | grep -Ex "speculaire [0-9]+\.[0-9]+\.[0-9]+ $(uname -m)-linux-musl"
+node=/tmp/node
+mkdir -p "${node}/certs.d/docker.io"
+printf "server = 'https://registry-1.docker.io'\n" > "${node}/certs.d/docker.io/hosts.toml"
+cat > "${node}/containerd.toml" <<EOF
+version = 3
+[plugins.'io.containerd.cri.v1.images'.registry]
+config_path = '${node}/certs.d'
+EOF
+cat > "${node}/config.toml" <<EOF
+[runtime]
+containerd_config = "${node}/containerd.toml"
+[verify]
+policy = "/src/packaging/policy.yaml"
+[mirror]
+directory = "${node}/mirror"
+EOF
+/out/speculaire configure --config "${node}/config.toml" --runtime containerd
+grep -F '[host."https://127.0.0.1:7480"]' "${node}/certs.d/docker.io/hosts.toml"
+rm -r "${node}"
+EORUN
+
+# Spéculaire execs nothing and has no C library: the binary, the CA
+# bundle and the license with its notice.
+FROM scratch
+ARG BASE_VERSION
+
+# source: links the ghcr.io package to this repository.
+# hadolint ignore=DL3050
+LABEL org.opencontainers.image.version="${BASE_VERSION}" \
+    org.opencontainers.image.licenses="Apache-2.0" \
+    org.opencontainers.image.source="https://github.com/spnngl/images"
+
+# CA bundle: TLS to upstream registries and Sigstore's TUF repository
+# with system roots (rustls-native-certs reads this path; D112's
+# `public` upstream); refreshed by the weekly rebuild.
+COPY --link --from=build /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
+COPY --link --from=build /src/LICENSE /src/NOTICE /usr/share/doc/speculaire/
+# Upstream image's path, so the chart applies with only image.* changed.
+# Owned by root, not by the build's user.
+COPY --link --from=build --chown=0:0 /out/speculaire /usr/bin/
+
+# No USER: root, scratch's default (the header).
+
+# The agent's and the reflector's listeners on the host network; the
+# mirror's 7480 is loopback only. Documentation only.
+EXPOSE 7481/tcp 7482/tcp 7483/tcp
+
+# Upstream's entrypoint: arguments are a subcommand and its flags. No
+# CMD: upstream's image has none, the chart passes `agent`.
+ENTRYPOINT ["/usr/bin/speculaire"]

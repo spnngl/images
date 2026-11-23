@@ -279,7 +279,7 @@
             "automerge": true
         },
         {
-            "description": "Digests of the images a docker-bake.hcl pins (the golang builders of kubectl, one per release line, which a FROM line can't vary, and of flux-aio, upstream's Go minor release): the same as the FROM lines' above.",
+            "description": "Digests of the images a docker-bake.hcl pins (the golang builders of kubectl, one per release line, which a FROM line can't vary, of flux-aio, upstream's Go minor release, and speculaire's rust builder, upstream's toolchain): the same as the FROM lines' above.",
             "matchFileNames": ["containers/*/docker-bake.hcl"],
             "matchDatasources": ["docker"],
             "matchUpdateTypes": ["digest"],
@@ -304,8 +304,8 @@
             "automerge": true
         },
         {
-            "description": "Silo media server, pinned to a commit of its main branch (containers/silo-server): no release, tens of commits a day, and each PR update rebuilds the image. Proposed on Saturday between midnight and 5am, like the snapshot above, its PR not updated outside that window; merged by hand. The note keeps what changed.",
-            "matchDepNames": ["Silo-Server/silo-server"],
+            "description": "Silo media server and Spéculaire, each pinned to a commit of its main branch (containers/silo-server, containers/speculaire): no release, tens of commits a day, and each PR update rebuilds the image. Proposed on Saturday between midnight and 5am, like the snapshot above, its PR not updated outside that window; merged by hand. The note keeps what changed.",
+            "matchDepNames": ["Silo-Server/silo-server", "spnngl/speculaire"],
             "schedule": ["* 0-4 * * 6"],
             "updateNotScheduled": false,
             "prBodyNotes": [
