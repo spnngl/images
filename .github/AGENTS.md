@@ -67,7 +67,8 @@ Rules of the actions, so a workflow stays a list of `uses:`:
   (`containers/AGENTS.md`, "Versions"); its PRs point to the *Updates*
   section of its `AGENTS.md`. Exceptions: a group for versions that
   must move in one PR (`nzbget`, `flux-aio`, `fluffychat`, `rapx`); a weekly schedule for a
-  branch pinned to a commit (`crowdsecurity/hub`, `Silo-Server/silo-server`).
+  branch pinned to a commit (`crowdsecurity/hub`, `Silo-Server/silo-server`,
+  `spnngl/speculaire`).
   A bootc image has a
   `packageRules` entry, with `prBodyNotes`.
 - Vulnerability false positives go in `.grype.yaml` and
