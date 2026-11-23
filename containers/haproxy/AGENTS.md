@@ -30,12 +30,11 @@ Upstream sources and the reason for each choice:
 ## Updates
 
 Renovate moves each line within itself (`extractVersion`); patch
-releases are automerged. The checksum is the tag's peeled commit (tags
-are annotated): Renovate fills it in. To add a line (a new release, or
-an older one): copy a `base` entry in `docker-bake.hcl`, with its
-`# renovate:` comment (`depName`, `packageName`, `extractVersion` for
-that line), and the checksum from
-`git ls-remote <repository> refs/tags/v<version>^{}`. A line older than
+releases are automerged. The checksum is the release tarball's sha256:
+Renovate fills it in. To add a line (a new release, or an older one):
+copy a `base` entry in `docker-bake.hcl`, with its `# renovate:` comment
+(`depName`, `registryUrl`, `extractVersion` for that line), and the
+checksum from `https://www.haproxy.org/download/<line>/src/releases.json`. A line older than
 3.2 needs the QUIC compatibility layer (Rules). To drop a line: delete
 its entry; its tags stay in the registry. A release note is at
 `https://www.haproxy.org/download/<line>/src/CHANGELOG`. A distroless

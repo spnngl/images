@@ -37,6 +37,16 @@
                 "{ \"sourceUrl\": $substringBefore($[0].url, \"/releases/download/\"), \"releases\": [$.{ \"version\": version, \"releaseTimestamp\": releaseDate, \"digest\": hash }] }"
             ]
         },
+        // HAProxy's releases of one line (containers/haproxy): the
+        // releases.json of www.haproxy.org/download/<line>/src/, an object
+        // keyed by version, each with its tarball's sha256. The URL, one per
+        // line, is the dependency's `registryUrl`. No release date: no wait.
+        "haproxy": {
+            "format": "json",
+            "transformTemplates": [
+                "{ \"releases\": [$each(releases, function($v, $k) { { \"version\": $k, \"digest\": $v.sha256 } })] }"
+            ]
+        },
         // The crates.io versions of a crate (RAPx: the crate is its release,
         // upstream has no git tag), each with its .crate's sha256 (`checksum`)
         // and publish date. The URL, with the crate's name, is the dependency's
