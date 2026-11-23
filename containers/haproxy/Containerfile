@@ -79,12 +79,15 @@ for pkg in libcrypt1 liblua5.4-0 libpcre2-8-0 lua-json lua-lpeg; do
 done
 EORUN
 
-# --checksum: the tag must resolve to this commit, tags can be moved.
-# One repository per release line: haproxy-<major>.<minor>.git. No .git:
-# the VERSION and VERDATE files set the version.
-ADD --link \
-    --checksum=${BASE_CHECKSUM} \
-    https://git.haproxy.org/git/haproxy-${BASE_VERSION%.*}.git#v${BASE_VERSION} /src
+# The release tarball, not git.haproxy.org, whose 502s failed builds
+# (containers/haproxy/REFERENCES.md). --checksum: its sha256, from the
+# line's releases.json. Its VERSION, VERDATE and SUBVERS (the release's
+# short commit, git archive's export-subst) files set the version,
+# <version>-<commit>, as the official image's. Unpacked into
+# /src/haproxy-<version>/.
+ADD --link --unpack \
+    --checksum=sha256:${BASE_CHECKSUM} \
+    https://www.haproxy.org/download/${BASE_VERSION%.*}/src/haproxy-${BASE_VERSION}.tar.gz /src
 
 # Build and test as the image's user, not root: neither upstream's build
 # nor the server gets root, and the source stays root's. WORKDIR creates
@@ -93,7 +96,7 @@ ADD --link \
 USER 99:99
 WORKDIR /out
 WORKDIR /build
-RUN cp -R /src/. .
+RUN cp -R "/src/haproxy-${BASE_VERSION}/." .
 
 # The official image's options (docker-library/haproxy), QUIC on every
 # line: 2.8 and 3.0 lack OpenSSL 3.5's QUIC API, so they get the
@@ -126,8 +129,9 @@ EORUN
 
 # Server smoke test, here because the final image has no shell to run it.
 # -vv puts the build options in the build log; its feature list names the
-# QUIC flavour. The binary's sections and symbols: no debug info, a symbol
-# table, the stack protector and fortify's checked functions. Then
+# QUIC flavour; its version, BASE_VERSION then SUBVERS' commit. The
+# binary's sections and symbols: no debug info, a symbol table, the stack
+# protector and fortify's checked functions. Then
 # smoke-test/haproxy.cfg, run as the image runs it (-W -db), serves
 # lua-json's output over HTTP/1.1 and HTTP/3 (a throwaway self-signed
 # certificate, kept for the final image's test), and the Prometheus
@@ -140,7 +144,7 @@ RUN --mount=type=bind,source=smoke-test,target=/smoke-test \
     --mount=type=bind,from=lists,target=/data/lists \
     <<EORUN
 /out/usr/sbin/haproxy -vv | tee /tmp/haproxy-vv
-grep -F "HAProxy version ${BASE_VERSION} " /tmp/haproxy-vv
+grep -F "HAProxy version ${BASE_VERSION}-" /tmp/haproxy-vv
 sed -n 's/^Feature list : //p' /tmp/haproxy-vv | tr ' ' '\n' > /tmp/features
 case "${BASE_VERSION}" in
     2.* | 3.0.*) quic_compat=+QUIC_OPENSSL_COMPAT ;;

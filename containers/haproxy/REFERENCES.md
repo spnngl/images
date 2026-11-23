@@ -5,16 +5,24 @@
 - Upstream: `git.haproxy.org/git/haproxy-<line>.git` at tag
   `v<BASE_VERSION>`: `INSTALL` (build options, 4.11 QUIC), `Makefile`;
   mirror `github.com/haproxy/haproxy`
-- Releases per line: <https://www.haproxy.org/download/>
+- Releases per line: <https://www.haproxy.org/download/>; each line's
+  `src/` holds the tarballs and `releases.json` (version, file, sha256)
 - Docs: <https://docs.haproxy.org/> (`limited-quic`)
 - Official image: `github.com/docker-library/haproxy`, `Dockerfile`
-  of each line (build options, user)
+  of each line (build options, user, source tarball), `versions.sh`
+  (reads `releases.json`)
 - Distroless: `github.com/GoogleContainerTools/distroless`, `cc/` and
   `base/` (what `cc-debian13` holds, `/var/lib/dpkg/status.d`)
 - The lists' sources: `containers/datalists/REFERENCES.md`
 
 ## Decisions
 
+- **The release tarball, not git:** `git.haproxy.org` answered 502 to
+  BuildKit's git fetch often enough to fail most builds; the tarballs
+  are static files, which the official image builds from too. Pinned by
+  sha256, from the line's `releases.json`, which Renovate reads (custom
+  datasource `haproxy`): its entries have no date, so no wait before an
+  update, as with the git tags before.
 - **A Containerfile on distroless, not Dalec:** distroless' `cc-debian13`
   has glibc, libgcc_s (glibc's thread cancellation loads it) and
   OpenSSL; the build stage adds the few packages it lacks. Smaller than
