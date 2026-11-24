@@ -50,6 +50,13 @@ file:
   /usr/lib/kubelet/conf.d/50-swap.conf:
     exists: true
     contents: ["/^failSwapOn: false$/", "/^  swapBehavior: LimitedSwap$/"]
+  /usr/lib/kubelet/conf.d/50-density.conf:
+    exists: true
+    contents:
+      - "/^runtimeRequestTimeout: 4m$/"
+      - "/^containerLogMaxWorkers: 8$/"
+      - "/^serializeImagePulls: false$/"
+      - "/^maxParallelImagePulls: 30$/"
   /usr/lib/systemd/system/containerd.service.d/20-config.conf:
     exists: true
     contents: ["/^ExecStart=/usr/bin/containerd --config /usr/lib/containerd/config.toml$/"]
@@ -67,6 +74,9 @@ command:
       - /opt/cni/bin
       - max_container_log_line_size = 16384
       - enable_selinux = false
+      - stats_collect_period = '10s'
+      - drain_exec_sync_io_timeout = '10s'
+      - max_concurrent_downloads = 32
   # The sandbox image kubeadm of this release expects, so that kubelet and
   # containerd agree on it.
   containerd, pause image is kubeadm's:

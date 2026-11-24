@@ -34,6 +34,11 @@ Read each at the version this repository pins.
 - systemd-oomd: `github.com/systemd/systemd` (`src/oom/`,
   `units/systemd-oomd.service.in`), at the version of the base's package;
   `man/systemd-oomd.service.xml`, `man/oomd.conf.xml`
+- containerd at high pod density: `github.com/containerd/containerd`
+  (`internal/cri/server/stats_collector.go`, `plugins/services/tasks/local.go`
+  `getTasksMetrics`, `internal/cri/server/container_execsync.go`
+  `drainExecSyncIO`), at the version of the base's package; the kubelet's
+  `ExecSync` deadline: `staging/src/k8s.io/cri-client/pkg/remote_runtime.go`
 - Node settings being ported from the previous node images (Ubuntu, called
   `capi-image-builder` below): `github.com/kubernetes-sigs/image-builder`
   (`images/capi/ansible/roles/{containerd,kubernetes,node,sysprep}/`)
@@ -177,6 +182,56 @@ Read each at the version this repository pins.
   socket, not `capi-image-builder`'s `0.0.0.0:23541`: the dedicated servers
   have public IPs. Metrics stay on `0.0.0.0:23542` for Prometheus; Cilium
   host policies decide who reaches them.
+- **containerd samples CPU every 10 s, not every second**
+  (`stats_collect_period`, `50-myconf.toml`): since 2.3 containerd keeps
+  its own CPU samples of every container and pod, for `UsageNanoCores`.
+  Each sample is one `Metrics` request listing them all, where each task is
+  matched against every ID (O(n²)) and then asked for its stats over its
+  shim's ttrpc, one after the other. On a node of ~2000 pods that is
+  thousands of shim calls a second, for figures the kubelet reads every
+  10 s (its housekeeping period).
+- **An exec's output is drained for 10 s at most**
+  (`drain_exec_sync_io_timeout`, default no limit): a child that keeps the
+  exec's stdout open (a probe script that starts a process) otherwise holds
+  `ExecSync`, and the probe, until the kubelet's deadline: its runtime
+  timeout (2 min) plus the probe's. containerd then kills the exec process
+  to release its I/O.
+- **The image sets the kubelet's density settings**
+  (`usr/lib/kubelet/conf.d/50-density.conf`), as it does swap's, through
+  `--config-dir` ("Swap and OOM"): they follow the runtime and kernel the
+  image ships, and the cluster can't change them. Pod sizing and limits
+  (`maxPods`, `podPidsLimit`, `kubeReserved`, `evictionHard`) stay the
+  cluster's.
+  **`runtimeRequestTimeout: 4m`** (2 min by default, twice that for
+  `RunPodSandbox`, `staging/src/k8s.io/cri-client/pkg/remote_runtime.go`): a
+  burst of pod starts and stops on a dense node can hold the pods' network
+  setup and teardown for minutes, queued on the kernel's global RTNL lock.
+  At the deadline the kubelet calls again and containerd redoes the work
+  (its `StopPodSandbox` runs CNI DEL each time), which makes the queue
+  longer. **`containerLogMaxWorkers: 8`** (1 by default,
+  `pkg/kubelet/logs/container_log_manager.go`): every 10 s, log rotation
+  makes one `ContainerStatus` call per running container, one after the
+  other. **`serializeImagePulls: false`, `maxParallelImagePulls: 30`**
+  (one pull at a time by default): refilling a drained node pulls many
+  images.
+- **containerd downloads 32 layers at a time**
+  (`max_concurrent_downloads` of `io.containerd.transfer.v1.local`, 3 by
+  default): CRI pulls go through the transfer service
+  (`internal/cri/server/images/image_pull.go`), whose download limit is
+  one semaphore for the whole node (`core/transfer/local/transfer.go`),
+  held for each layer's whole download (`core/remotes/docker/fetcher.go`).
+  The kubelet's 30 parallel pulls would otherwise share 3 downloads.
+  `max_concurrent_unpacks` stays 1: with 1 there is no limit across pulls,
+  each image unpacking its layers in order; above 1, layers unpack in
+  parallel but the value caps unpacks for the whole node.
+- **Default `kernel.keys` quotas, user namespaces included:** runc gives
+  each container and each exec a session keyring (`_ses.<id>`, about 70
+  bytes), charged to the host UID that the container's root maps to. Without
+  user namespaces that is root (1,000,000 keys); with them, each pod has a
+  UID range of its own, so the default 200 keys and 20,000 bytes per UID
+  are per pod. That is enough for its containers and running execs.
+  `security/keys/key.c`, runc's `libcontainer/standard_init_linux.go` and
+  `setns_init_linux.go`.
 - **Own `sysroot/`:** node settings differ from `bootc/fedora`: sshd on 22,
   systemd-networkd, no firewalld. One folder per layer ("Layers",
   below).
