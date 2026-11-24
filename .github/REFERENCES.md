@@ -179,6 +179,13 @@ Dalec, and one way to build, attest and sign is simpler.
   final image (dpkg database, `dist-info`, Go modules). Read with
   `docker buildx imagetools inspect <tag> --format '{{ json .Provenance
   }}'` (or `.SBOM`).
+- **Bake's metadata without provenance** (`BUILDX_METADATA_PROVENANCE=disabled`,
+  `util/confutil/metadata.go` of `github.com/docker/buildx`): `bake-build`
+  reads only the digest from it, through an environment variable. Its
+  default provenance holds the push event, every commit's message, once
+  per target: a push of 7 commits to main took it past Linux's 128 KiB
+  per variable and bash failed to start ("Argument list too long"). The
+  image's attestations come from `attest`, not from the metadata.
 - **Signed provenance on top:** `actions/attest-build-provenance` on the
   manifest list, keyless (the workflow's identity) with a Rekor entry, a
   Sigstore bundle behind OCI referrers. BuildKit's provenance is
