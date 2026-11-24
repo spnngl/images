@@ -1,0 +1,64 @@
+# k3s' control plane (`k3s server`), from k3s' install.sh unit. Disabled: the
+# role is per host, Ignition enables this unit or k3s-agent.service
+# (REFERENCES.md, "k3s").
+[Unit]
+Description=Lightweight Kubernetes (server)
+Documentation=https://docs.k3s.io
+# Wants, not Requires: containerd restarts (an update) without stopping the
+# control plane, and k3s retries the CRI socket until it answers.
+Wants=network-online.target containerd.service
+After=network-online.target containerd.service
+# k3s runs its binaries from this read-only mount of /usr.
+RequiresMountsFor=/var/lib/rancher/k3s/data
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=notify
+# In kube.slice, not system.slice.
+Slice=kube.slice
+# kine's compaction timeout, 5s by default (--compact-timeout), read from the
+# environment when k3s builds kine's config. A compaction that outlives it
+# stops the server: the transaction is rolled back on the deadline, then kine's
+# commit fails with sql.ErrTxDone, which is fatal. See bootc/k3s/REFERENCES.md.
+Environment=KINE_COMPACT_TIMEOUT=60s
+# k3s starts the pods' processes: leave them running when it stops, and let
+# it manage their cgroups.
+KillMode=process
+Delegate=yes
+User=root
+# Non-zero Limit*s cost the kernel accounting overhead: cgroups do the
+# container-local accounting (install.sh's comment).
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+TimeoutStartSec=0
+Restart=always
+RestartSec=5s
+# --container-runtime-endpoint: the image's containerd, not the embedded one,
+# which k3s doesn't start when given an endpoint.
+# --kubelet-arg=config-dir: the kubelet's drop-ins, shared with kubeadm nodes.
+# The CNI is Cilium, installed on the cluster: no flannel, kube-proxy or
+# network policy controller. Of k3s' packaged manifests only ccm,
+# local-storage and rolebindings stay; the rest is deployed by the cluster,
+# servicelb too (LoadBalancer Services are up to it), and the Gateway API
+# CRDs (1.37+; 1.36 ignores the name), which k3s' chart would take from
+# whatever installs them.
+# k3s copies the kubelet's config and config-dir into its own drop-in
+# directory at each start, over the last copy: a drop-in removed from the
+# image would stay. Removed first, k3s' copy is the image's.
+ExecStartPre=/usr/bin/rm -rf /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/10-cli-config.conf /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-cli-config-dir
+ExecStart=/usr/bin/k3s server \
+    --container-runtime-endpoint=unix:///run/containerd/containerd.sock \
+    --kubelet-arg=config-dir=/usr/lib/kubelet/conf.d \
+    --flannel-backend=none \
+    --disable-kube-proxy \
+    --disable-network-policy \
+    --disable=coredns \
+    --disable=metrics-server \
+    --disable=runtimes \
+    --disable=servicelb \
+    --disable=traefik \
+    --disable=gateway-api-crd

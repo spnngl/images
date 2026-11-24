@@ -1,0 +1,13 @@
+# The k3s flavor's checks, at build time (the Containerfile's goss stage when
+# IMAGE_BASE=k3s): every layer's, and what only the k3s image has. Outside the
+# */build.yaml pattern: the other flavors' builds must not run them.
+gossfile:
+  build.yaml: {}
+  k3s/build.yaml: {}
+
+file:
+  # lockdown=integrity: test/system/node.yaml derives the expected lockdown
+  # from the image's kernel arguments, so only this tells a lost file.
+  /usr/lib/bootc/kargs.d/10-lockdown.toml:
+    exists: true
+    contents: ["/^kargs = \\[\"lockdown=integrity\"\\]$/"]

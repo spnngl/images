@@ -21,6 +21,14 @@ Read each at the version this repository pins.
   the base kernel's `/usr/lib/modules/<version>/config` for its defaults
 - Kubernetes packages: `https://pkgs.k8s.io/core:/stable:/v<minor>/rpm/`
   (kubelet, kubeadm, kubectl, cri-tools, kubernetes-cni)
+- k3s: `github.com/k3s-io/k3s` at the pinned release (`cmd/k3s/main.go`,
+  `install.sh`, `pkg/cli/server/server.go`, `pkg/cli/cmds/agent.go`,
+  `pkg/daemons/agent/agent.go`, `pkg/executor/embed/embed.go`,
+  `pkg/agent/templates/templates.go`, `pkg/configfilearg/`,
+  `manifests/gateway-api-crd.yaml`), `github.com/k3s-io/kine` (the
+  version of k3s' `go.mod`), and `github.com/k3s-io/docs`
+  (`docs/datastore/datastore.md`, `docs/upgrades/roll-back.md`); its
+  release assets: <https://github.com/k3s-io/k3s/releases>
 - The kubelet and swap: `github.com/kubernetes/kubernetes`
   (`cmd/kubelet/app/server.go`, `pkg/kubelet/kuberuntime/`,
   `pkg/kubelet/allocation/handlers.go`);
@@ -111,7 +119,8 @@ Read each at the version this repository pins.
   `repos/kubernetes.conf`, is bind-mounted, never in a layer, its minor a
   dnf variable (`DNF_VAR_minor`). `kubernetes-cni` ships `/opt/cni/bin`, which is
   `/var/opt` here: removed in that `RUN`, since `/var` ships empty.
-- **Tag `<major>-v<minor>`** (`docker-bake.hcl`, e.g. `44-v1.35`), as CI's
+- **Tag `<major>-v<minor>`** (`docker-bake.hcl`; `<major>-v<minor>k3s` for
+  k3s, as `bootc/fedora`'s), as CI's
   other images: a Fedora CoreOS release or a Kubernetes patch release
   reaches the nodes with `bootc upgrade`; a new major or Kubernetes minor
   is a new tag (`bootc switch`, or new machines through Cluster API).
@@ -119,9 +128,9 @@ Read each at the version this repository pins.
   API's `spec.version`, which `kubeadm upgrade` follows. `kubeadm init`
   without `--kubernetes-version` takes the newest patch release of the
   series, which may not be in the image: pass the version.
-- **One image:** kubeadm nodes only, no k3s, no Docker. Replaces the
-  `base`/`kubeenv` scheme of `bootc/AGENTS.md`; its stages
-  are layers of the one image ("Layers", below).
+- **One repository, two flavors:** kubeadm nodes, and k3s nodes ("k3s",
+  below), no Docker. Replaces the `base`/`kubeenv` scheme of
+  `bootc/AGENTS.md`; its stages are layers of the image ("Layers", below).
 - **Removed `zincati`, `moby-engine`, `docker-cli`:** updates come only from
   Cluster API or bootc-operator; containerd is the runtime.
   `bootc-fetch-apply-updates.timer` and `rpm-ostreed-automatic.timer` stay
@@ -417,8 +426,8 @@ Read each at the version this repository pins.
   packages, `sysroot/system/`), `runtime` (what every node runs, whichever
   its flavor, kubeadm or k3s: containerd, the kubelet's drop-ins, the CNI
   and sysctl files, `sysroot/runtime/`), `kube` (Kubernetes' packages,
-  `sysroot/kube/`), `image` (`sysroot/vm/`, `sysroot/metal/`, then what
-  reads the whole tree). `KUBERNETES_VERSION` is declared in `kube`: a
+  `sysroot/kube/`) or, for the k3s flavor, `k3s` (`sysroot/k3s/`), `image`
+  (`sysroot/vm/`, `sysroot/metal/`, then what reads the whole tree). `KUBERNETES_VERSION` is declared in `kube`: a
   Kubernetes release rebuilds `kube` and `image`, and keeps `system` and
   `runtime` cached (checked by building `--target image` with another
   `KUBERNETES_VERSION`: every `system` and `runtime` step `CACHED`). In
@@ -451,8 +460,9 @@ Read each at the version this repository pins.
   against 1.247): `kube`'s `dnf install` writes the rpm and dnf
   databases again.
 - **A file's layer:** `vm` or `metal` if only that platform uses it,
-  else `kube` if only a kubeadm node does, else `runtime` if only a
-  Kubernetes node (of either flavor) does, else `system`. `vm` and `metal` are
+  else `kube` if only a kubeadm node does, else `k3s` if only a k3s node
+  does, else `runtime` if only a Kubernetes node (of either flavor) does,
+  else `system`. `vm` and `metal` are
   folders of the `image` stage, not images: one image for VMs and
   dedicated servers (`ConditionVirtualization=`).
 - **What reads the whole tree is in `image`:** `52-privileged.rules`
@@ -460,6 +470,114 @@ Read each at the version this repository pins.
   `bootc container lint` runs last. The initramfs stays in `system`: no
   `kube` package adds a dracut module (the tree diff of the split found
   the same initramfs).
+
+### k3s
+
+The flavor is the `k3s` stage (`FROM runtime`), the build arg
+`IMAGE_BASE=k3s`, and the Bake targets `fedora-coreos-k3s-<minor>`, tagged
+`<major>-v<minor>k3s` in the repository of the kubeadm images (as
+`bootc/fedora`'s `kubeenv`). A single server on SQLite, or an agent: one
+image, the role chosen at provisioning.
+
+- **Same node policy as kubeadm:** the `runtime` layer's containerd (not
+  k3s' embedded one, nor CRI-O), Cilium, zram with `LimitedSwap`, oomd, W^X
+  and greenboot. `bootc/k3s`'s differing choices (CRI-O, firewalld,
+  `NoSwap`, swap off) stay in `bootc/k3s`. The kubelet settings differ in
+  detail (`maxPods`, `systemReserved`, feature gates are the cluster's here,
+  `bootc/k3s`' image's): the cluster's config, `config.yaml.d/`, sets them.
+- **No GPU image of this flavor:** `fedora-coreos-nvidia` stays `FROM kube`.
+- **Role at provisioning:** `k3s.service` (`k3s server`) and
+  `k3s-agent.service` ship disabled, as `bootc/k3s`' do: the role is per
+  host, Ignition enables one and writes `/etc/rancher/k3s/config.yaml.d/`
+  (token, server URL; an agent's `config.yaml` replaces the image's, which is
+  the server's). Cluster API bootstrap of k3s nodes is a later piece of work
+  ("Bootstrap"). SQLite backups too: k3s' `etcd-snapshot` is etcd-only.
+- **The units are files, not `install.sh`'s output:** written from the
+  template of `create_systemd_service_file` at the pinned tag (`Type=notify`
+  for the server, `exec` for the agent, `KillMode=process`, `Delegate=yes`,
+  `LimitNOFILE=1048576`, `TasksMax=infinity`, `Restart=always`), and the
+  flags of `bootc/k3s/install.sh`, but the image's containerd
+  (`--container-runtime-endpoint`) and kubelet drop-ins
+  (`--kubelet-arg=config-dir=/usr/lib/kubelet/conf.d`, which k3s copies into
+  its agent directory at each start, over the last copy,
+  `pkg/daemons/agent/agent.go` `extractConfigArgs`: an `ExecStartPre` removes
+  that copy first, else a file removed from the image would stay), and
+  `--disable=gateway-api-crd`: 1.37 added a chart of the Gateway API CRDs,
+  with `takeOwnership` and `forceConflicts` (`manifests/gateway-api-crd.yaml`),
+  which would take them from what the cluster installs; 1.36 ignores the
+  name (`pkg/cli/server/server.go`, `Disables` takes any). Not carried over: `EnvironmentFile`s (the node's config is
+  `config.yaml.d/`, one place), `modprobe overlay|br_netfilter` (the
+  `runtime` layer's `modules-load.d/`), the slice and kine drop-ins
+  (`Slice=kube.slice` and `KINE_COMPACT_TIMEOUT=60s` sit in the unit, which
+  the image owns; the reason of the second is `bootc/k3s/REFERENCES.md`'s:
+  kine's compaction deadline, 5 s, is fatal when missed). `Wants=` and
+  `After=containerd.service`, not `Requires=`: containerd restarts alone.
+- **Files copied from `bootc/k3s/sysroot/`:** `etc/rancher/k3s/{config.yaml,
+  audit-policy.yaml, admission-controls/, kubelet-server.conf}` (the
+  control plane's hardening; a key changed in one is changed in the other)
+  with `cluster-dns: 169.254.25.10` added (`pkg/cli/server/server.go`: any
+  address, agents get it from the server) so that pods use NodeLocal DNS,
+  and `kubelet-server.conf`'s comment pointing at `/usr/lib/kubelet/conf.d`.
+  Not copied: CRI-O, zram, kargs and sysctl files (the `system` and `runtime`
+  layers' own), `kubelet.conf.d/20-my-kubelet.conf` (the cluster's settings).
+- **k3s runs its binaries from `/var`:** `k3s server|agent|kubectl|...` call
+  `stageAndRun()` (`cmd/k3s/main.go`), which `extract()`s its embedded
+  tarball to `/var/lib/rancher/k3s/data/<hash>/` and execs from there, and
+  `/var` is `noexec`. `extract()` returns at once, writing nothing, when
+  `data/<hash>/bin/k3s` exists. So the Containerfile extracts at build
+  (`k3s kubectl version --client`), moves `data/` to
+  `/usr/lib/rancher/k3s/data`, and `var-lib-rancher-k3s-data.mount` binds it
+  back read-only at boot: W^X keeps (no writable mount gains `exec`, "W^X").
+  The release asset is a launcher (72 MB) that unpacks the real `k3s`
+  (208 MB); both stay. `test/k3s/build.yaml` runs k3s against the directory
+  and fails if it writes there.
+- **Of the unpacked files, `k3s`, its links and `check-config` stay** (the
+  script `k3s check-config` runs, a diagnostic): `containerd-shim-runc-v2`
+  and `runc` (the image's containerd has its own), the `cni` multicall
+  binary and plugin links (Cilium; k3s looks up `host-local` only when flannel
+  runs, `pkg/executor/embed/embed.go`, here `--flannel-backend=none`),
+  `aux/` and the tools (busybox, coreutils, `ip`, `find`, `blkid`, `ethtool`,
+  `conntrack`...) go: k3s puts its `bin/` before `PATH` for the programs it
+  starts, so the bundled tools would shadow the host's, and grype scans
+  `/usr`. `data/current`, `data/cni` and the lock are absolute links into
+  `/var` or left over; k3s reads none of them.
+- **No `ctr` link:** `k3s ctr` talks to k3s' embedded containerd's socket;
+  the image's containerd ships its own `ctr`. `kubectl` and `crictl` are
+  links to `k3s`, the way k3s' tool names work; `crictl` reads `/etc/crictl.yaml`.
+- **Pause image:** `--pause-image` (default `rancher/mirrored-pause:<v>`,
+  `pkg/cli/cmds/agent.go`) only reaches the embedded containerd, so the stage
+  writes the default (`k3s agent --help`) into
+  `/usr/lib/containerd/conf.d/20-pause.toml`, as `kube` writes kubeadm's.
+- **kubelet's `cgroupDriver: systemd`** (`usr/lib/kubelet/conf.d/50-cgroup.conf`,
+  `runtime` layer, so both flavors read it): k3s sets it only for its embedded
+  containerd or cri-dockerd (`pkg/agent/containerd/config_linux.go`); with an
+  external endpoint it leaves `cgroupfs` (`pkg/daemons/agent/agent.go`),
+  against the containerd's `SystemdCgroup = true`.
+- **Server state stays in `/var`:** SQLite at
+  `/var/lib/rancher/k3s/server/db/state.db`, the default when no datastore is
+  configured (`docs/datastore/datastore.md`); the kubelet's root,
+  `/var/lib/kubelet`, has its `bind,exec` mount ("W^X").
+- **A new line is one-way for a server:** the new minor migrates the
+  datastore, and a rollback to the older one needs a copy of its datastore
+  taken on it (`docs/upgrades/roll-back.md`). After `bootc switch`, the
+  rollback deployment is the older line's, which `bootc rollback` or
+  greenboot (after failed boots) boots. So moving a server from
+  `-v<minor>k3s` to the next line follows a copy of
+  `/var/lib/rancher/k3s/server/db/`, k3s stopped. Renovate's
+  pull request for a new patch release keeps the tag.
+- **greenboot** (`20-k3s.sh`): once either unit is enabled, k3s' kubelet
+  answers `127.0.0.1:10248/healthz` (k3s leaves `healthzPort` alone), polled
+  for 300 s. Not ordered after the units, as kubeadm's check is after
+  `kubelet.service`: `k3s.service` is `Type=notify` with `TimeoutStartSec=0`
+  (`install.sh`), so a server that never gets ready would hold greenboot,
+  and its rollback, forever.
+- **Release assets and pins:** `k3s` (amd64), `k3s-arm64` and `sha256sum-<arch>.txt`
+  under `releases/download/<tag, + as %2B>/` (`install.sh`). `docker-bake.hcl`'s
+  `K3S_RELEASES` pins release and sha256 of each architecture, per line, as
+  Renovate's `github-release-attachments` datasource (the digest of the asset
+  the current one is); the Containerfile checks the download against it. A
+  `regex` versioning keeps the line and orders `+k3s<n>` rebuilds, which
+  `semver` ignores.
 
 ### OpenSCAP
 
@@ -900,6 +1018,9 @@ Read each at the version this repository pins.
   convert with no spec 3 `path`, rather than one parsed from CABPK's mount
   units: with no file on them Ignition needs none, and those units mount
   them at boot.
+- **k3s nodes** (Later): no Cluster API bootstrap provider is wired for
+  them yet; until then a k3s node is provisioned by its own Ignition
+  ("k3s", role at provisioning).
 - **OS updates:** VMs get a new machine through Cluster API. Bare metal is
   updated in place by bootc-operator with greenboot-rs rolling back
   (Later), because reinstalling a dedicated server
@@ -949,6 +1070,10 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
   execute.
 - **Exception `/var/opt/cni/bin` (`var-opt-cni-bin.mount`, `bind,exec`):**
   Cilium installs `cilium-cni` there and containerd runs it.
+- **Exception `/var/lib/rancher/k3s/data` (`var-lib-rancher-k3s-data.mount`,
+  `bind,ro`; k3s flavor):** k3s runs its binaries from there ("k3s"). Read-only
+  bind of `/usr/lib/rancher/k3s/data`: it keeps the exec bit of `/usr`'s mount
+  and no writable mount gains `exec`.
 - **No exception for `/var/lib/containerd`:** the cluster pod test passes
   without it (container root filesystems are overlay mounts of their own).
 - **The tests' goss runs from a tmpfs of its own** (`/run/goss`, exec,

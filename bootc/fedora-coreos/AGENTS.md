@@ -1,23 +1,27 @@
 # fedora-coreos
 
-Fedora CoreOS bootc image for kubeadm nodes of Cluster API clusters
+Fedora CoreOS bootc images for Kubernetes nodes of Cluster API clusters
 (OpenStack VMs, OVHcloud dedicated servers), from
-`quay.io/fedora/fedora-coreos:<BASE_VERSION>`. Sources and the reason for
-each choice: [REFERENCES.md](REFERENCES.md).
+`quay.io/fedora/fedora-coreos:<BASE_VERSION>`: kubeadm nodes, and a k3s
+flavor. Sources and the reason for each choice:
+[REFERENCES.md](REFERENCES.md).
 
 ## Rules
 
-- **One image, not the two of `bootc/AGENTS.md`**: kubeadm nodes
-  only, no k3s, no Docker. Its stages are its layers, each `FROM` the one
-  before: `system`, `runtime` (what every Kubernetes node runs: containerd,
-  the kubelet's drop-ins, the CNI and sysctl files), `kube` (kubeadm's
-  packages and files, so that a Kubernetes release rebuilds it alone), `image` (the `vm` and `metal`
+- **One repository, two flavors, not the two images of `bootc/AGENTS.md`**:
+  kubeadm nodes and k3s nodes, no Docker. Its stages are its layers, each
+  `FROM` the one before: `system`, `runtime` (what every Kubernetes node
+  runs: containerd, the kubelet's drop-ins, the CNI and sysctl files), then
+  the flavor, `kube` (kubeadm's packages and files, so that a Kubernetes
+  release rebuilds it alone) or `k3s` (k3s' binary and files; the build arg
+  `IMAGE_BASE=k3s` puts it under `image`), `image` (the `vm` and `metal`
   files, then what reads the whole tree). The stages after `image` scan
   it (OpenSCAP, grype) and check its files (goss, `test/build.yaml`);
-  `image` is the default stage. Tag `<major>-v<minor>` of `BASE_VERSION` and
-  `KUBERNETES_VERSION`, the `docker-bake.hcl`'s `BASE` and `KUBERNETES`
-  variables, which set the Containerfile's `ARG`s: a patch release keeps
-  the tag.
+  `image` is the default stage. The kubeadm flavor is tagged
+  `<major>-v<minor>`, the k3s flavor `<major>-v<minor>k3s`, of `BASE_VERSION`
+  and the Kubernetes or k3s release: the `docker-bake.hcl`'s `BASE`,
+  `KUBERNETES` and `K3S_RELEASES` variables, which set the Containerfile's
+  `ARG`s. A patch release keeps the tag. The k3s flavor has no GPU image.
 - **A second image, `fedora-coreos-nvidia`, for the GPU nodes:** the same
   Containerfile with the build arg `IMAGE_BASE=nvidia`, which puts the
   `nvidia` stage (NVIDIA's driver and toolkit, `sysroot/nvidia/`) under
@@ -27,11 +31,14 @@ each choice: [REFERENCES.md](REFERENCES.md).
   `sysroot/` (no firewalld, sshd on 22, systemd-networkd), one folder
   per layer: `sysroot/<layer>/` holds the layer's files at their path in
   the image. A file goes in `vm` or `metal` if only that platform uses
-  it, else in `kube` if only a kubeadm node does, else in `runtime` if only a
-  Kubernetes node does, else in `system`. A path
+  it, else in `kube` if only a kubeadm node does, else in `k3s` if only a
+  k3s node does, else in `runtime` if only a Kubernetes node does, else in
+  `system`. A path
   like `usr/libexec/etc-diff` below is in one of them. The signature
   files (public key, `registries.d`) and `policy.jq` are copies of
-  `bootc/fedora/`'s: a key rotation updates both. Files that Ignition or the user
+  `bootc/fedora/`'s: a key rotation updates both. `sysroot/k3s/etc/rancher/k3s/`
+  holds copies of `bootc/k3s/sysroot/`'s control-plane files
+  (`REFERENCES.md`, "k3s"): a change to one is made to the other. Files that Ignition or the user
   may own stay in `/etc`; the rest is in `/usr`. SSH keys are only in
   `/usr/lib/ssh/authorized_keys/`: sshd reads no other file.
 - **No host firewall, no iptables rules:** Cilium filters; the legacy
@@ -82,7 +89,7 @@ each choice: [REFERENCES.md](REFERENCES.md).
   (labels) in `bootc/structure-test.yaml`, shared by every bootc image
   (container-structure-test, `.github/actions/bake-test/test.sh`). A
   Containerfile `grep` only guards the `sed` before it.
-- **Renovate** proposes `BASE` and `KUBERNETES`, the Cilium of `vm.sh`
+- **Renovate** proposes `BASE`, `KUBERNETES` and `K3S_RELEASES`, the Cilium of `vm.sh`
   and `disk-images.sh`'s `disk_images_commit` (`renovate.json5`),
   automerged once every check is green (`vm-test` runs the build check)
   but for a new `BASE_VERSION` major, a Kubernetes minor (both new tags)
@@ -103,10 +110,20 @@ copying the last entry, and name its GPU target in the `sample` of
 its support: its tags stay in the registry, and its hosts move by hand
 with `bootc switch`.
 
+The k3s flavor follows the same lines: an entry of `K3S_RELEASES`, one per
+line, pinning the release and the sha256 of each architecture's binary
+behind two `# renovate:` comments (depName `k3s-<minor>`), the target
+`fedora-coreos-k3s-<minor>`, tag `<major>-v<minor>k3s`. Add and drop it
+with the line's `KUBERNETES` entry. A k3s server moves to a new line one
+way: the new minor migrates the datastore, and the older one, after a
+rollback (`bootc rollback`, or greenboot's after failed boots), needs a
+copy taken on it. Before `bootc switch` to the next line, stop k3s and copy
+`/var/lib/rancher/k3s/server/db/` (SQLite). REFERENCES.md, "k3s".
+
 ## Layout
 
-- `Containerfile`, `sysroot/<layer>/`: the image (`system`, `runtime`,
-  `kube`, `vm`, `metal`).
+- `Containerfile`, `sysroot/<layer>/`: the images (`system`, `runtime`,
+  `kube` or `k3s`, `vm`, `metal`).
 - `repos/<name>.conf`: the dnf repositories of the build (Kubernetes',
   NVIDIA's), bind-mounted by the stages that install from them, never in
   the image.

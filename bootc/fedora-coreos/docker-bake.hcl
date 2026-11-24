@@ -1,9 +1,11 @@
-# fedora-coreos, Kubernetes nodes, and its GPU image: one pair per Kubernetes
-# line (minor release), tagged <Fedora major>-v<Kubernetes minor>. Layers,
-# tags and update rules: bootc/fedora-coreos/AGENTS.md and REFERENCES.md.
+# fedora-coreos, Kubernetes nodes: kubeadm images, their GPU images and k3s
+# images, one each per Kubernetes line (minor release), tagged
+# <Fedora major>-v<Kubernetes minor> (k3s: <Fedora major>-v<minor>k3s).
+# Layers, tags and update rules: bootc/fedora-coreos/AGENTS.md and
+# REFERENCES.md.
 #
-# Adding or dropping a line is an entry of `KUBERNETES` below
-# (AGENTS.md, "Kubernetes lines").
+# Adding or dropping a line is an entry of `KUBERNETES` and of
+# `K3S_RELEASES` below (AGENTS.md, "Kubernetes lines").
 
 # Kubernetes patch release of each line: kubelet, kubeadm and kubectl. One
 # Renovate dependency per line, which extractVersion keeps in it. A variable,
@@ -15,6 +17,34 @@ variable "KUBERNETES" {
     "1.36.6",
     # renovate: datasource=github-tags depName=kubernetes-1.37 packageName=kubernetes/kubernetes versioning=semver extractVersion=^v(?<version>1\.37\.\d+)$
     "1.37.2",
+  ]
+}
+
+# k3s release of each line, with the sha256 of each architecture's binary (the
+# release's `k3s` and `k3s-arm64` assets): the Containerfile checks the
+# download against it. One Renovate dependency per line and architecture,
+# which versioning keeps in its line and orders a `+k3s<n>` rebuild by <n>;
+# Renovate takes the digest of the asset the current one belongs to, and both
+# architectures move in one pull request. A line is Kubernetes' (same minor
+# as KUBERNETES' entry). A variable, not a local: a matrix reads only variables.
+variable "K3S_RELEASES" {
+  type = list(object({
+    amd64 = object({ version = string, checksum = string })
+    arm64 = object({ version = string, checksum = string })
+  }))
+  default = [
+    {
+      # renovate: datasource=github-release-attachments depName=k3s-1.36 packageName=k3s-io/k3s versioning=regex:^v(?<major>1)\.(?<minor>36)\.(?<patch>\d+)\+k3s(?<build>\d+)$
+      amd64 = { version = "v1.36.6+k3s1", checksum = "66ceb8e67edfa547195135d74783bfadc2ecc04a91059e90ae5f70a3dbc98c15" },
+      # renovate: datasource=github-release-attachments depName=k3s-1.36 packageName=k3s-io/k3s versioning=regex:^v(?<major>1)\.(?<minor>36)\.(?<patch>\d+)\+k3s(?<build>\d+)$
+      arm64 = { version = "v1.36.6+k3s1", checksum = "49dcecdb4f64f5e92bdc52d204d407fb39729e492f09074488125ee58b6f2895" },
+    },
+    {
+      # renovate: datasource=github-release-attachments depName=k3s-1.37 packageName=k3s-io/k3s versioning=regex:^v(?<major>1)\.(?<minor>37)\.(?<patch>\d+)\+k3s(?<build>\d+)$
+      amd64 = { version = "v1.37.2+k3s1", checksum = "265b3ee6a3198ef14033c63ef46cbb32370d83795199fb6d1b01f21575eddbda" },
+      # renovate: datasource=github-release-attachments depName=k3s-1.37 packageName=k3s-io/k3s versioning=regex:^v(?<major>1)\.(?<minor>37)\.(?<patch>\d+)\+k3s(?<build>\d+)$
+      arm64 = { version = "v1.37.2+k3s1", checksum = "a779ccf1e5e2e33a62f5a29c2f1c0bbf99431e100579d4c10f0aa0742a6aa84b" },
+    },
   ]
 }
 
@@ -69,6 +99,29 @@ target "fedora-coreos" {
   tags = tags("fedora-coreos${gpu ? "-nvidia" : ""}", ["${split(".", BASE)[0]}-v${line(kube)}"])
 }
 
+# fedora-coreos-k3s-<line>, e.g. fedora-coreos-k3s-1-37: the k3s flavor, of
+# the same repository as fedora-coreos, tagged <Fedora major>-v<k3s minor>k3s.
+# Both architectures, as the nodes' image.
+target "fedora-coreos-k3s" {
+  name     = "fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}"
+  inherits = ["bootc"]
+  matrix = {
+    k3s = K3S_RELEASES
+  }
+  context    = "bootc/fedora-coreos"
+  dockerfile = "Containerfile"
+  platforms  = ["linux/amd64", "linux/arm64"]
+  args = {
+    BASE_VERSION       = BASE
+    IMAGE_BASE         = "k3s"
+    K3S_VERSION        = k3s.amd64.version
+    K3S_CHECKSUM_AMD64 = k3s.amd64.checksum
+    K3S_CHECKSUM_ARM64 = k3s.arm64.checksum
+    SOURCE_DATE_EPOCH  = "0"
+  }
+  tags = tags("fedora-coreos", ["${split(".", BASE)[0]}-v${line(trimprefix(k3s.amd64.version, "v"))}k3s"])
+}
+
 # The scans, goss checks and their verdict (the Containerfile's reports
 # stage), of the image above, exported to reports/: summary.txt, and failed
 # only when a rule, a vulnerability or a check failed. amd64: the nodes are
@@ -79,6 +132,19 @@ target "fedora-coreos-reports" {
   matrix = {
     kube = KUBERNETES
     gpu  = [false, true]
+  }
+  target    = "reports"
+  platforms = ["linux/amd64"]
+  tags      = []
+  output    = ["type=local,dest=reports"]
+}
+
+# The k3s flavor's, likewise.
+target "fedora-coreos-k3s-reports" {
+  name     = "fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}-reports"
+  inherits = ["fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}"]
+  matrix = {
+    k3s = K3S_RELEASES
   }
   target    = "reports"
   platforms = ["linux/amd64"]

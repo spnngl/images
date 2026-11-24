@@ -1,0 +1,19 @@
+# k3s runs its binary from /var/lib/rancher/k3s/data/<hash>/bin, and /var
+# is noexec (wx-remount.service).
+# The image carries that directory in /usr, extracted at build; this
+# read-only bind mount puts it where k3s looks, so that k3s finds its
+# binaries and extracts nothing.
+[Unit]
+Description=k3s' binaries, from /usr
+Before=k3s.service k3s-agent.service
+
+[Mount]
+What=/usr/lib/rancher/k3s/data
+Where=/var/lib/rancher/k3s/data
+Type=none
+# A bind takes its source's flags: /usr allows setuid and devices, this
+# mount needs neither.
+Options=bind,ro,nosuid,nodev
+
+[Install]
+WantedBy=local-fs.target
