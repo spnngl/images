@@ -1,6 +1,6 @@
 {
     "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-    "description": "Keeps every pinned version current: base images, the k3s release of kubeenv, application images' upstream releases, build tools, GitHub Actions. Base images are pinned to a major release, not a digest: the weekly rebuild (build-bootc.yml) picks up their updates within it.",
+    "description": "Keeps every pinned version current: base images, the k3s releases (kubeenv, fedora-coreos's k3s flavor), application images' upstream releases, build tools, GitHub Actions. Base images are pinned to a major release, not a digest: the weekly rebuild (build-bootc.yml) picks up their updates within it.",
     "extends": ["github>spnngl/.github:renovate.default.json5"],
     // Digests for actions and the application images' FROM lines only: the
     // preset's config:best-practices pins every image, and a digest on a
@@ -398,7 +398,7 @@
             "matchFileNames": ["bootc/fedora-coreos/**"],
             "automerge": false,
             "prBodyNotes": [
-                "CI builds and scans it, and its `vm-test` job runs the build check of [`bootc/fedora-coreos/AGENTS.md`](https://github.com/spnngl/images/blob/main/bootc/fedora-coreos/AGENTS.md#build-check) on the image. A Fedora CoreOS release or Kubernetes patch keeps the image's tag (`<major>-v<minor>`): nodes take it with `bootc upgrade`. A new major or Kubernetes minor is a new tag: VMs get new machines through Cluster API, dedicated servers move with `bootc switch`."
+                "CI builds and scans it, and its `vm-test` job runs the build check of [`bootc/fedora-coreos/AGENTS.md`](https://github.com/spnngl/images/blob/main/bootc/fedora-coreos/AGENTS.md#build-check) on the image. A Fedora CoreOS release or Kubernetes or k3s patch keeps the image's tag (`<major>-v<minor>`, `<major>-v<minor>k3s`): nodes take it with `bootc upgrade`. A new major or Kubernetes minor is a new tag: VMs get new machines through Cluster API, dedicated servers move with `bootc switch`."
             ]
         },
         {
@@ -415,8 +415,8 @@
             "automerge": true
         },
         {
-            "description": "Kubernetes patch releases of bootc/fedora-coreos, one dependency per line (kubernetes-<major.minor>, whose extractVersion keeps its line): automerged as the rule above, once every check is green, the vm-test job's included; the tag stays. A new line is a new tag: added by hand (bootc/fedora-coreos/AGENTS.md, \"Kubernetes lines\").",
-            "matchDepNames": ["/^kubernetes-\\d+\\.\\d+$/"],
+            "description": "Kubernetes and k3s patch releases of bootc/fedora-coreos, one dependency per line (kubernetes-<major.minor>, whose extractVersion keeps its line; k3s-<major.minor>, whose versioning does, a `+k3s<n>` rebuild being a patch release): automerged as the rule above, once every check is green, the vm-test job's included; the tag stays. A new line is a new tag: added by hand (bootc/fedora-coreos/AGENTS.md, \"Kubernetes lines\").",
+            "matchDepNames": ["/^(kubernetes|k3s)-\\d+\\.\\d+$/"],
             "matchUpdateTypes": ["patch"],
             "automerge": true
         },

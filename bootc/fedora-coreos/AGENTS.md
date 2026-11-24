@@ -62,9 +62,11 @@ flavor. Sources and the reason for each choice:
   off), for amd64 and arm64, when a file of this folder or its
   `docker-bake.hcl` changed; the `check` stage scans amd64; on `main`,
   pushes and signs `ghcr.io/spnngl/images/fedora-coreos:<major>-v<minor>`
+  (`<major>-v<minor>k3s`)
   once the VM tests of its line passed, and releases the OpenStack qcow2
   (`disk-images.sh`) as `.qcow2.xz`, keeping the newest 3 releases of
-  each line. The GPU image's qcow2 is an asset of the same release.
+  each series: a kubeadm line's GPU image qcow2 is an asset of its release;
+  a k3s line (no GPU image) has a series of its own.
 - **OpenSCAP** checks the image at build and the nodes against
   scap-security-guide's `cis` profile (CIS level 2), tailored in
   `sysroot/system/usr/share/xml/scap/fedora-coreos/tailoring.xml`: a rule the
@@ -106,8 +108,8 @@ keeps Renovate on that minor). It gives the line a pair of Bake targets
 (`fedora-coreos-<minor>`, `fedora-coreos-nvidia-<minor>`), tags
 `<major>-v<minor>`, VM tests and a release series of its own. Add a line by
 copying the last entry, and name its GPU target in the `sample` of
-`.github/workflows/build-bootc.yml`; drop one by deleting its entry once upstream ends
-its support: its tags stay in the registry, and its hosts move by hand
+`.github/workflows/build-bootc.yml`; drop one by deleting its entry once
+upstream ends its support: its tags stay in the registry, and its hosts move by hand
 with `bootc switch`.
 
 The k3s flavor follows the same lines: an entry of `K3S_RELEASES`, one per
@@ -127,7 +129,8 @@ copy taken on it. Before `bootc switch` to the next line, stop k3s and copy
 - `repos/<name>.conf`: the dnf repositories of the build (Kubernetes',
   NVIDIA's), bind-mounted by the stages that install from them, never in
   the image.
-- `docker-bake.hcl`: the targets (one pair per Kubernetes line), their
+- `docker-bake.hcl`: the targets (a pair per Kubernetes line, one k3s image
+  per line), their
   versions and tags, the `vm-test` and `disk-image` groups.
 - `workbench.sh`: a rootful podman container on an x86_64 host with KVM,
   where the disk images (`disk-images.sh`: `qemu`, `openstack`, `metal`)

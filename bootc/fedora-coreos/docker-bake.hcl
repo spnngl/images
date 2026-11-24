@@ -27,6 +27,13 @@ variable "KUBERNETES" {
 # Renovate takes the digest of the asset the current one belongs to, and both
 # architectures move in one pull request. A line is Kubernetes' (same minor
 # as KUBERNETES' entry). A variable, not a local: a matrix reads only variables.
+#
+# Its Bake target: fedora-coreos-k3s-<major>-<minor>.
+function "k3s_target" {
+  params = [k3s]
+  result = "fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}"
+}
+
 variable "K3S_RELEASES" {
   type = list(object({
     amd64 = object({ version = string, checksum = string })
@@ -103,7 +110,7 @@ target "fedora-coreos" {
 # the same repository as fedora-coreos, tagged <Fedora major>-v<k3s minor>k3s.
 # Both architectures, as the nodes' image.
 target "fedora-coreos-k3s" {
-  name     = "fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}"
+  name     = k3s_target(k3s)
   inherits = ["bootc"]
   matrix = {
     k3s = K3S_RELEASES
@@ -141,8 +148,8 @@ target "fedora-coreos-reports" {
 
 # The k3s flavor's, likewise.
 target "fedora-coreos-k3s-reports" {
-  name     = "fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}-reports"
-  inherits = ["fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}"]
+  name     = "${k3s_target(k3s)}-reports"
+  inherits = [k3s_target(k3s)]
   matrix = {
     k3s = K3S_RELEASES
   }
@@ -159,16 +166,20 @@ target "fedora-coreos-k3s-reports" {
 group "vm-test" {
   targets = flatten([
     [for kube in KUBERNETES : "fedora-coreos-${replace(line(kube), ".", "-")}"],
-    [for k3s in K3S_RELEASES : "fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}"],
+    [for k3s in K3S_RELEASES : k3s_target(k3s)],
   ])
 }
 
 # The images released as OpenStack disk images (build-bootc.yml, release
-# job): both images of each line, the GPU image's disk being left out of its
-# line's release when it fails.
+# job): both images of each kubeadm line, the GPU image's disk being left out
+# of its line's release when it fails, and the k3s image of each line, a
+# release of its own.
 group "disk-image" {
-  targets = flatten([for kube in KUBERNETES : [
-    "fedora-coreos-${replace(line(kube), ".", "-")}",
-    "fedora-coreos-nvidia-${replace(line(kube), ".", "-")}",
-  ]])
+  targets = flatten([
+    [for kube in KUBERNETES : [
+      "fedora-coreos-${replace(line(kube), ".", "-")}",
+      "fedora-coreos-nvidia-${replace(line(kube), ".", "-")}",
+    ]],
+    [for k3s in K3S_RELEASES : k3s_target(k3s)],
+  ])
 }

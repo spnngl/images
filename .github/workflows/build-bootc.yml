@@ -92,19 +92,20 @@ jobs:
             bootc/*/docker-bake.hcl
           workflow: build-bootc.yml
           # A pull request changing this workflow or a bake-* action builds
-          # two images, not all nine: the GPU image of the newest line (the
+          # two images, not all eleven: the GPU image of the newest line (the
           # fedora-coreos context and stages, and the nvidia ones, amd64),
           # and almalinux 10 (the shared bootc context, both platforms). No
-          # VM test runs: fedora-coreos isn't built. The push that merges it
-          # builds every image, and runs it. A line dropped fails discover:
-          # name the newest one here.
+          # VM test runs: no image of the vm-test group is built, the k3s
+          # ones included. The push that merges it builds every image, and
+          # runs it. A line dropped fails discover: name the newest one here.
           sample: |-
             fedora-coreos-nvidia-1-37
             almalinux-10
 
-      # One release per fedora-coreos line, when it or its GPU image
-      # changed: the ids of the images that are not the GPU's; and one per
-      # changed fedora or almalinux image: their targets.
+      # One release per fedora-coreos kubeadm line, when it or its GPU image
+      # changed: the ids of the images that are not the GPU's, and one per
+      # k3s line: its own id; and one per changed fedora or almalinux image:
+      # their targets.
       - id: releases
         env:
           GROUPS_JSON: ${{ steps.discover.outputs.groups }}
@@ -545,8 +546,9 @@ jobs:
           overwrite: true
           retention-days: 1
 
-  # fedora-coreos's OpenStack disk image, and the GPU image's, from the
-  # images just pushed, as assets of one release per line: a release per
+  # fedora-coreos's OpenStack disk image, and the GPU image's (kubeadm lines;
+  # a k3s line has none), from the images just pushed, as assets of one
+  # release per line: a release per
   # change of the line's targets, the newest 3 of a line kept. Nodes made
   # from them follow the image's tag with `bootc upgrade`. amd64 only: the
   # nodes are x86_64. Not on the weekly rebuild: it changes no file.
@@ -577,8 +579,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # BASE_VERSION, KUBERNETES_VERSION, IMAGE_TAG, GPU_ID: from the line's
-      # Bake target, which an unchanged one still has.
+      # BASE_VERSION, IMAGE_TAG, GPU_ID: from the line's Bake target, which an
+      # unchanged one still has. A kubeadm line (fedora-coreos-1-36) has a GPU
+      # image and a series of releases named for its Kubernetes version; a k3s
+      # line (fedora-coreos-k3s-1-36) has no GPU image and a series named for
+      # its k3s release (+ is not valid in a tag name): SERIES is the prefix
+      # of the series' names, SOFTWARE what follows the Fedora CoreOS version,
+      # LINE its minor. No two series share a prefix: the clean-up below
+      # selects by it.
       - run: |-
           args=()
           while read -r file; do
@@ -587,9 +595,21 @@ jobs:
           target="$(docker buildx bake "${args[@]}" --print "${ID}" | jq -c --arg id "${ID}" '.target[$id]')"
           {
             echo "BASE_VERSION=$(jq -r .args.BASE_VERSION <<< "${target}")"
-            echo "KUBERNETES_VERSION=$(jq -r .args.KUBERNETES_VERSION <<< "${target}")"
             echo "IMAGE_TAG=$(jq -r '.tags[0] | sub("^.*:"; "")' <<< "${target}")"
-            echo "GPU_ID=${ID/fedora-coreos-/fedora-coreos-nvidia-}"
+            if [[ ${ID} == fedora-coreos-k3s-* ]]; then
+              k3s="$(jq -r .args.K3S_VERSION <<< "${target}")"
+              echo "SERIES=fedora-coreos-k3s-"
+              echo "SOFTWARE=k3s ${k3s}"
+              echo "VERSION=${k3s//+/-}"
+              echo "LINE=${k3s%.*}"
+            else
+              kubernetes="$(jq -r .args.KUBERNETES_VERSION <<< "${target}")"
+              echo "SERIES=fedora-coreos-"
+              echo "SOFTWARE=Kubernetes ${kubernetes}"
+              echo "VERSION=v${kubernetes}"
+              echo "LINE=v${kubernetes%.*}"
+              echo "GPU_ID=${ID/fedora-coreos-/fedora-coreos-nvidia-}"
+            fi
           } >> "${GITHUB_ENV}"
 
       # Which of the line's images this run pushed: a changed one that isn't
@@ -601,7 +621,7 @@ jobs:
           path: ${{ runner.temp }}/pushed
           merge-multiple: true
       - run: |-
-          for id in "${ID}" "${GPU_ID}"; do
+          for id in "${ID}" ${GPU_ID:-}; do
             if jq -e --arg id "${id}" '.["disk-image"] | index($id)' <<< "${CHANGED}" > /dev/null && [[ ! -e "${RUNNER_TEMP}/pushed/pushed_${id}" ]]; then
               if [[ ${id} == "${ID}" ]]; then
                 echo "::error::${id} was not pushed: no release"
@@ -647,8 +667,10 @@ jobs:
           sudo apparmor_parser --remove /etc/apparmor.d/bwrap-userns-restrict
           disk() {
             local image="$1" work="${RUNNER_TEMP}/work-$1"
-            # The image's repository: its id without the line.
-            local repository="ghcr.io/spnngl/images/${image%-*-*}" digest
+            # The asset's name: the id without the line. The image's
+            # repository: that, without -k3s, which is a tag of fedora-coreos's.
+            local name="${image%-*-*}"
+            local repository="ghcr.io/spnngl/images/${name%-k3s}" digest
             # Unchanged in this run (only the other image of the line
             # changed): no marker, its tag's image.
             if [[ -s ${RUNNER_TEMP}/pushed/pushed_${image} ]]; then
@@ -663,12 +685,12 @@ jobs:
               -v "${PWD}/bootc/fedora-coreos/disk-images.sh:/disk-images.sh:ro" \
               "registry.fedoraproject.org/fedora:${BASE_VERSION%%.*}" \
               bash /disk-images.sh /work openstack "ostree-image-signed:docker://${repository}:${IMAGE_TAG}"
-            sudo mv "${work}/fedora-coreos-openstack.x86_64.qcow2" "${RUNNER_TEMP}/disk/${image%-*-*}-openstack.x86_64.qcow2"
+            sudo mv "${work}/fedora-coreos-openstack.x86_64.qcow2" "${RUNNER_TEMP}/disk/${name}-openstack.x86_64.qcow2"
             sudo rm -rf "${work}"
-            sudo xz -T0 "${RUNNER_TEMP}/disk/${image%-*-*}-openstack.x86_64.qcow2"
+            sudo xz -T0 "${RUNNER_TEMP}/disk/${name}-openstack.x86_64.qcow2"
           }
           disk "${ID}"
-          if [[ ${GPU_DISK:-} != failed ]] && jq -e --arg id "${GPU_ID}" '.["disk-image"] | index($id)' <<< "${CHANGED}" > /dev/null; then
+          if [[ -n ${GPU_ID:-} && ${GPU_DISK:-} != failed ]] && jq -e --arg id "${GPU_ID}" '.["disk-image"] | index($id)' <<< "${CHANGED}" > /dev/null; then
             if ! bash -euo pipefail -c "$(declare -f disk); disk ${GPU_ID}"; then
               echo "::error::the ${GPU_ID} disk image failed: this release has no GPU disk image"
               echo GPU_DISK=failed >> "${GITHUB_ENV}"
@@ -692,7 +714,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |-
-          release="fedora-coreos-${BASE_VERSION}-v${KUBERNETES_VERSION}-${GITHUB_SHA::7}${TAG_SUFFIX}"
+          release="${SERIES}${BASE_VERSION}-${VERSION}-${GITHUB_SHA::7}${TAG_SUFFIX}"
+          images="OpenStack disk image of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\`"
+          if [[ -n ${GPU_ID:-} ]]; then
+            images="OpenStack disk images of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\` and, when it has one, of \`fedora-coreos-nvidia:${IMAGE_TAG}\` (the GPU nodes')"
+          fi
           prerelease=()
           if [[ -n ${TAG_SUFFIX} ]]; then prerelease=(--prerelease); fi
           assets=()
@@ -720,7 +746,7 @@ jobs:
             exit 1
           else
             gh release create "${release}" "${prerelease[@]}" --target "${GITHUB_SHA}" --title "${release}" "${assets[@]}" \
-              --notes "OpenStack disk images of \`ghcr.io/spnngl/images/fedora-coreos:${IMAGE_TAG}\` and, when it has one, of \`fedora-coreos-nvidia:${IMAGE_TAG}\` (the GPU nodes'): Fedora CoreOS ${BASE_VERSION}, Kubernetes ${KUBERNETES_VERSION}, commit ${GITHUB_SHA}. A node made from one follows its tag with \`bootc upgrade\`. Check a download with \`sha256sum -c <asset>.sha256\` and \`gh attestation verify <asset> -R ${GITHUB_REPOSITORY}\`, then unpack it with \`unxz <asset>\`."
+              --notes "${images}: Fedora CoreOS ${BASE_VERSION}, ${SOFTWARE}, commit ${GITHUB_SHA}. A node made from one follows its tag with \`bootc upgrade\`. Check a download with \`sha256sum -c <asset>.sha256\` and \`gh attestation verify <asset> -R ${GITHUB_REPOSITORY}\`, then unpack it with \`unxz <asset>\`."
           fi
       # The newest 3 published releases of the line stay, older ones go with
       # their tags. Drafts killed runs left go too; they have no tag yet.
@@ -729,7 +755,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |-
           releases="$(gh release list --limit 100 --json tagName,createdAt,isDraft,isPrerelease |
-            jq -c --arg line "${KUBERNETES_VERSION%.*}" '[.[] | select((.isPrerelease | not) and (.tagName | startswith("fedora-coreos-") and contains("-v" + $line + ".")))]')"
+            jq -c --arg series "${SERIES}" --arg line "${LINE}" '[.[] | select((.isPrerelease | not) and (.tagName | test("^" + $series + "[0-9]") and contains("-" + $line + ".")))]')"
           jq -r '[.[] | select(.isDraft | not)] | sort_by(.createdAt) | reverse | .[3:][].tagName' <<< "${releases}" |
             while read -r old; do
               gh release delete "${old}" --cleanup-tag --yes
