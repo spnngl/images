@@ -79,10 +79,10 @@ command:
     exit-status: 0
     stdout: ["DNS Servers: 169.254.25.10", "DNS Domain: ~svc.cluster.local", "inet 169.254.25.10/32"]
   # usr/lib/modules-load.d/10-kubernetes.conf.
-  modules overlay and br_netfilter are loaded:
+  modules overlay, br_netfilter and nf_conntrack are loaded:
     exec: lsmod
     exit-status: 0
-    stdout: [/^overlay /, /^br_netfilter /]
+    stdout: [/^overlay /, /^br_netfilter /, /^nf_conntrack /]
   # kube.slice's MemorySwapMax=0: containerd and the kubelet stay in RAM.
   kube.slice never swaps:
     exec: cat /sys/fs/cgroup/kube.slice/memory.swap.max
@@ -103,6 +103,10 @@ kernel-param:
   net.ipv4.neigh.default.gc_thresh1: {value: "1024"}
   net.ipv4.neigh.default.gc_thresh2: {value: "28672"}
   net.ipv4.neigh.default.gc_thresh3: {value: "32768"}
+  net.netfilter.nf_conntrack_max: {value: "4194304"}
+  net.netfilter.nf_conntrack_buckets: {value: "1048576"}
+  net.netfilter.nf_conntrack_tcp_timeout_established: {value: "86400"}
+  net.netfilter.nf_conntrack_tcp_timeout_close_wait: {value: "3600"}
   kernel.softlockup_panic: {value: "0"}
   kernel.panic: {value: "10"}
   net.bridge.bridge-nf-call-iptables: {value: "1"}
