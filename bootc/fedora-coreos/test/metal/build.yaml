@@ -10,3 +10,6 @@ file:
   /usr/lib/systemd/system/amd-hsmp.service:
     exists: true
     contents: ["/^ConditionVirtualization=false$/"]
+  /usr/lib/sysctl.profiles.d/metal.conf:
+    exists: true
+    contents: ["/^net.core.rmem_default = 4194304$/", "/^kernel.numa_balancing = 0$/"]

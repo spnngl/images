@@ -318,6 +318,14 @@ Read each at the version this repository pins.
   netlink sockets keep the default, which a burst of events on a server with
   hundreds of interfaces overflows (ENOBUFS). VMs have few interfaces and
   keep the kernel default.
+- **No automatic NUMA balancing on dedicated servers**
+  (`sysctl-metal.service`, `kernel.numa_balancing = 0`): the EPYC servers
+  split their socket into 4 NUMA nodes, and pods are not pinned to CPUs.
+  On a prod server of ~830 pods, over 20 days: 124k page-table entries
+  marked per second to sample memory accesses, 118k page faults per second
+  from them (80% already local), 14.6k pages migrated per second (57 MiB/s),
+  while allocations were already 99.94% local (`numa_miss`). VMs have one
+  NUMA node, where the kernel turns it off itself.
 - **etcd network tuning on control planes only** (`etcd-network-tuning.path`,
   on kubeadm's etcd manifest): image-builder's udev rule runs it on every
   NIC of every node, where it replaces a worker's multi-queue qdisc with one
