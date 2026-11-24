@@ -146,6 +146,11 @@ runs:
     # twice and put attestation files among its reports, are cleared.
     # BUILDX_NO_DEFAULT_ATTESTATIONS: bake-action and buildx add none of
     # their own to it.
+    # BUILDX_METADATA_PROVENANCE: the metadata output, which the digest step
+    # gets in an environment variable, holds no provenance. It would carry
+    # the push event, every pushed commit's message, per target: past
+    # Linux's 128 KiB per variable, bash doesn't start ("Argument list too
+    # long"). The image's attestations above are not affected.
     # allow: the entitlements the target asks for (buildkit's smoke test
     # runs a daemon: security.insecure); setup-buildx's builder permits
     # security.insecure and network.host by default, so a target gets
@@ -155,6 +160,7 @@ runs:
       uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
       env:
         BUILDX_NO_DEFAULT_ATTESTATIONS: "1"
+        BUILDX_METADATA_PROVENANCE: disabled
       with:
         source: .
         files: ${{ inputs.files }}
