@@ -1,0 +1,22 @@
+# W^X on a k3s node: k3s runs its binaries from /var (stageAndRun), so the
+# image binds them there from /usr, read-only (var-lib-rancher-k3s-data.mount;
+# REFERENCES.md, "k3s"): the one exception that no writable mount gains
+# exec through. test.sh runs it as root.
+
+mount:
+  /var/lib/rancher/k3s/data: {exists: true, opts: [ro, nosuid, nodev]}
+
+command:
+  # Not noexec, not writable: a copy of a binary can not be put there.
+  the data mount is exec and read-only:
+    exec: |
+      o=$(findmnt --noheadings --output OPTIONS --mountpoint /var/lib/rancher/k3s/data) || exit 1
+      case ",${o}," in *,noexec,*) echo "${o}"; exit 1 ;; esac
+      ! cp /usr/bin/true /var/lib/rancher/k3s/data/wx-test 2>/dev/null
+    exit-status: 0
+  # What k3s runs: its own binary, from the mount.
+  k3s runs from the data mount:
+    exec: /var/lib/rancher/k3s/data/*/bin/k3s --version
+    exit-status: 0
+    timeout: 60000
+    stdout: ["/^k3s version v/"]

@@ -1,3 +1,0 @@
-# test.sh wx: system's, the only layer with mounts to check.
-gossfile:
-  system/wx.yaml: {}

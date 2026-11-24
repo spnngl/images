@@ -1,0 +1,27 @@
+# The booted k3s node, before a cluster exists: the units are there and
+# off, k3s runs from the data mount. The runtime layer's are in
+# ../runtime/node.yaml. test.sh runs it as root.
+
+service:
+  # The role is per host: Ignition enables one.
+  k3s.service: {enabled: false, running: false}
+  k3s-agent.service: {enabled: false, running: false}
+  var-lib-rancher-k3s-data.mount: {running: true}
+
+command:
+  # systemd checks the ExecStart binaries and the directives.
+  systemd accepts the k3s units:
+    exec: systemd-analyze verify k3s.service k3s-agent.service var-lib-rancher-k3s-data.mount
+    exit-status: 0
+  # `k3s kubectl` is stageAndRun: it finds the binaries in the data directory
+  # and unpacks nothing.
+  k3s tools run, and unpack nothing:
+    exec: |
+      kubectl version --client >/dev/null && crictl --version >/dev/null &&
+          [ ! -e /var/lib/rancher/k3s/data/.lock ] && [ ! -e /var/lib/rancher/k3s/data/cni ]
+    exit-status: 0
+    timeout: 60000
+  # An empty /var: k3s' state comes with the first start.
+  k3s has no state yet:
+    exec: test ! -e /var/lib/rancher/k3s/server
+    exit-status: 0

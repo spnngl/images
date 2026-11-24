@@ -41,6 +41,16 @@ greenboot() {
 
     step() { echo "== $*"; }
 
+    # greenboot marks the boot successful once its checks pass, a few
+    # minutes after sshd: k3s' check waits up to 300 s for the kubelet.
+    passed() {
+        for _ in $(seq 60); do
+            "${vm}" ssh 'sudo grub2-editenv list | grep -qx boot_success=1' && return
+            sleep 10
+        done
+        die "greenboot didn't mark the boot successful within 10 minutes"
+    }
+
     step "build the two updates in the workbench"
     "${workbench}" exec <<'EOF'
 set -euo pipefail
@@ -65,32 +75,31 @@ rm -rf "${ctx}"
 EOF
 
     step "before: greenboot passed on this boot"
-    "${vm}" ssh 'sudo grub2-editenv list | grep -x boot_success=1'
+    passed
     before=$("${vm}" ssh 'sudo bootc status --json' | jq -r '.status.booted.image.imageDigest')
 
     step "good update: boots, and greenboot marks it successful"
     "${vm}" ssh 'sudo bootc switch --transport oci-archive /var/tmp/good.ociarchive'
     "${vm}" reboot
     "${vm}" ssh 'test -e /usr/share/greenboot-test-good'
-    sleep 30
-    "${vm}" ssh 'sudo grub2-editenv list | grep -x boot_success=1'
+    passed
     good=$("${vm}" ssh 'sudo bootc status --json' | jq -r '.status.booted.image.imageDigest')
     [[ ${good} != "${before}" ]] || die "the VM booted the same image after the good update"
 
     step "bad update: greenboot reboots GREENBOOT_MAX_BOOT_ATTEMPTS times, then rolls back"
     "${vm}" ssh 'sudo bootc switch --transport oci-archive /var/tmp/bad.ociarchive'
     "${vm}" reboot
-    # The failing boots reboot the VM by themselves; wait for the one that stays.
-    for _ in $(seq 60); do
+    # The failing boots reboot the VM by themselves; wait for the one that
+    # stays. Each runs greenboot's checks, k3s' included, before it fails.
+    for _ in $(seq 120); do
         sleep 10
         if "${vm}" ssh '! test -e /usr/lib/greenboot/check/required.d/99-fail.sh' 2>/dev/null; then
             break
         fi
     done
-    sleep 30
+    passed
     now=$("${vm}" ssh 'sudo bootc status --json' | jq -r '.status.booted.image.imageDigest')
     [[ ${now} == "${good}" ]] || die "expected to be back on the good image (${good}), booted ${now}"
-    "${vm}" ssh 'sudo grub2-editenv list | grep -x boot_success=1'
     "${vm}" ssh 'sudo journalctl --no-pager -u greenboot-healthcheck -u greenboot-set-rollback-trigger | tail -n 30'
     echo "ok: the good update is kept ($(booted)), the bad one is rolled back"
 }
@@ -114,8 +123,8 @@ chmod 0755 "${tmp}/goss"
 # goes away with the run. One check at a time: some change state, then
 # restore it. cluster retries the whole suite for 4 minutes: after a
 # boot, the API, then Cilium, come up after sshd, while the node still
-# shows Ready from before it (goss runs checks in no set order). node and
-# cluster take the booted flavor's file: k3s ships /usr/bin/k3s, kubeadm
+# shows Ready from before it (goss runs checks in no set order). node, wx
+# and cluster take the booted flavor's file: k3s ships /usr/bin/k3s, kubeadm
 # does not.
 # shellcheck disable=SC2016 # Expanded on the VM.
 run='set -euo pipefail
@@ -123,7 +132,7 @@ retry=()
 if [[ $1 == cluster ]]; then retry=(--retry-timeout 240s --sleep 10s); fi
 suite=$1
 kubeconfig=/etc/kubernetes/admin.conf
-if [[ $1 == node || $1 == cluster ]]; then
+if [[ $1 == node || $1 == wx || $1 == cluster ]]; then
     flavor=kube
     if [[ -e /usr/bin/k3s ]]; then flavor=k3s; kubeconfig=/etc/rancher/k3s/k3s.yaml; fi
     suite=${flavor}-$1

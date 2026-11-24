@@ -1,0 +1,4 @@
+# test.sh cluster on a k3s node: the layers every flavor has, and k3s'.
+gossfile:
+  cluster.yaml: {}
+  k3s/cluster.yaml: {}

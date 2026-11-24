@@ -1,0 +1,4 @@
+# test.sh wx on a kubeadm node: system's, the only layer every flavor has
+# with mounts to check.
+gossfile:
+  system/wx.yaml: {}

@@ -1,0 +1,74 @@
+# The k3s node in a cluster (vm.sh cluster): one server, SQLite, on the image's
+# containerd, in kube.slice, from the read-only data mount, with the image's
+# kubelet settings. The runtime layer's are in ../runtime/cluster.yaml.
+# test.sh runs it as root with the k3s kubeconfig, one check at a time.
+
+command:
+  k3s server is active, the agent unit is not:
+    exec: systemctl is-active k3s.service && ! systemctl is-active --quiet k3s-agent.service
+    exit-status: 0
+  # The unit says Slice=kube.slice: k3s and its children are in it.
+  k3s runs in kube.slice:
+    exec: |
+      [ "$(systemctl show -P Slice k3s.service)" = kube.slice ] &&
+          grep -q "/kube.slice/" "/proc/$(systemctl show -P MainPID k3s.service)/cgroup"
+    exit-status: 0
+  # stageAndRun execs the unpacked binary: the process runs from the mount.
+  k3s runs from the data mount:
+    exec: readlink "/proc/$(systemctl show -P MainPID k3s.service)/exe"
+    exit-status: 0
+    stdout: ["/^/var/lib/rancher/k3s/data/[0-9a-f]+/bin/k3s$/"]
+  # k3s calls binaries by name: one the image deleted would show up here.
+  k3s finds every binary it runs:
+    exec: "! journalctl --no-pager -b -u k3s.service | grep -i 'executable file not found'"
+    exit-status: 0
+  # C1: the default datastore, SQLite through kine, no etcd.
+  the datastore is SQLite:
+    exec: |
+      test -s /var/lib/rancher/k3s/server/db/state.db &&
+          [ ! -e /var/lib/rancher/k3s/server/db/etcd ]
+    exit-status: 0
+  # The image's containerd, not k3s' own (its version ends in -k3s<n>).
+  the runtime is the image's containerd:
+    exec: |
+      [ "$(kubectl get nodes -o jsonpath='{.items[*].status.nodeInfo.containerRuntimeVersion}')" = \
+          "containerd://$(containerd --version | awk '{print $3}')" ] &&
+          [ ! -e /run/k3s/containerd/containerd.sock ]
+    exit-status: 0
+  # What the image gives the kubelet, through --kubelet-arg=config-dir and
+  # config.yaml, over k3s' own config (swap and cgroup driver: in
+  # ../runtime/cluster.yaml).
+  kubelet config is the image's:
+    exec: |
+      for n in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+          kubectl get --raw "/api/v1/nodes/${n}/proxy/configz" |
+              jq -e '.kubeletconfig |
+                  .serializeImagePulls == false and .maxParallelImagePulls == 30 and
+                  .kubeReserved.memory == "1Gi" and
+                  (.clusterDNS == ["169.254.25.10"])' >/dev/null ||
+              { echo "${n}"; exit 1; }
+      done
+    exit-status: 0
+  # k3s copies the image's drop-ins at each start, after removing the last
+  # copy (k3s.service's ExecStartPre): a removed one doesn't stay.
+  k3s' copy of the kubelet drop-ins is the image's:
+    exec: diff -r /usr/lib/kubelet/conf.d /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-cli-config-dir
+    exit-status: 0
+  # --disable=gateway-api-crd: the cluster installs the Gateway API.
+  k3s installs no Gateway API CRD:
+    exec: "! kubectl get crd gateways.gateway.networking.k8s.io"
+    exit-status: 0
+  # --audit-log-path in config.yaml.
+  the audit log is written:
+    exec: test -s /var/log/kubernetes/audit/audit.log
+    exit-status: 0
+  # anonymous-auth=false in config.yaml (k3s' default too).
+  the API refuses anonymous requests:
+    exec: curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:6443/livez
+    exit-status: 0
+    stdout: ['401']
+  # The check greenboot runs, on a started k3s.
+  greenboot's k3s check passes:
+    exec: /usr/lib/greenboot/check/required.d/20-k3s.sh
+    exit-status: 0
+    timeout: 150000
