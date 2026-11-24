@@ -67,6 +67,11 @@ rm -f /etc/rpm/macros.ssg
 # filters (FCOS has neither firewalld nor ufw; test/system/build.yaml checks).
 dnf -yq remove zincati moby-engine docker-cli iptables-services toolbox
 
+# Firmware comes from the BMC or the hypervisor. fwupd-refresh.timer starts
+# fwupd, which starts udisks2: udisks re-reads the whole mount table on each
+# mount change, and each pod mounts several (REFERENCES.md).
+dnf -yq remove fwupd udisks2
+
 # CIS wants them gone: no node serves DNS or DHCP, nor copies with rsync.
 # rpm -e, not dnf: it fails if another package requires them.
 rpm -e dnsmasq rsync

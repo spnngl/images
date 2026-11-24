@@ -21,6 +21,8 @@ package:
   moby-engine: {installed: false}
   docker-cli: {installed: false}
   toolbox: {installed: false}
+  fwupd: {installed: false}
+  udisks2: {installed: false}
   firewalld: {installed: false}
   ufw: {installed: false}
   iptables-legacy: {installed: false}
@@ -80,6 +82,9 @@ file:
   # Audit records reach the journal once, through audit's syslog plugin.
   /etc/systemd/system/systemd-journald-audit.socket: {exists: true, filetype: symlink, linked-to: /dev/null}
   /usr/lib/systemd/system/zincati.service: {exists: false}
+  # The base enables both in /etc; their removal must take the links too.
+  /etc/systemd/system/timers.target.wants/fwupd-refresh.timer: {exists: false}
+  /etc/systemd/system/graphical.target.wants/udisks2.service: {exists: false}
   /usr/lib/systemd/system/docker.socket: {exists: false}
   # network-online waits for one routable link, not for all of them.
   /usr/lib/systemd/system/systemd-networkd-wait-online.service.d/10-any.conf:

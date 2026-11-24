@@ -127,6 +127,13 @@ Read each at the version this repository pins.
   `bootc-fetch-apply-updates.timer` and `rpm-ostreed-automatic.timer` stay
   disabled. No `dnf autoremove`: it would take containerd with it. No weak
   dependencies, as FCOS itself is built.
+- **Removed `fwupd`, `udisks2`:** firmware comes from the BMC or the
+  hypervisor. The base's `fwupd-refresh.timer` starts `fwupd`, which starts
+  `udisks2` and leaves it running. udisks re-reads and re-parses the whole
+  mount table on each change of `/proc/self/mountinfo`
+  (`src/udisksmountmonitor.c`, `udisks_mount_monitor_ensure()`); each pod
+  adds several mounts to the host's, so with pod churn the cost grows as
+  the square of the pod count. Nothing requires either package.
 - **`rpm-ostree-countme.timer` kept, as the base enables it:** each node
   counts in Fedora's count of systems, which sends no identifier (a
   `countme` bucket in the repository metadata requests, at most weekly:
