@@ -188,7 +188,7 @@ command:
   # zram-generator.conf.d/50-swap.conf parses: in its test mode
   # (ZRAM_GENERATOR_ROOT, no container check, no device made) the generator
   # writes zram0's swap unit.
-  # oomd watches kubepods.slice alone (kube layer). Fedora's
+  # oomd watches kubepods.slice alone (runtime layer). Fedora's
   # systemd-oomd-defaults would have it watch -.slice too, and kill
   # containerd.service, every container's shim with it: a base that brings
   # it in fails here.

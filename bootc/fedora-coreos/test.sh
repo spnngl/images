@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests of bootc/fedora-coreos on the test VM (vm.sh up): goss suites, in
-# test/, one file per layer (system, vm, metal, kube) and suite. They
+# test/, one file per layer (system, runtime, vm, metal, kube) and suite. They
 # replace capi-image-builder's goss suite (goss/rootless-role.yaml), minus
 # what is cloud-init, AppArmor or Ubuntu specific.
 #

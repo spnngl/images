@@ -413,15 +413,27 @@ Read each at the version this repository pins.
 
 ### Layers
 
-- **Three stages, each `FROM` the one before:** `system` (the node's
-  packages, `sysroot/system/`), `kube` (Kubernetes' packages,
+- **Four stages, each `FROM` the one before:** `system` (the node's
+  packages, `sysroot/system/`), `runtime` (what every node runs, whichever
+  its flavor, kubeadm or k3s: containerd, the kubelet's drop-ins, the CNI
+  and sysctl files, `sysroot/runtime/`), `kube` (Kubernetes' packages,
   `sysroot/kube/`), `image` (`sysroot/vm/`, `sysroot/metal/`, then what
   reads the whole tree). `KUBERNETES_VERSION` is declared in `kube`: a
-  Kubernetes release rebuilds `kube` and `image`, and keeps `system`
-  cached (checked by building `--target image` with another
-  `KUBERNETES_VERSION`: every `system` step `CACHED`). In the source,
-  `sysroot/<layer>/` and `test/<layer>/` show what each part of the node
-  needs.
+  Kubernetes release rebuilds `kube` and `image`, and keeps `system` and
+  `runtime` cached (checked by building `--target image` with another
+  `KUBERNETES_VERSION`: every `system` and `runtime` step `CACHED`). In
+  the source, `sysroot/<layer>/` and `test/<layer>/` show what each part
+  of the node needs.
+- **`runtime` is `kube` minus kubeadm:** one question sorts a file of the
+  old `kube` layer: does a k3s node need it? containerd and its drop-ins,
+  `kube.slice`, the two `/var` mounts, the CNI and node-local-dns
+  networkd files, the kubelet's `conf.d`, the sysctls, modules and kargs
+  are the same for both flavors, so they sit in `runtime`. The RPMs,
+  kubeadm's and the kubelet's units, `etcd-*`, the kubelet greenboot
+  check and `/opt`'s link (only `kubernetes-cni` makes it needed) stay in
+  `kube`. The greenboot ordering is split the same way:
+  `runtime`'s `10-ordering.conf` waits for containerd, each flavor's own
+  drop-in for its daemon.
 - **Smaller downloads, from CI's build cache:** a node downloads only
   the layers whose digest changed. CI keeps the BuildKit cache in
   ghcr.io (`build-bootc.yml`), and passes no `SOURCE_DATE_EPOCH`:
@@ -439,7 +451,8 @@ Read each at the version this repository pins.
   against 1.247): `kube`'s `dnf install` writes the rpm and dnf
   databases again.
 - **A file's layer:** `vm` or `metal` if only that platform uses it,
-  else `kube` if only Kubernetes does, else `system`. `vm` and `metal` are
+  else `kube` if only a kubeadm node does, else `runtime` if only a
+  Kubernetes node (of either flavor) does, else `system`. `vm` and `metal` are
   folders of the `image` stage, not images: one image for VMs and
   dedicated servers (`ConditionVirtualization=`).
 - **What reads the whole tree is in `image`:** `52-privileged.rules`
