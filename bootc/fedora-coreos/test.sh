@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Tests of bootc/fedora-coreos on the test VM (vm.sh up): goss suites, in
-# test/, one file per layer (system, runtime, vm, metal, kube) and suite. They
-# replace capi-image-builder's goss suite (goss/rootless-role.yaml), minus
+# test/, one file per layer (system, runtime, vm, metal, kube) and suite,
+# composed per flavor (test/<flavor>-node.yaml). They replace capi-image-builder's goss suite (goss/rootless-role.yaml), minus
 # what is cloud-init, AppArmor or Ubuntu specific.
 #
 # Usage: bootc/fedora-coreos/test.sh node|wx|cluster|greenboot|nvidia [<user>@<host>]
-#   node     the booted node: kernel, users, sshd, services, sysctls, scans
+#   node     the booted node: kernel, users, sshd, services, sysctls, scans;
+#            its flavor's checks (kubeadm, or k3s when /usr/bin/k3s exists)
 #   wx       W^X: noexec mounts and their exceptions
 #   cluster  once vm.sh cluster ran: the node is Ready, runs a pod that
 #            executes scripts from an emptyDir and a configMap, etcd's units
@@ -113,11 +114,20 @@ chmod 0755 "${tmp}/goss"
 # goes away with the run. One check at a time: some change state, then
 # restore it. cluster retries the whole suite for 4 minutes: after a
 # boot, the API, then Cilium, come up after sshd, while the node still
-# shows Ready from before it (goss runs checks in no set order).
+# shows Ready from before it (goss runs checks in no set order). node and
+# cluster take the booted flavor's file: k3s ships /usr/bin/k3s, kubeadm
+# does not.
 # shellcheck disable=SC2016 # Expanded on the VM.
 run='set -euo pipefail
 retry=()
 if [[ $1 == cluster ]]; then retry=(--retry-timeout 240s --sleep 10s); fi
+suite=$1
+kubeconfig=/etc/kubernetes/admin.conf
+if [[ $1 == node || $1 == cluster ]]; then
+    flavor=kube
+    if [[ -e /usr/bin/k3s ]]; then flavor=k3s; kubeconfig=/etc/rancher/k3s/k3s.yaml; fi
+    suite=${flavor}-$1
+fi
 d=/run/goss
 if mountpoint -q "${d}"; then umount "${d}"; fi
 mkdir -p "${d}"
@@ -125,7 +135,7 @@ mount -t tmpfs -o mode=0700,nosuid,nodev,size=64m tmpfs "${d}"
 trap "cd / && umount ${d}" EXIT
 tar -x --no-same-owner -C "${d}"
 cd "${d}"
-KUBECONFIG=/etc/kubernetes/admin.conf ./goss --gossfile "$1.yaml" validate \
+KUBECONFIG=${kubeconfig} ./goss --gossfile "${suite}.yaml" validate \
     "${retry[@]}" --max-concurrent 1 --format documentation --no-color'
 
 # ustar, no macOS metadata: GNU tar on the VM reads it without warnings.

@@ -117,9 +117,10 @@ with `bootc switch`.
   and the test VM are made, as in CI's `vm-test` job.
 - `test/build.yaml`, `test/<layer>/build.yaml`, `test/<IMAGE_BASE>-build.yaml`:
   the goss checks of the build; the last picks one image's.
-- `vm.sh`, `test.sh`, `test/<suite>.yaml`, `test/<layer>/<suite>.yaml`:
-  a test VM in the workbench (an NVMe disk), and the goss suites run on
-  it (`node`, `wx`, `cluster`), split by layer, and the greenboot test.
+- `vm.sh`, `test.sh`, `test/<suite>.yaml`, `test/<flavor>-<suite>.yaml`,
+  `test/<layer>/<suite>.yaml`: a test VM in the workbench (an NVMe disk),
+  and the goss suites run on it (`node`, `wx`, `cluster`), split by layer
+  and composed per flavor, and the greenboot test.
   `test/nvidia.yaml` is the GPU image's suite, run on a node with a GPU
   (`test.sh nvidia <user>@<host>`, with the workbench up for goss's
   binary), never on the test VM.

@@ -1,3 +1,3 @@
-# test.sh wx: every layer's wx.yaml.
+# test.sh wx: system's, the only layer with mounts to check.
 gossfile:
-  "*/wx.yaml": {}
+  system/wx.yaml: {}
