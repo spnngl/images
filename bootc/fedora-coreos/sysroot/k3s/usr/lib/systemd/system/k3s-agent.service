@@ -1,0 +1,41 @@
+# k3s' worker (`k3s agent`), from k3s' install.sh unit. Disabled: the role is
+# per host, Ignition enables this unit or k3s.service (REFERENCES.md, "k3s").
+# The server URL and token are machine-local: /etc/rancher/k3s/config.yaml,
+# which replaces the image's (server) one.
+[Unit]
+Description=Lightweight Kubernetes (agent)
+Documentation=https://docs.k3s.io
+# Wants, not Requires: containerd restarts (an update) without stopping the
+# agent, and k3s retries the CRI socket until it answers.
+Wants=network-online.target containerd.service
+After=network-online.target containerd.service
+# k3s runs its binaries from this read-only mount of /usr.
+RequiresMountsFor=/var/lib/rancher/k3s/data
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=exec
+# In kube.slice, not system.slice.
+Slice=kube.slice
+# k3s starts the pods' processes: leave them running when it stops, and let
+# it manage their cgroups.
+KillMode=process
+Delegate=yes
+User=root
+# Non-zero Limit*s cost the kernel accounting overhead: cgroups do the
+# container-local accounting (install.sh's comment).
+LimitNOFILE=1048576
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+TimeoutStartSec=0
+Restart=always
+RestartSec=5s
+# Same runtime endpoint and kubelet drop-ins as k3s.service, the same
+# clean-up of k3s' copy of the drop-ins.
+ExecStartPre=/usr/bin/rm -rf /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/10-cli-config.conf /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-cli-config-dir
+ExecStart=/usr/bin/k3s agent \
+    --container-runtime-endpoint=unix:///run/containerd/containerd.sock \
+    --kubelet-arg=config-dir=/usr/lib/kubelet/conf.d

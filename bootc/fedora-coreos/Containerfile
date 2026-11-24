@@ -1,9 +1,10 @@
 # syntax=docker.io/docker/dockerfile:1
 
 # Fedora CoreOS release, with the stable stream's tag form. Every version
-# below, this one, Kubernetes' and NVIDIA's, is set by
+# below, this one, Kubernetes', k3s' and NVIDIA's, is set by
 # bootc/fedora-coreos/docker-bake.hcl, which has no default to keep in sync.
-# Tag of this image: <Fedora major>-v<Kubernetes minor>.
+# Tag of this image: <Fedora major>-v<Kubernetes minor>, and
+# <Fedora major>-v<k3s minor>k3s for the k3s flavor.
 #
 # Available tags: https://quay.io/repository/fedora/fedora-coreos?tab=tags
 ARG BASE_VERSION
@@ -15,11 +16,12 @@ ARG BASE_VERSION
 #   (sysroot/runtime/);
 # - kube: Kubernetes' packages and sysroot/kube/, so that a Kubernetes
 #   release rebuilds this stage alone;
+# - k3s: k3s' binary and sysroot/k3s/, in place of kube (the k3s flavor);
 # - image: the platforms' files (sysroot/vm/, sysroot/metal/), then what
 #   reads the whole tree.
-# The GPU image's stage, nvidia, sits between kube and image: the build
-# arg IMAGE_BASE=nvidia puts it under image, and fedora-coreos's build
-# never reaches it.
+# The stages that are not the default flavor, k3s and nvidia (the GPU image,
+# FROM kube), are put under image by the build arg IMAGE_BASE; fedora-coreos's
+# build never reaches them.
 ARG IMAGE_BASE="kube"
 FROM quay.io/fedora/fedora-coreos:${BASE_VERSION} AS system
 
@@ -291,11 +293,90 @@ done
 # The sandbox image kubeadm of this release expects, so that kubelet and
 # containerd agree on it (kubeadm warns otherwise).
 pause="$(kubeadm config images list --kubernetes-version "v${KUBERNETES_VERSION}" | grep '/pause:')"
-cat > /usr/lib/containerd/conf.d/20-pause.toml <<EOF
+cat > /usr/lib/containerd/conf.d/20-pause.toml << EOF
 [plugins.'io.containerd.cri.v1.images'.pinned_images]
   sandbox = '${pause}'
 EOF
 
+rm -rf /tmp/*
+EORUN
+
+# The k3s flavor (REFERENCES.md, "k3s"): k3s' binary on the runtime layer, in
+# place of kube's RPMs. IMAGE_BASE=k3s puts it under image; fedora-coreos's
+# build never reaches it.
+FROM runtime AS k3s
+
+# Inherited from system; repeated for hadolint, which reads one stage back.
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# Set by BuildKit: amd64 or arm64.
+ARG TARGETARCH
+# k3s release (v<Kubernetes release>+k3s<build>) and the sha256 of each
+# architecture's binary, pinned by docker-bake.hcl, which Renovate updates.
+ARG K3S_VERSION
+ARG K3S_CHECKSUM_AMD64
+ARG K3S_CHECKSUM_ARM64
+
+# https://github.com/k3s-io/k3s/releases: the release's binary is a launcher that unpacks the rest of k3s (below). A "+" in a URL's path is %2B.
+RUN <<EORUN
+case "${TARGETARCH}" in
+    amd64) asset=k3s; checksum="${K3S_CHECKSUM_AMD64}" ;;
+    arm64) asset=k3s-arm64; checksum="${K3S_CHECKSUM_ARM64}" ;;
+    *) echo "no k3s binary for ${TARGETARCH}" >&2; exit 1 ;;
+esac
+curl --fail --silent --show-error --location --retry 5 --retry-all-errors \
+    --output /usr/bin/k3s \
+    "https://github.com/k3s-io/k3s/releases/download/$(echo "${K3S_VERSION}" | sed s/+/%2B/)/${asset}"
+echo "${checksum}  /usr/bin/k3s" | sha256sum --check --strict
+chmod 0755 /usr/bin/k3s
+
+# k3s runs as the tool it is called as. Not ctr: k3s' would talk to its
+# embedded containerd, and the image's containerd package ships ctr.
+ln -s k3s /usr/bin/kubectl
+ln -s k3s /usr/bin/crictl
+
+# k3s unpacks its binaries (containerd, runc, CNI plugins, busybox...) into
+# /var/lib/rancher/k3s/data/<hash>/ at its first start, and runs them from
+# there. /var is noexec and not part of the image: unpack them now, keep the
+# directory in /usr, and var-lib-rancher-k3s-data.mount binds it back
+# read-only, where k3s finds the binaries and unpacks nothing
+# (cmd/k3s/main.go, extract()). The tools ship no bash completion: generated
+# here, while unpacked, as each run after the move would unpack k3s again.
+k3s completion bash > /usr/share/bash-completion/completions/k3s
+k3s kubectl completion bash > /usr/share/bash-completion/completions/kubectl
+k3s crictl completion bash > /usr/share/bash-completion/completions/crictl
+mkdir -p /usr/lib/rancher/k3s
+mv /var/lib/rancher/k3s/data /usr/lib/rancher/k3s/data
+
+# Of the unpacked files, the image uses k3s alone: containerd and runc are
+# the image's, Cilium brings the CNI plugins, and the host has the tools
+# (busybox, coreutils, ip, find, ...) that k3s puts first in its children's
+# PATH. Left in, they shadow the host's for k3s and weigh ~40 MB. What stays
+# is k3s, the links to it, and check-config (`k3s check-config`, a script).
+# `current` links to /var/lib/rancher/k3s/data/<hash>, `cni` holds links to
+# its CNI plugins: dangling in /usr, and k3s doesn't read them.
+rm -f /usr/lib/rancher/k3s/data/.lock /usr/lib/rancher/k3s/data/current
+rm -rf /usr/lib/rancher/k3s/data/cni
+find /usr/lib/rancher/k3s/data/*/bin -mindepth 1 ! -name k3s ! -lname k3s ! -name check-config -delete
+
+# k3s' own sandbox image, which only its embedded containerd would use:
+# the image's containerd needs it from its config, so that kubelet and
+# containerd agree on it.
+pause="$(k3s agent --help | sed -n 's/.*--pause-image.*(default: "\([^"]*\)").*/\1/p')"
+test -n "${pause}"
+cat > /usr/lib/containerd/conf.d/20-pause.toml <<EOF
+[plugins.'io.containerd.cri.v1.images'.pinned_images]
+  sandbox = 'docker.io/${pause}'
+EOF
+
+# What the commands above left of k3s in /var: /var ships empty.
+rm -rf /var/lib/rancher
+EORUN
+
+COPY --link ./sysroot/k3s/ /
+
+RUN <<EORUN
+chmod 0755 /usr/lib/greenboot/check/required.d/*.sh
 rm -rf /tmp/*
 EORUN
 
@@ -499,6 +580,8 @@ FROM ghcr.io/goss-org/goss:v0.4.10 AS goss-bin
 # Exit 1: checks failed, the report is written; the check stage judges.
 FROM image AS goss
 ARG IMAGE_BASE
+# The k3s flavor's checks compare the binary's version to it (test/k3s/build.yaml).
+ARG K3S_VERSION
 
 # Inherited; repeated for hadolint, which loses it at an ARG.
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]

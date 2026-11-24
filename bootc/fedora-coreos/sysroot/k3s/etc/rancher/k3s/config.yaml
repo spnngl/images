@@ -1,0 +1,41 @@
+# The server's. An agent's /etc/rancher/k3s/config.yaml replaces it (server
+# URL and token, written at provisioning): the control-plane's settings
+# below mean nothing to it, and kubelet-server.conf would reserve a server's
+# memory on a worker.
+
+# Pods resolve through NodeLocal DNSCache, on every node, instead of the
+# CoreDNS Service (10.43.0.10, k3s' default), which this image doesn't
+# deploy (--disable=coredns). Agents get the value from the server.
+cluster-dns: 169.254.25.10
+
+kube-apiserver-arg:
+  - "profiling=false"
+  - "feature-gates=HPAScaleToZero=true"
+  - "tls-min-version=VersionTLS12"
+  - "anonymous-auth=false"
+  - "request-timeout=120s"
+  - "enable-admission-plugins=NamespaceExists,NodeRestriction,PodSecurity"
+  - "admission-control-config-file=/etc/rancher/k3s/admission-controls/admission-controls.yaml"
+  # Audit log, read by Vector and CrowdSec in the cluster. Without max* flags the apiserver
+  # keeps 100 files of 100 MB for 366 days. The apiserver creates the folder (0700).
+  - "audit-policy-file=/etc/rancher/k3s/audit-policy.yaml"
+  - "audit-log-path=/var/log/kubernetes/audit/audit.log"
+  - "audit-log-maxage=7"
+  - "audit-log-maxbackup=3"
+  - "audit-log-maxsize=100"
+
+kube-controller-manager-arg:
+  - "profiling=false"
+  - "feature-gates=HPAScaleToZero=true"
+  - "tls-min-version=VersionTLS12"
+  # XXX cilium does it on its own
+  - "allocate-node-cidrs=false"
+
+# kubeReserved for the server's kubelet (reason in that file).
+kubelet-arg:
+  - "config=/etc/rancher/k3s/kubelet-server.conf"
+
+kube-scheduler-arg:
+  - "profiling=false"
+  - "feature-gates=HPAScaleToZero=true"
+  - "tls-min-version=VersionTLS12"

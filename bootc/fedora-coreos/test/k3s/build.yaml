@@ -1,0 +1,130 @@
+# The k3s layer's files (sysroot/k3s/, the Containerfile's k3s stage): what
+# only a k3s node has, in place of the kube layer's. The runtime layer's are
+# in ../runtime/build.yaml.
+
+package:
+  kubelet: {installed: false}
+  kubeadm: {installed: false}
+  kubectl: {installed: false}
+
+file:
+  /usr/bin/k3s: {exists: true, filetype: file, mode: "0755"}
+  # The tools are k3s, called by another name.
+  /usr/bin/kubectl: {exists: true, filetype: symlink, linked-to: k3s}
+  /usr/bin/crictl: {exists: true, filetype: symlink, linked-to: k3s}
+  # ctr is containerd's: k3s' would talk to its embedded containerd.
+  /usr/bin/ctr: {exists: true, filetype: file}
+  /usr/share/bash-completion/completions/k3s: {exists: true, filetype: file, size: {gt: 0}}
+  /usr/share/bash-completion/completions/kubectl: {exists: true, filetype: file, size: {gt: 0}}
+  /usr/share/bash-completion/completions/crictl: {exists: true, filetype: file, size: {gt: 0}}
+
+  # The role is per host: both units ship disabled, Ignition enables one.
+  /usr/lib/systemd/system/multi-user.target.wants/k3s.service: {exists: false}
+  /usr/lib/systemd/system/multi-user.target.wants/k3s-agent.service: {exists: false}
+  /etc/systemd/system/multi-user.target.wants/k3s.service: {exists: false}
+  /etc/systemd/system/multi-user.target.wants/k3s-agent.service: {exists: false}
+  # Both roles on the image's containerd, with the image's kubelet drop-ins,
+  # in kube.slice, and from the read-only data mount.
+  /usr/lib/systemd/system/k3s.service:
+    exists: true
+    contents:
+      - /^Slice=kube.slice$/
+      - /^RequiresMountsFor=/var/lib/rancher/k3s/data$/
+      - /^Environment=KINE_COMPACT_TIMEOUT=60s$/
+      - '/^ExecStartPre=/usr/bin/rm -rf /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/10-cli-config.conf /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-cli-config-dir$/'
+      - /^ExecStart=/usr/bin/k3s server \\$/
+      - '/^    --container-runtime-endpoint=unix:///run/containerd/containerd.sock \\$/'
+      - '/^    --kubelet-arg=config-dir=/usr/lib/kubelet/conf.d \\$/'
+      - '/^    --flannel-backend=none \\$/'
+      - '/^    --disable-kube-proxy \\$/'
+      - '/^    --disable-network-policy \\$/'
+      - '/^    --disable=coredns \\$/'
+      - '/^    --disable=metrics-server \\$/'
+      - '/^    --disable=runtimes \\$/'
+      - '/^    --disable=servicelb \\$/'
+      - '/^    --disable=traefik \\$/'
+      - '/^    --disable=gateway-api-crd$/'
+  /usr/lib/systemd/system/k3s-agent.service:
+    exists: true
+    contents:
+      - /^Slice=kube.slice$/
+      - /^RequiresMountsFor=/var/lib/rancher/k3s/data$/
+      - '/^ExecStartPre=/usr/bin/rm -rf /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/10-cli-config.conf /var/lib/rancher/k3s/agent/etc/kubelet.conf.d/20-cli-config-dir$/'
+      - /^ExecStart=/usr/bin/k3s agent \\$/
+      - '/^    --container-runtime-endpoint=unix:///run/containerd/containerd.sock \\$/'
+      - '/^    --kubelet-arg=config-dir=/usr/lib/kubelet/conf.d$/'
+  # k3s' binaries, from /usr (the Containerfile's k3s stage).
+  /usr/lib/systemd/system/var-lib-rancher-k3s-data.mount:
+    exists: true
+    contents:
+      - /^What=/usr/lib/rancher/k3s/data$/
+      - /^Where=/var/lib/rancher/k3s/data$/
+      - /^Options=bind,ro,nosuid,nodev$/
+  /usr/lib/systemd/system/local-fs.target.wants/var-lib-rancher-k3s-data.mount:
+    exists: true
+    filetype: symlink
+    linked-to: ../var-lib-rancher-k3s-data.mount
+  # greenboot's check waits for k3s' kubelet, unordered after the units:
+  # a server that never gets ready would hold greenboot (20-k3s.sh).
+  /usr/lib/systemd/system/greenboot-healthcheck.service.d/20-k3s.conf: {exists: false}
+  /usr/lib/greenboot/check/required.d/20-k3s.sh: {exists: true, filetype: file, mode: "0755"}
+
+  # The files config.yaml names, and the one admission-controls.yaml names:
+  # k3s server doesn't start without them.
+  /etc/rancher/k3s/config.yaml:
+    exists: true
+    contents:
+      - '/^cluster-dns: 169.254.25.10$/'
+      - /^  - "config=/etc/rancher/k3s/kubelet-server.conf"$/
+  /etc/rancher/k3s/admission-controls/admission-controls.yaml: {exists: true, filetype: file}
+  /etc/rancher/k3s/admission-controls/podsecurity.yaml: {exists: true, filetype: file}
+  /etc/rancher/k3s/audit-policy.yaml: {exists: true, filetype: file}
+  /etc/rancher/k3s/kubelet-server.conf: {exists: true, filetype: file}
+
+  # k3s unpacked its files at build: nothing of it is left in /var.
+  /var/lib/rancher: {exists: false}
+  # The unpacked directory's links point into /var, dangling in /usr.
+  /usr/lib/rancher/k3s/data/current: {exists: false}
+  /usr/lib/rancher/k3s/data/cni: {exists: false}
+  /usr/lib/rancher/k3s/data/.lock: {exists: false}
+
+command:
+  # The k3s release Bake set.
+  k3s --version:
+    exec: k3s --version
+    exit-status: 0
+    # A large binary: slow to start under QEMU (a cross-platform build).
+    timeout: 60000
+    stdout: ["k3s version {{.Env.K3S_VERSION}} "]
+
+  # The sandbox image k3s of this release defaults to, so that kubelet and
+  # containerd agree on it.
+  containerd, pause image is k3s' default:
+    exec: |
+      want=$(k3s agent --help | sed -n 's/.*--pause-image.*(default: "\([^"]*\)").*/\1/p') &&
+        [[ -n "${want}" ]] &&
+        containerd --config /usr/lib/containerd/config.toml config dump | grep -qF "sandbox = 'docker.io/${want}'"
+    exit-status: 0
+    timeout: 60000
+
+  # Of the files k3s unpacks, only its own binary (the release asset is a
+  # launcher that runs it), the links to it and check-config stay.
+  the data's bin/ holds k3s, its links and check-config:
+    exec: |
+      bins=(/usr/lib/rancher/k3s/data/*/bin)
+      [[ ${#bins[@]} == 1 ]] &&
+        [[ -x "${bins[0]}/k3s" ]] &&
+        [[ -x "${bins[0]}/check-config" ]] &&
+        [[ -z $(find "${bins[0]}" -mindepth 1 ! -name k3s ! -lname k3s ! -name check-config) ]]
+    exit-status: 0
+
+  # k3s finds its binaries in the data directory and unpacks nothing: it
+  # would write a lock and the CNI links there. The directory is where
+  # k3s looks, as the mount puts it at /var/lib/rancher/k3s/data.
+  k3s unpacks nothing:
+    exec: |
+      mkdir -p /tmp/k3s && ln -sfn /usr/lib/rancher/k3s/data /tmp/k3s/data &&
+        K3S_DATA_DIR=/tmp/k3s k3s kubectl version --client > /dev/null &&
+        [[ ! -e /usr/lib/rancher/k3s/data/.lock && ! -e /usr/lib/rancher/k3s/data/cni ]]
+    exit-status: 0
+    timeout: 60000

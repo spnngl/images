@@ -19,6 +19,16 @@ command:
               { echo "${n}"; exit 1; }
       done
     exit-status: 0
+  # usr/lib/kubelet/conf.d/50-cgroup.conf: k3s leaves cgroupfs with an external
+  # containerd.
+  kubelet uses the systemd cgroup driver:
+    exec: |
+      for n in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+          kubectl get --raw "/api/v1/nodes/${n}/proxy/configz" |
+              jq -e '.kubeletconfig.cgroupDriver == "systemd"' >/dev/null ||
+              { echo "${n}"; exit 1; }
+      done
+    exit-status: 0
   # The kubelet sees the zram swap (zram-generator.conf.d/50-swap.conf).
   nodes report their swap:
     exec: kubectl get nodes -o json | jq -e 'all(.items[]; .status.nodeInfo.swap.capacity > 0)'

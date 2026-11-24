@@ -99,12 +99,13 @@ command:
     exit-status: 0
   # bootc unpacks the image's /var at the first deployment only: what a
   # layer leaves there never reaches an upgraded node (tmpfiles.d makes
-  # it). The base's entries, and nothing else.
+  # it). The base's entries, and nothing else: /var/lib/systemd comes with the
+  # kube stage's dnf, which the k3s flavor never runs.
   /var holds the base's entries only:
     exec: find /var -mindepth 1 | LC_ALL=C sort | paste -sd ' '
     exit-status: 0
     stdout:
-      - /^/var/cache /var/lib /var/lib/systemd /var/log /var/run /var/spool /var/tmp$/
+      - /^/var/cache /var/lib( /var/lib/systemd)? /var/log /var/run /var/spool /var/tmp$/
   # selinux-policy-targeted's modules, which it ships in /var/lib/selinux,
   # are the ones in the policy's store, /etc/selinux: an update installed
   # without the Containerfile's symlink leaves the store on the old ones.

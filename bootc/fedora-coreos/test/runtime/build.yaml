@@ -21,6 +21,9 @@ file:
   /usr/lib/kubelet/conf.d/50-swap.conf:
     exists: true
     contents: ["/^failSwapOn: false$/", "/^  swapBehavior: LimitedSwap$/"]
+  /usr/lib/kubelet/conf.d/50-cgroup.conf:
+    exists: true
+    contents: ["/^cgroupDriver: systemd$/"]
   /usr/lib/kubelet/conf.d/50-density.conf:
     exists: true
     contents:
