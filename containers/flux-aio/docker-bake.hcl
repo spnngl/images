@@ -18,23 +18,23 @@ target "flux-aio" {
     ]
     base = [
       # renovate: datasource=github-tags depName=fluxcd/flux2 extractVersion=^v(?<version>.+)$
-      { version = "2.10.0", checksum = "3fa784edd773d56630bb9f62645e08f70c2cff0a" },
+      { version = "2.10.1", checksum = "23dcfe98fe672acdf44ecd9c60cbac41b57f5de8" },
     ]
     source_controller = [
       # renovate: datasource=github-tags depName=fluxcd/source-controller extractVersion=^v(?<version>.+)$
-      { version = "1.10.1", checksum = "1e5c7c19b869b78b9a46cda940fa49bfc49c8ddb" },
+      { version = "1.10.2", checksum = "521c8db36295ff75d77c2fe1854bdf2c7c630877" },
     ]
     kustomize_controller = [
       # renovate: datasource=github-tags depName=fluxcd/kustomize-controller extractVersion=^v(?<version>.+)$
-      { version = "1.10.1", checksum = "746d9d2d360bbc7a5ee75ab79dadcf05e48ab927" },
+      { version = "1.10.2", checksum = "8ecafb1ca79986ef313355411d17aa4a14342df6" },
     ]
     helm_controller = [
       # renovate: datasource=github-tags depName=fluxcd/helm-controller extractVersion=^v(?<version>.+)$
-      { version = "1.7.1", checksum = "da037f220ee3e97eb91a70506b5c5f169e46bb68" },
+      { version = "1.7.2", checksum = "b719f853ed67a80ed7899760da36c9e67c0adb58" },
     ]
     notification_controller = [
       # renovate: datasource=github-tags depName=fluxcd/notification-controller extractVersion=^v(?<version>.+)$
-      { version = "1.10.0", checksum = "08d8de010a16def89c1195b9360ceb1bd0042f70" },
+      { version = "1.10.1", checksum = "841beb3902457dddc40caf8d99175f24445afb81" },
     ]
     source_watcher = [
       # renovate: datasource=github-tags depName=fluxcd/source-watcher extractVersion=^v(?<version>.+)$
@@ -42,11 +42,11 @@ target "flux-aio" {
     ]
     image_reflector_controller = [
       # renovate: datasource=github-tags depName=fluxcd/image-reflector-controller extractVersion=^v(?<version>.+)$
-      { version = "1.3.0", checksum = "014ee11daea9b43e22f493b746f25d0f77643401" },
+      { version = "1.3.1", checksum = "3c35e4843ba9bf74416517809b7e8b59923e499f" },
     ]
     image_automation_controller = [
       # renovate: datasource=github-tags depName=fluxcd/image-automation-controller extractVersion=^v(?<version>.+)$
-      { version = "1.3.0", checksum = "075af583a5d3f9010bc52c33d137e615011cc8f3" },
+      { version = "1.3.1", checksum = "bf5d9b3a10c00a4fb6aa7518d3ef256f11320174" },
     ]
   }
   args = merge(containerfile_args(debian), {
