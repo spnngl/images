@@ -29,6 +29,12 @@ Read each at the version this repository pins.
   version of k3s' `go.mod`), and `github.com/k3s-io/docs`
   (`docs/datastore/datastore.md`, `docs/upgrades/roll-back.md`); its
   release assets: <https://github.com/k3s-io/k3s/releases>
+- Connection tracking: `github.com/kubernetes/kubernetes`
+  (`pkg/proxy/conntrack/sysctls.go`,
+  `pkg/proxy/apis/config/v1alpha1/defaults.go`) at the Kubernetes lines'
+  versions; the kernel's `net/netfilter/nf_conntrack_core.c`
+  (`nf_conntrack_init_start`), `nf_conntrack_standalone.c`,
+  `nf_conntrack_proto_tcp.c`; <https://docs.kernel.org/networking/nf_conntrack-sysctl.html>
 - The kubelet and swap: `github.com/kubernetes/kubernetes`
   (`cmd/kubelet/app/server.go`, `pkg/kubelet/kuberuntime/`,
   `pkg/kubelet/allocation/handlers.go`);
@@ -322,6 +328,18 @@ Read each at the version this repository pins.
   capped at 50 MB/s). Left out: cloud-init default user, AppArmor, IPv6
   forwarding (IPv6 is off in `995-ipv6.conf`). bash completions of kubectl,
   kubeadm and crictl are generated at build: the RPMs ship none.
+- **Connection tracking sized as kube-proxy did**
+  (`sysctl.d/998-conntrack.conf`): kube-proxy set it at start, and Cilium
+  replaced it, while netfilter still tracks the host's traffic. The table
+  holds 4194304 entries, 4x kube-proxy's cap (32768 per CPU, at most
+  1048576), for dense nodes: entries are allocated when used. Its buckets
+  are a quarter of that, as kube-proxy sets the module's `hashsize`: the
+  kernel's default stops at 262144, 16 entries per bucket when full. A
+  sysctl, not `options nf_conntrack hashsize=`: `nf_conntrack_buckets` is
+  writable in the host's namespace, one file holds it all. TCP timeouts are
+  kube-proxy's (established 1 day, close_wait 1 hour). `nf_conntrack` is in
+  `modules-load.d`: `systemd-sysctl` runs after `systemd-modules-load`,
+  and the `net.netfilter.*` keys exist only once the module is loaded.
 - **4 MB default socket receive buffer on dedicated servers**
   (`sysctl-metal.service`, `net.core.rmem_default`): the Cilium agent's
   netlink sockets keep the default, which a burst of events on a server with
