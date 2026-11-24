@@ -2,7 +2,9 @@
 
 The `<name>:<BASE_VERSION>-v<Kubernetes minor>k3s` images (`kubeenv` stage,
 which runs `bootc/k3s/install.sh`) ship k3s for both roles, with the
-same binary:
+same binary. (`fedora-coreos`'s k3s flavor, `fedora-coreos:<major>-v<minor>k3s`,
+is not one of them: it runs on the image's containerd, not CRI-O, and
+follows `bootc/fedora-coreos/AGENTS.md` and its REFERENCES.md, "k3s".)
 
 - `k3s.service`: `k3s server`, the control-plane. One per cluster: the
   datastore is k3s' default, SQLite, with kine's compaction timeout

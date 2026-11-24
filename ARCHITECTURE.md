@@ -9,8 +9,9 @@ unsigned, to Docker Hub, `docker.io/loladelannoy/<name>:<BASE_VERSION>`:
   with `docker buildx bake`; `bootc/build.sh` also turns one into a qcow2
   disk image for the first install, with image-builder.
   `bootc/fedora-coreos/` is the exception: Fedora CoreOS images for
-  kubeadm nodes, tested in VMs before their push, and released as disk
-  images (`bootc/fedora-coreos/AGENTS.md`).
+  kubeadm or k3s nodes (two flavors, tags `<major>-v<minor>` and
+  `<major>-v<minor>k3s`), tested in VMs before their push, and released as
+  disk images (`bootc/fedora-coreos/AGENTS.md`).
 - **Application images** (`containers/`): upstream apps the hosts run,
   shell-less (busybox excepted: a shell is its purpose; git, built on
   it: its hooks and aliases need one; buildkit, built on git: it runs

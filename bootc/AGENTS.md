@@ -9,7 +9,9 @@ stages (`fedora-coreos` has its own build context, tests and releases:
 
 - `base`: the host system, not an image on its own;
 - `kubeenv` (`FROM base`): k3s. The one target, tagged
-  `<name>:<BASE_VERSION>-v<Kubernetes minor>k3s`.
+  `<name>:<BASE_VERSION>-v<Kubernetes minor>k3s`. `fedora-coreos` has a k3s
+  flavor of its own, built differently (its k3s stage, on containerd, in
+  `fedora-coreos/AGENTS.md`).
 
 Before a change, read:
 
