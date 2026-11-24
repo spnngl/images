@@ -29,7 +29,7 @@ jobs `discover`, `hadolint`, `build` and `push` run `bake-discover`,
 - **Found, not listed:** `bake --print` of the root `docker-bake.hcl`,
   `bootc/docker-bake.hcl` and every `bootc/*/docker-bake.hcl`: one
   target per image (`fedora-45`, `almalinux-10`, `fedora-coreos-1-36`,
-  `fedora-coreos-nvidia-1-36`). Not `containers/`'s: two files define a
+  `fedora-coreos-nvidia-1-36`, `fedora-coreos-k3s-1-36`). Not `containers/`'s: two files define a
   `tags()` each. Only what changed: the image's own files, as read by
   its `Containerfile.dockerignore`; a change of `bootc/fedora/` rebuilds
   almalinux, which reads it, and none of fedora-coreos's.
@@ -59,10 +59,11 @@ jobs `discover`, `hadolint`, `build` and `push` run `bake-discover`,
   carry no user"). Found in `discover`'s targets (their Containerfiles'
   folders), not in a Bake group: a group is one name in one file, and
   each file would replace the other's.
-- **The `release` job** makes one GitHub release per fedora-coreos line
-  when it or its GPU image changed (group `disk-image`): the OpenStack
-  qcow2 of each, built from the pushed digest, the newest 3 of a line
-  kept.
+- **The `release` job** makes one GitHub release per fedora-coreos
+  kubeadm line when it or its GPU image changed (group `disk-image`): the
+  OpenStack qcow2 of each, built from the pushed digest, the newest 3 of a
+  line kept; and one per k3s line, its own series (no GPU image), named
+  `fedora-coreos-k3s-…`, which the clean-up of each series leaves alone.
 - **A test run** (manual, input `test`) checks the push and release
   jobs from a branch: every tag gets `-test` (`TAG_SUFFIX` of
   `bootc/docker-bake.hcl`) and every release is a prerelease of that
@@ -104,8 +105,8 @@ Dalec, and one way to build, attest and sign is simpler.
   on the runners, while a CI change breaks by kind of image (a
   Containerfile, a Dalec spec, an entitlement), not by image. The push
   that merges it builds every image, as a change of the workflow.
-  `build-bootc.yml`'s sample, the newest line's GPU image and almalinux
-  10, covers both contexts and both platforms but runs no VM test (no
+  `build-bootc.yml`'s sample, the newest line's GPU image and k3s image
+  and almalinux 10, covers both contexts and both platforms but runs no VM test (no
   fedora-coreos image): the merge's run tests it. A sample name no
   target has fails `discover`, so a dropped line can't empty it
   silently.

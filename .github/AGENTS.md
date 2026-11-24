@@ -8,7 +8,8 @@ Sources and the reason for each choice: [REFERENCES.md](REFERENCES.md).
   Bake files, not listed. Their `conftest` job checks every source of
   its kind against `policy/` (`policy/AGENTS.md`), on every run, before
   any build. `build-bootc.yml` also runs the VM tests of
-  fedora-coreos before its push, and releases its disk images. Their
+  fedora-coreos (kubeadm and k3s flavors) before its push, and releases its
+  disk images. Their
   `gate-bootc` and `gate` jobs are the checks the `main` ruleset
   requires: each one's `needs` lists every job a pull request runs.
 - `actions/bake-*`: the composite actions the build workflows share (see

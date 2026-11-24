@@ -898,7 +898,11 @@ image, the role chosen at provisioning.
   `build-bootc.yml`, on `main`): one release per change of this folder,
   any file, docs and tests included (simplest rule), Renovate's version
   bumps included: `fedora-coreos-<BASE_VERSION>-v<KUBERNETES_VERSION>-<short
-  sha>`. The change is found by comparing with the newest release's tag,
+  sha>`; the k3s images' series is its own, `fedora-coreos-k3s-<BASE_VERSION>-v<K3S
+  release, + as ->-<short sha>` (a `+` would be `%2B` in the download URLs), with the one k3s
+  qcow2 as asset `fedora-coreos-k3s-openstack.x86_64.qcow2.xz`, and its own 3
+  kept: the clean-up selects by that prefix, so a series never deletes
+  another's. The change is found by comparing with the newest release's tag,
   so a run cancelled by a newer push loses none; the weekly rebuild makes
   no release. The newest 3 releases stay, older ones are deleted with
   their tags: a node needs the disk only to be created, then follows the
