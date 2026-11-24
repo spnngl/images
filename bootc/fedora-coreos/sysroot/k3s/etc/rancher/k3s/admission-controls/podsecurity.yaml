@@ -11,3 +11,4 @@ exemptions:
   usernames: []
   namespaces:
     - kube-system
+    - flux-system
