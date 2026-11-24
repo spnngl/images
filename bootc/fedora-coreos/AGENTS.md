@@ -9,8 +9,9 @@ each choice: [REFERENCES.md](REFERENCES.md).
 
 - **One image, not the two of `bootc/AGENTS.md`**: kubeadm nodes
   only, no k3s, no Docker. Its stages are its layers, each `FROM` the one
-  before: `system`, `kube` (Kubernetes' packages and files, so that a
-  Kubernetes release rebuilds it alone), `image` (the `vm` and `metal`
+  before: `system`, `runtime` (what every Kubernetes node runs: containerd,
+  the kubelet's drop-ins, the CNI and sysctl files), `kube` (kubeadm's
+  packages and files, so that a Kubernetes release rebuilds it alone), `image` (the `vm` and `metal`
   files, then what reads the whole tree). The stages after `image` scan
   it (OpenSCAP, grype) and check its files (goss, `test/build.yaml`);
   `image` is the default stage. Tag `<major>-v<minor>` of `BASE_VERSION` and
@@ -26,7 +27,8 @@ each choice: [REFERENCES.md](REFERENCES.md).
   `sysroot/` (no firewalld, sshd on 22, systemd-networkd), one folder
   per layer: `sysroot/<layer>/` holds the layer's files at their path in
   the image. A file goes in `vm` or `metal` if only that platform uses
-  it, else in `kube` if only Kubernetes does, else in `system`. A path
+  it, else in `kube` if only a kubeadm node does, else in `runtime` if only a
+  Kubernetes node does, else in `system`. A path
   like `usr/libexec/etc-diff` below is in one of them. The signature
   files (public key, `registries.d`) and `policy.jq` are copies of
   `bootc/fedora/`'s: a key rotation updates both. Files that Ignition or the user
@@ -103,8 +105,8 @@ with `bootc switch`.
 
 ## Layout
 
-- `Containerfile`, `sysroot/<layer>/`: the image (`system`, `kube`,
-  `vm`, `metal`).
+- `Containerfile`, `sysroot/<layer>/`: the image (`system`, `runtime`,
+  `kube`, `vm`, `metal`).
 - `repos/<name>.conf`: the dnf repositories of the build (Kubernetes',
   NVIDIA's), bind-mounted by the stages that install from them, never in
   the image.

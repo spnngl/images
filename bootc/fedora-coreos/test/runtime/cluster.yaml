@@ -1,0 +1,152 @@
+# The node in a cluster (vm.sh cluster), whichever the flavor: Ready, a pod
+# runs executables from pod volumes (emptyDir and configMap live under
+# /var/lib/kubelet, W^X's exception), networkd leaves Cilium's devices and
+# routes. test.sh runs it as root with the admin kubeconfig, one check at
+# a time.
+
+command:
+  node is Ready:
+    exec: kubectl wait --for=condition=Ready node --all --timeout=60s
+    exit-status: 0
+    timeout: 90000
+  # usr/lib/kubelet/conf.d/50-swap.conf, read through --config-dir, wins
+  # over the config file kubeadm wrote.
+  kubelet allows swap, LimitedSwap:
+    exec: |
+      for n in $(kubectl get nodes -o jsonpath='{.items[*].metadata.name}'); do
+          kubectl get --raw "/api/v1/nodes/${n}/proxy/configz" |
+              jq -e '.kubeletconfig | .failSwapOn == false and .memorySwap.swapBehavior == "LimitedSwap"' >/dev/null ||
+              { echo "${n}"; exit 1; }
+      done
+    exit-status: 0
+  # The kubelet sees the zram swap (zram-generator.conf.d/50-swap.conf).
+  nodes report their swap:
+    exec: kubectl get nodes -o json | jq -e 'all(.items[]; .status.nodeInfo.swap.capacity > 0)'
+    exit-status: 0
+  # LimitedSwap: a Burstable container, its memory request below its limit,
+  # may swap; a Guaranteed one may not.
+  pods swap by QoS class, LimitedSwap:
+    exec: |
+      kubectl delete pod swap-burstable swap-guaranteed --ignore-not-found >/dev/null
+      kubectl apply -f - >/dev/null <<'YAML' || exit 1
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: swap-burstable
+      spec:
+        restartPolicy: Never
+        containers:
+          - name: test
+            image: docker.io/library/busybox:1.37
+            command: [cat, /sys/fs/cgroup/memory.swap.max]
+            resources:
+              requests: {memory: 64Mi}
+              limits: {memory: 128Mi}
+      ---
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: swap-guaranteed
+      spec:
+        restartPolicy: Never
+        containers:
+          - name: test
+            image: docker.io/library/busybox:1.37
+            command: [cat, /sys/fs/cgroup/memory.swap.max]
+            resources:
+              requests: {cpu: 10m, memory: 64Mi}
+              limits: {cpu: 10m, memory: 64Mi}
+      YAML
+      for p in swap-burstable swap-guaranteed; do
+          for _ in $(seq 120); do
+              phase=$(kubectl get pod "${p}" -o jsonpath='{.status.phase}')
+              [ "${phase}" = Succeeded ] || [ "${phase}" = Failed ] && break
+              sleep 2
+          done
+          echo "${p} ${phase} $(kubectl logs "${p}" 2>&1)"
+      done
+      kubectl delete pod swap-burstable swap-guaranteed >/dev/null
+    exit-status: 0
+    stdout: ["/^swap-burstable Succeeded [1-9][0-9]*$/", "/^swap-guaranteed Succeeded 0$/"]
+    timeout: 300000
+  # kubepods.slice.d/50-oomd.conf reaches the slice the kubelet made
+  # (transient), and oomd watches it for swap only.
+  oomd watches kubepods.slice for swap only:
+    exec: |
+      systemctl show kubepods.slice -p ManagedOOMSwap -p ManagedOOMMemoryPressure
+      oomctl | awk '/^Swap Monitored/ { s = "swap" } /^Memory Pressure Monitored/ { s = "pressure" } /^\tPath: / { print s, $2 }'
+    exit-status: 0
+    stdout: [/^ManagedOOMSwap=kill$/, /^ManagedOOMMemoryPressure=auto$/, "/^swap /kubepods.slice$/", "!/^pressure /"]
+  pod runs scripts from an emptyDir and a configMap:
+    exec: |
+      kubectl delete pod,configmap exec-test --ignore-not-found >/dev/null
+      kubectl apply -f - >/dev/null <<'YAML' || exit 1
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: exec-test
+      data:
+        run.sh: |
+          #!/bin/sh
+          echo configmap-ok
+      ---
+      apiVersion: v1
+      kind: Pod
+      metadata:
+        name: exec-test
+      spec:
+        restartPolicy: Never
+        containers:
+          - name: test
+            image: docker.io/library/busybox:1.37
+            command:
+              - sh
+              - -c
+              - |
+                set -eu
+                printf '#!/bin/sh\necho emptydir-ok\n' > /scratch/run.sh
+                chmod +x /scratch/run.sh
+                /scratch/run.sh
+                /config/run.sh
+            volumeMounts:
+              - { name: scratch, mountPath: /scratch }
+              - { name: config, mountPath: /config }
+        volumes:
+          - name: scratch
+            emptyDir: {}
+          - name: config
+            configMap:
+              name: exec-test
+              defaultMode: 0755
+      YAML
+      for _ in $(seq 120); do
+          phase=$(kubectl get pod exec-test -o jsonpath='{.status.phase}')
+          [ "${phase}" = Succeeded ] || [ "${phase}" = Failed ] && break
+          sleep 2
+      done
+      echo "phase ${phase}"
+      kubectl logs exec-test 2>&1
+      kubectl delete pod,configmap exec-test >/dev/null
+    exit-status: 0
+    stdout: [/^phase Succeeded$/, /^emptydir-ok$/, /^configmap-ok$/]
+    timeout: 300000
+  # Cilium's devices, netkit or veth.
+  networkd leaves Cilium's devices alone:
+    exec: |
+      links=$(networkctl list --no-legend | awk '$2 ~ /^(lxc|cilium_|veth)/ {print $2, $5}')
+      [ -n "${links}" ] || { echo "no Cilium device"; exit 1; }
+      ! grep -v ' unmanaged$' <<<"${links}"
+    exit-status: 0
+  # ManageForeign*=no: a networkd restart keeps Cilium's routes.
+  Cilium's routes survive a networkd restart:
+    exec: |
+      before=$(ip route show table all | grep -E 'cilium_|lxc' | sort) && [ -n "${before}" ] || exit 1
+      systemctl restart systemd-networkd && sleep 5
+      after=$(ip route show table all | grep -E 'cilium_|lxc' | sort)
+      [ "${before}" = "${after}" ] || { echo "${before}"; echo "---"; echo "${after}"; exit 1; }
+    exit-status: 0
+    timeout: 60000
+  no failed unit:
+    exec: systemctl --failed --no-legend
+    exit-status: 0
+    stdout: {have-len: 0}

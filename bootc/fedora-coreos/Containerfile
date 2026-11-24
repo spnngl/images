@@ -10,8 +10,11 @@ ARG BASE_VERSION
 
 # Layers, each stage FROM the one before (REFERENCES.md, "Layers"):
 # - system: the node's own packages and sysroot/system/;
-# - kube: Kubernetes and sysroot/kube/, so that a Kubernetes release
-#   rebuilds this stage alone;
+# - runtime: what every node runs, whichever flavor (kubeadm or k3s):
+#   containerd, the kubelet's drop-ins, the CNI and sysctl files
+#   (sysroot/runtime/);
+# - kube: Kubernetes' packages and sysroot/kube/, so that a Kubernetes
+#   release rebuilds this stage alone;
 # - image: the platforms' files (sysroot/vm/, sysroot/metal/), then what
 #   reads the whole tree.
 # The GPU image's stage, nvidia, sits between kube and image: the build
@@ -218,7 +221,27 @@ systemctl mask systemd-homed.service systemd-homed-activate.service
 rm -rf /tmp/*
 EORUN
 
-FROM system AS kube
+FROM system AS runtime
+
+# Inherited from system; repeated for hadolint, which reads one stage back.
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+COPY --link ./sysroot/runtime/ /
+
+RUN <<EORUN
+chmod 0755 /usr/lib/greenboot/check/required.d/*.sh
+
+# kubelet tries to create it, and /usr is read-only at runtime.
+mkdir -p /usr/libexec/kubernetes/kubelet-plugins/volume/exec
+
+# containerd's base spec for containers, from `ctr oci spec`, with a higher
+# open-files limit (what capi-image-builder's cri-base.json does).
+ctr oci spec \
+    | jq '.process.rlimits = [{"type": "RLIMIT_NOFILE", "hard": 65535, "soft": 65535}]' \
+    > /usr/lib/containerd/cri-base.json
+EORUN
+
+FROM runtime AS kube
 
 # Inherited from system; repeated for hadolint, which reads one stage back.
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
@@ -264,15 +287,6 @@ chmod 0755 /usr/lib/greenboot/check/required.d/*.sh
 for tool in kubectl kubeadm crictl; do
     "${tool}" completion bash > "/usr/share/bash-completion/completions/${tool}"
 done
-
-# kubelet tries to create it, and /usr is read-only at runtime.
-mkdir -p /usr/libexec/kubernetes/kubelet-plugins/volume/exec
-
-# containerd's base spec for containers, from `ctr oci spec`, with a higher
-# open-files limit (what capi-image-builder's cri-base.json does).
-ctr oci spec \
-    | jq '.process.rlimits = [{"type": "RLIMIT_NOFILE", "hard": 65535, "soft": 65535}]' \
-    > /usr/lib/containerd/cri-base.json
 
 # The sandbox image kubeadm of this release expects, so that kubelet and
 # containerd agree on it (kubeadm warns otherwise).

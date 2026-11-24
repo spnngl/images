@@ -6,6 +6,7 @@
 # every */node.yaml, and the test VM has no GPU.
 gossfile:
   system/node.yaml: {}
+  runtime/node.yaml: {}
   kube/node.yaml: {}
 
 command:
