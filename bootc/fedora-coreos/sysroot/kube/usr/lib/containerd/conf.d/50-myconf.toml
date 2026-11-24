@@ -17,6 +17,13 @@ oom_score = -999
   grpc_histogram = true
 
 [plugins]
+  # CRI pulls go through the transfer service. Its download limit is one for
+  # the whole node, held for each layer's whole download: 3 by default, so 3
+  # layers at a time whatever the kubelet's maxParallelImagePulls.
+  # max_concurrent_unpacks stays 1: above that, it caps unpacks node-wide.
+  [plugins.'io.containerd.transfer.v1.local']
+    max_concurrent_downloads = 32
+
   [plugins.'io.containerd.cri.v1.images']
     snapshotter = "overlayfs"
     discard_unpacked_layers = false
@@ -34,6 +41,14 @@ oom_score = -999
     disable_apparmor = true
     tolerate_missing_hugetlb_controller = true
     disable_hugetlb_controller = true
+    # CPU usage of every container and pod, sampled for UsageNanoCores: one
+    # shim call per task, one after the other, 1s by default. 10s is the
+    # kubelet's housekeeping period.
+    stats_collect_period = "10s"
+    # An exec probe whose child keeps stdout open returns 10s after its
+    # process exits, not at the kubelet's deadline (2m plus the probe's
+    # timeout).
+    drain_exec_sync_io_timeout = "10s"
 
     # The loopback plugin is built into containerd, so no CNI RPM is needed:
     # Cilium installs its own plugin in /opt/cni/bin (the default bin_dirs).
