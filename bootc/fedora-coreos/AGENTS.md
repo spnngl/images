@@ -160,14 +160,17 @@ bootc/fedora-coreos/workbench.sh down
 
 `vm.sh check` boots the VM and runs, in this order: `test.sh node` (kernel,
 users, live sshd, units' state, sysctls, OpenSCAP, grype), `test.sh wx`
-(noexec everywhere but the exceptions), `vm.sh cluster` (kubeadm init and
-Cilium), `test.sh cluster` (node Ready, a pod runs scripts from an emptyDir
+(noexec everywhere but the exceptions), `vm.sh cluster` (kubeadm init, or
+the k3s server's start, then Cilium), `test.sh cluster` (node Ready, a pod runs scripts from an emptyDir
 and a configMap), a reboot, `test.sh wx` and `test.sh cluster` again (a boot
 with a cluster; the cluster comes back), then `test.sh greenboot` (a good
 update is kept, a bad one rolled back).
 
-Done when each command exits 0. A host without x86_64 and KVM has no
-workbench: push the branch, and CI's `vm-test` job runs the same.
+Done when each command exits 0, for each flavor you changed: the same
+commands on `fedora-coreos-k3s-1-36` and tag `44-v1.36k3s` for k3s (the
+VM boots one server; its agent unit is checked at build only). A host
+without x86_64 and KVM has no workbench: push the branch, and CI's
+`vm-test` job runs the same.
 
 The GPU image (`IMAGE_BASE=nvidia`) has one more check, on a node with a
 GPU that runs it (`REFERENCES.md`, "GPU image"):

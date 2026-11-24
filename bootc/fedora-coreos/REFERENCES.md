@@ -579,6 +579,19 @@ image, the role chosen at provisioning.
   `regex` versioning keeps the line and orders `+k3s<n>` rebuilds, which
   `semver` ignores.
 
+- **VM tests of the k3s flavor** (`test/k3s/{node,cluster,wx}.yaml`,
+  `vm.sh cluster`): one VM, one server, as the kubeadm one boots a single
+  control plane. `vm.sh cluster` enables `k3s.service` the way Ignition does
+  on a node, with a `config.yaml.d/` drop-in, copies `k3s.yaml` (its
+  certificate names 127.0.0.1) and installs the same Cilium, with k3s' pod
+  CIDR (`10.42.0.0/16`) as the cluster-pool, as `bootc/K3S.md` does. The
+  agent unit is checked at build only (`test/k3s/build.yaml`): a joining
+  agent is first seen on a real cluster. The cluster suite checks that k3s
+  runs in `kube.slice`, from the data mount, on the image's containerd and
+  SQLite, that the kubelet reads the image's config, and that the journal
+  has no "executable file not found", which a binary deleted from k3s'
+  data would cause.
+
 ### OpenSCAP
 
 - **scap-security-guide's `cis` profile, tailored**
@@ -969,10 +982,14 @@ image, the role chosen at provisioning.
 - **VM tests as goss suites** (`test.sh node|wx|cluster`), like the
   build's: `test/<suite>.yaml` lists the layers' `<suite>.yaml` that
   every flavor has (`system/`, `runtime/`, `vm/`, `metal/`) and
-  `test/<flavor>-<suite>.yaml` adds the flavor's (`kube/`), so a check
-  lives in the layer that ships what it checks. The lists are written
+  `test/<flavor>-<suite>.yaml` adds the flavor's (`kube/`, `k3s/`), so a
+  check lives in the layer that ships what it checks. `wx` too: the k3s
+  flavor's read-only data mount is its one new mount, which
+  `test/k3s/wx.yaml` checks (`test/kube-wx.yaml` is `system/wx.yaml`
+  alone). The lists are written
   out, not globbed: a glob would run one flavor's layer on the other.
-  `test.sh` takes the booted flavor's file (`/usr/bin/k3s` present: k3s). goss is the workbench's (Fedora's package,
+  `test.sh` takes the booted flavor's file (`/usr/bin/k3s` present: k3s).
+  goss is the workbench's (Fedora's package,
   same release as the image), copied into the VM with the suite: the
   image ships no test tool. One check at a time (`--max-concurrent 1`):
   some change state (links, test keys), then restore it. A state goss's

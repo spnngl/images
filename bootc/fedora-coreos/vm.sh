@@ -15,8 +15,8 @@
 #   check boot a fresh VM and run the whole build check on it (AGENTS.md,
 #         "Build check"): test.sh node, wx, cluster, a reboot, wx and cluster
 #         again, then greenboot. What CI's vm-test job runs.
-#   cluster  run kubeadm init in the VM, then install Cilium from the
-#         workbench, through the forwarded API port
+#   cluster  run kubeadm init (or start k3s, on a k3s image) in the VM, then
+#         install Cilium from the workbench, through the forwarded API port
 #   ssh   run a command on the VM, or a script read from stdin
 #         when there is no command
 #   reboot  reboot the VM, wait until it answers over SSH again
@@ -145,16 +145,37 @@ ssh_vm() {
         -o LogLevel=ERROR -o BatchMode=yes rootless@127.0.0.1 "$@" </dev/null
 }
 
-# The pod CIDR is Cilium's (cluster-pool IPAM). No kube-proxy: Cilium
-# replaces it. NumCPU and Mem: the VM is small.
-ssh_vm "sudo kubeadm init --kubernetes-version \"\$(kubeadm version -o short)\" \
-    --pod-network-cidr 10.244.0.0/16 --skip-phases=addon/kube-proxy \
-    --ignore-preflight-errors=NumCPU,Mem" | tail -n 5
-
-# The workbench reaches the API through the forwarded port; the certificate
-# is for the name `kubernetes`, not 127.0.0.1.
-ssh_vm sudo cat /etc/kubernetes/admin.conf > admin.conf
-sed -i -e 's|server: .*|server: https://127.0.0.1:6443|' -e '/server: https/a\    tls-server-name: kubernetes' admin.conf
+# The image's flavor: k3s ships /usr/bin/k3s (test.sh does the same). Echoed,
+# not an exit status: an SSH failure stops here, instead of picking kubeadm.
+flavor=$(ssh_vm 'if test -x /usr/bin/k3s; then echo k3s; else echo kubeadm; fi')
+if [[ ${flavor} == k3s ]]; then
+    # A single server, enabled as Ignition enables it on a node
+    # (REFERENCES.md, "k3s"), with a node drop-in in config.yaml.d/. The unit
+    # is Type=notify: `enable --now` returns once the API answers (bounded:
+    # the unit has no start timeout), and the node is NotReady until Cilium
+    # runs. The pod CIDR is k3s' own, 10.42.0.0/16: Cilium's default,
+    # 10.0.0.0/8, holds the service CIDR.
+    ssh_vm "sudo mkdir -p /etc/rancher/k3s/config.yaml.d &&
+        echo 'token: vm-test' | sudo tee /etc/rancher/k3s/config.yaml.d/10-vm-test.yaml >/dev/null &&
+        sudo timeout 10m systemctl enable --now k3s.service"
+    kubeconfig=/etc/rancher/k3s/k3s.yaml
+    cilium_args=(--set ipam.operator.clusterPoolIPv4PodCIDRList=10.42.0.0/16)
+    # The API's certificate has 127.0.0.1 among its names.
+    ssh_vm sudo cat "${kubeconfig}" > admin.conf
+    sed -i -e 's|server: .*|server: https://127.0.0.1:6443|' admin.conf
+else
+    # The pod CIDR is Cilium's (cluster-pool IPAM). No kube-proxy: Cilium
+    # replaces it. NumCPU and Mem: the VM is small.
+    ssh_vm "sudo kubeadm init --kubernetes-version \"\$(kubeadm version -o short)\" \
+        --pod-network-cidr 10.244.0.0/16 --skip-phases=addon/kube-proxy \
+        --ignore-preflight-errors=NumCPU,Mem" | tail -n 5
+    kubeconfig=/etc/kubernetes/admin.conf
+    cilium_args=()
+    # The workbench reaches the API through the forwarded port; the
+    # certificate is for the name `kubernetes`, not 127.0.0.1.
+    ssh_vm sudo cat "${kubeconfig}" > admin.conf
+    sed -i -e 's|server: .*|server: https://127.0.0.1:6443|' -e '/server: https/a\    tls-server-name: kubernetes' admin.conf
+fi
 export KUBECONFIG=/work/vm/admin.conf
 
 # 1.20+: older Cilium releases fail on the BPF verifier of kernel 7.x
@@ -163,11 +184,14 @@ helm repo add cilium https://helm.cilium.io >/dev/null
 helm upgrade --install cilium cilium/cilium --version 1.20.5 -n kube-system \
     --set k8sServiceHost=10.0.2.15 --set k8sServicePort=6443 \
     --set kubeProxyReplacement=true --set ipam.mode=cluster-pool \
-    --set operator.replicas=1 --wait --timeout 8m >/dev/null
+    --set operator.replicas=1 "${cilium_args[@]}" --wait --timeout 8m >/dev/null
 
-# One node: the control plane runs the pods of the tests.
-ssh_vm sudo kubectl --kubeconfig /etc/kubernetes/admin.conf taint nodes --all node-role.kubernetes.io/control-plane-
-ssh_vm sudo kubectl --kubeconfig /etc/kubernetes/admin.conf wait --for=condition=Ready node --all --timeout=300s
+# One node: the control plane runs the pods of the tests (k3s' server has no
+# such taint).
+if [[ ${flavor} == kubeadm ]]; then
+    ssh_vm sudo kubectl --kubeconfig "${kubeconfig}" taint nodes --all node-role.kubernetes.io/control-plane-
+fi
+ssh_vm sudo kubectl --kubeconfig "${kubeconfig}" wait --for=condition=Ready node --all --timeout=300s
 EOF
 }
 

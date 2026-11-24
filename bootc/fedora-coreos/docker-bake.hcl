@@ -153,10 +153,14 @@ target "fedora-coreos-k3s-reports" {
 }
 
 # The images the VM tests run on (bootc/fedora-coreos/AGENTS.md, "Build
-# check"): the nodes' image of each line; the GPU image has the same tests
-# but its own platform files.
+# check"): the nodes' images of each line, kubeadm and k3s; the GPU image has
+# the same tests but its own platform files. A target outside this group is
+# pushed without waiting for the tests (build-bootc.yml).
 group "vm-test" {
-  targets = [for kube in KUBERNETES : "fedora-coreos-${replace(line(kube), ".", "-")}"]
+  targets = flatten([
+    [for kube in KUBERNETES : "fedora-coreos-${replace(line(kube), ".", "-")}"],
+    [for k3s in K3S_RELEASES : "fedora-coreos-k3s-${replace(line(trimprefix(k3s.amd64.version, "v")), ".", "-")}"],
+  ])
 }
 
 # The images released as OpenStack disk images (build-bootc.yml, release

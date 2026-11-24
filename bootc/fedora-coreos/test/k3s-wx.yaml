@@ -1,0 +1,4 @@
+# test.sh wx on a k3s node: system's, and the exception k3s adds.
+gossfile:
+  system/wx.yaml: {}
+  k3s/wx.yaml: {}
