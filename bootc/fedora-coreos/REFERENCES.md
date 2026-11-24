@@ -231,6 +231,18 @@ Read each at the version this repository pins.
   `max_concurrent_unpacks` stays 1: with 1 there is no limit across pulls,
   each image unpacking its layers in order; above 1, layers unpack in
   parallel but the value caps unpacks for the whole node.
+- **`cgroup_favordynmods=1`** (`kube` layer, `kargs.d/20-cgroup.toml`):
+  each container start moves runc's init into its cgroup (systemd writes
+  the transient scope's `cgroup.procs`: runc's `opencontainers/cgroups`
+  `systemd/v2.go`, `PIDs`). Without favordynmods that write takes the
+  global `cgroup_threadgroup_rwsem`, waiting for an RCU grace period while
+  holding `cgroup_mutex`: container starts and every cgroup `mkdir`/`rmdir`
+  queue behind it. With it, since 6.18 (`0568f89d4fb8`), the write takes
+  only the moved process's own rwsem; forks and exits pay one memory
+  barrier (`kernel/cgroup/cgroup.c`, `cgroup_favor_dynmods()`,
+  `include/linux/cgroup-defs.h`). Execs don't migrate: runc starts them
+  in the cgroup (`CLONE_INTO_CGROUP`). Fedora leaves
+  `CONFIG_CGROUP_FAVOR_DYNMODS` unset, hence the kernel argument.
 - **Default `kernel.keys` quotas, user namespaces included:** runc gives
   each container and each exec a session keyring (`_ses.<id>`, about 70
   bytes), charged to the host UID that the container's root maps to. Without

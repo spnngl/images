@@ -28,6 +28,11 @@ command:
   crictl reaches containerd:
     exec: crictl info
     exit-status: 0
+  # kargs.d/20-cgroup.toml: systemd mounts cgroup2 with the kernel's default.
+  cgroup2 is mounted with favordynmods:
+    exec: findmnt -no OPTIONS /sys/fs/cgroup
+    exit-status: 0
+    stdout: [/favordynmods/]
   etcd-network-tuning waits for the etcd manifest:
     exec: |
       [ "$(systemctl show -P ActiveState etcd-network-tuning.service)" = inactive ] ||

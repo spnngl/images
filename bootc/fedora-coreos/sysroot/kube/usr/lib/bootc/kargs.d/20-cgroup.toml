@@ -1,0 +1,9 @@
+# Each container start moves runc's init into the container's cgroup
+# (systemd writes cgroup.procs for the transient scope). Without
+# favordynmods that write takes the global cgroup_threadgroup_rwsem and
+# waits for an RCU grace period while holding cgroup_mutex, which
+# serialises every container start and cgroup mkdir/rmdir on the node.
+# With it (kernel >= 6.18) the write takes the moved process's own rwsem.
+# Fedora's kernel leaves CONFIG_CGROUP_FAVOR_DYNMODS unset (REFERENCES.md).
+# https://www.kernel.org/doc/html/latest/admin-guide/kernel-parameters.html
+kargs = ["cgroup_favordynmods=1"]
