@@ -2,6 +2,10 @@
 # `goss` stage: what holds without booting. test.sh checks the booted node.
 # Patterns: a plain string is a substring of a line, /.../ a regular
 # expression, a leading ! negates.
-# Every layer's build.yaml.
+# The layers every flavor has: <IMAGE_BASE>-build.yaml adds its flavor's.
+# Listed, not globbed: a glob would run a flavor's layer on the other.
 gossfile:
-  "*/build.yaml": {}
+  system/build.yaml: {}
+  runtime/build.yaml: {}
+  vm/build.yaml: {}
+  metal/build.yaml: {}

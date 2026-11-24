@@ -1,7 +1,9 @@
 # fedora-coreos's checks, at build time (the Containerfile's goss stage when
-# IMAGE_BASE=kube): every layer's, and what only the default image has.
+# IMAGE_BASE=kube): the layers every flavor has, kube's, and what only the
+# default image has.
 gossfile:
   build.yaml: {}
+  kube/build.yaml: {}
 
 file:
   # lockdown=integrity: test/system/node.yaml derives the expected lockdown

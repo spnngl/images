@@ -1,9 +1,10 @@
 # The GPU image's checks, at build time (the Containerfile's goss stage when
-# IMAGE_BASE=nvidia): fedora-coreos's, and the nvidia stage's files
-# (sysroot/nvidia/). Outside the */build.yaml pattern: fedora-coreos's build
-# must not run them.
+# IMAGE_BASE=nvidia): the layers every flavor has, kube's, and the nvidia
+# stage's files (sysroot/nvidia/). Outside the */build.yaml pattern:
+# fedora-coreos's build must not run them.
 gossfile:
   build.yaml: {}
+  kube/build.yaml: {}
 
 package:
   nvidia-kmod-open: {installed: true}

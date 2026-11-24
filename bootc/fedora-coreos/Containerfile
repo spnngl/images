@@ -494,8 +494,8 @@ EORUN
 # neither the image nor the scans see it.
 FROM ghcr.io/goss-org/goss:v0.4.10 AS goss-bin
 
-# Checks of the image's files (test/build.yaml, which includes each
-# layer's; test/<IMAGE_BASE>-build.yaml includes that one and adds the image's).
+# Checks of the image's files (test/build.yaml lists the layers every flavor
+# has; test/<IMAGE_BASE>-build.yaml includes it and adds the image's).
 # Exit 1: checks failed, the report is written; the check stage judges.
 FROM image AS goss
 ARG IMAGE_BASE

@@ -1,3 +1,7 @@
-# test.sh node: every layer's node.yaml.
+# test.sh node: the layers every flavor has; <flavor>-node.yaml adds its
+# own (listed, not globbed: a glob would run a flavor's layer on the other).
 gossfile:
-  "*/node.yaml": {}
+  system/node.yaml: {}
+  runtime/node.yaml: {}
+  vm/node.yaml: {}
+  metal/node.yaml: {}

@@ -2,8 +2,8 @@
 # test VM's suites as a whole: metal/ and vm/ expect a VM (the dedicated
 # servers' units skipped, qemu-guest-agent), so it takes the layers that hold
 # on a dedicated server, and the driver's checks. Run as root by test.sh. The
-# driver's checks are here, not in a nvidia/node.yaml: test/node.yaml takes
-# every */node.yaml, and the test VM has no GPU.
+# driver's checks are here, not in a nvidia/node.yaml: the test VM has no GPU
+# and runs kube-node.yaml.
 gossfile:
   system/node.yaml: {}
   runtime/node.yaml: {}

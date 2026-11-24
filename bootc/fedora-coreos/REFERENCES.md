@@ -849,9 +849,12 @@ Read each at the version this repository pins.
   `bootc upgrade`, and greenboot rolls back only on its required
   checks. By hand, the same scripts run in a workbench on an x86_64 Linux host with KVM.
 - **VM tests as goss suites** (`test.sh node|wx|cluster`), like the
-  build's: `test/<suite>.yaml` includes every layer's `<suite>.yaml`
-  (`system/`, `vm/`, `metal/`, `kube/`), so a check lives in the layer
-  that ships what it checks. goss is the workbench's (Fedora's package,
+  build's: `test/<suite>.yaml` lists the layers' `<suite>.yaml` that
+  every flavor has (`system/`, `runtime/`, `vm/`, `metal/`) and
+  `test/<flavor>-<suite>.yaml` adds the flavor's (`kube/`), so a check
+  lives in the layer that ships what it checks. The lists are written
+  out, not globbed: a glob would run one flavor's layer on the other.
+  `test.sh` takes the booted flavor's file (`/usr/bin/k3s` present: k3s). goss is the workbench's (Fedora's package,
   same release as the image), copied into the VM with the suite: the
   image ships no test tool. One check at a time (`--max-concurrent 1`):
   some change state (links, test keys), then restore it. A state goss's
@@ -1183,12 +1186,12 @@ RuntimeClass.
   fails them.
 - **The build's goss checks of each image are `test/<IMAGE_BASE>-build.yaml`:**
   `kube-build.yaml` for `fedora-coreos`, `nvidia-build.yaml` for the GPU
-  image. Each includes `build.yaml`, which runs every layer's
-  `*/build.yaml`, and adds what only its image has: the lockdown file for
+  image. Each includes `build.yaml`, which runs the layers every flavor has, and
+  `kube/build.yaml`, and adds what only its image has: the lockdown file for
   `fedora-coreos` (the node test derives its expected lockdown from the
   image's kernel arguments, so only this tells a lost file), the driver for
-  the GPU image. They sit outside `*/build.yaml`, which would run them in
-  both.
+  the GPU image. They sit outside the layers' `build.yaml`, so that
+  neither runs the other's.
 
 - **containerd: `runc` only, no runtime `nvidia`:** the DRA driver's
   kubelet plugin writes a CDI spec per claim to `/var/run/cdi`, and
@@ -1227,9 +1230,9 @@ RuntimeClass.
 
 - **A suite of its own, `test/nvidia.yaml`, run on a real node over ssh
   (`test.sh nvidia <user>@<host>`):** the test VM has no GPU, and
-  `test/node.yaml` takes every `*/node.yaml`, which the VM runs: the
-  driver's checks sit in the one file, and the suite takes `system/` and
-  `kube/` node checks only (`metal/` and `vm/` expect a VM). It checks
+  the VM runs `test/kube-node.yaml`: the driver's checks sit in the
+  one file, and the suite takes `system/`, `runtime/` and `kube/` node
+  checks only (`metal/` and `vm/` expect a VM). It checks
   that the five modules resolve, `nvidia` is loaded, `nvidia-smi` lists
   as many GPUs as the PCI bus has NVIDIA display devices, the driver
   is this image's, the CDI spec and `/dev/nvidia*` exist, `nvidia-ctk

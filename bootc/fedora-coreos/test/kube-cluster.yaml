@@ -1,0 +1,4 @@
+# test.sh cluster on a kubeadm node: the layers every flavor has, and kube's.
+gossfile:
+  cluster.yaml: {}
+  kube/cluster.yaml: {}

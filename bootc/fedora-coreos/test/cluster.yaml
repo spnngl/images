@@ -1,3 +1,4 @@
-# test.sh cluster: every layer's cluster.yaml.
+# test.sh cluster: the layers every flavor has; <flavor>-cluster.yaml adds
+# its own (listed, not globbed: a glob would run a flavor's layer on the other).
 gossfile:
-  "*/cluster.yaml": {}
+  runtime/cluster.yaml: {}
