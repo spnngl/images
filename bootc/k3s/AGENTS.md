@@ -1,6 +1,9 @@
 # k3s
 
-Shared by every bootc image's `kubeenv` stage, not an image. The stage
+Shared by every bootc image's `kubeenv` stage, not an image. Not
+fedora-coreos's: its k3s flavor copies the files it needs (named in its
+REFERENCES.md, "k3s"), so a change to one of those is made to its copy in
+`bootc/fedora-coreos/sysroot/k3s/` too. The stage
 bind-mounts `install.sh` to run it (reasons next to each step),
 then copies `sysroot/`. Host setup (roles, swap, Cilium, firewall):
 [bootc/K3S.md](../K3S.md). Upstream sources and the reason for each
