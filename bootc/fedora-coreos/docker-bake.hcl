@@ -68,7 +68,7 @@ variable "BASE" {
 # One branch only (renovate.json5): a new branch is chosen by hand.
 variable "NVIDIA_DRIVER" {
   # renovate: datasource=rpm depName=nvidia-driver packageName=kmod-nvidia-open-dkms registryUrl=https://developer.download.nvidia.com/compute/cuda/repos/fedora44/x86_64/repodata/ versioning=loose extractVersion=^(?<version>[^-]+)-
-  default = "620.70.06"
+  default = "620.70.10"
 }
 
 # The nvidia-container-toolkit-base RPM of NVIDIA's stable repository.
