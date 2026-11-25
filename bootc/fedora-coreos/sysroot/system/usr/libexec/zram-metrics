@@ -1,0 +1,237 @@
+#!/usr/bin/nu --no-config-file
+# zram's devices, as metrics: their sysfs statistics, zram-generator's config
+# of them, and the kernel's swap settings. See
+# usr/lib/systemd/system/zram-metrics.service.
+#
+# Output, in /var/lib/zram-metrics:
+#   zram.prom  for node-exporter's textfile collector: mount
+#              /var/lib/zram-metrics into its pod, and give that path to
+#              --collector.textfile.directory
+#
+# Nushell of Fedora's package (0.99): no syntax of a later release.
+
+use /usr/share/nushell/prometheus.nu [metric one save-metrics]
+
+const DIR = '/var/lib/zram-metrics'
+# zram-generator's config directories, lowest precedence first
+# (src/config.rs, locate_fragments).
+const CONFIG_DIRS = ['/usr/lib' '/usr/local/lib' '/etc' '/run']
+
+def main [] {
+    let devices = glob '/sys/block/zram*' | each {|p| device ($p | path basename) }
+    cd $DIR
+    [
+        ...(devices $devices)
+        ...(generator)
+        ...(swap-settings)
+        ...((date now | format date '%s') | one
+            | metric zram_metrics_last_run_timestamp_seconds 'Last run of zram-metrics.')
+    ] | save-metrics zram.prom
+}
+
+# A device's sysfs attributes (the kernel's
+# Documentation/admin-guide/blockdev/zram.rst, drivers/block/zram/zram_drv.c).
+# An attribute the kernel lacks (CONFIG_ZRAM_WRITEBACK, CONFIG_ZRAM_MULTI_COMP)
+# is null, and gives no series.
+def device [name: string]: nothing -> record {
+    let attr = {|file|
+        let path = $'/sys/block/($name)/($file)'
+        if ($path | path exists) { open --raw $path | str trim } else { null }
+    }
+    let fields = {|file|
+        do $attr $file | if $in == null { [] } else { split row --regex '\s+' | into int }
+    }
+    # orig_data_size compr_data_size mem_used_total mem_limit mem_used_max
+    # same_pages pages_compacted huge_pages huge_pages_since
+    let mm = do $fields mm_stat
+    # failed_reads failed_writes invalid_io (always 0) notify_free
+    let io = do $fields io_stat
+    # bd_count bd_reads bd_writes, in 4 KiB units
+    let bd = do $fields bd_stat
+    # The block layer's (Documentation/block/stat.rst): sectors of 512 bytes.
+    let stat = do $fields stat
+    # `version: 1`, then `0 miss_free`; a debugging file, read for version 1 only.
+    let debug = do $attr debug_stat | default '' | lines
+    let writeback_limit = do $attr writeback_limit
+    {
+        device: $name
+        # `lzo lz4 [zstd]`: the selected one in brackets.
+        algorithm: (do $attr comp_algorithm | default '' | parse --regex '\[(?<a>[^\]]+)\]' | get a.0? | default '')
+        # `#1: lzo [lz4]` per recompression priority.
+        recomp_algorithms: (do $attr recomp_algorithm | default '' | lines
+            | parse --regex '^#(?<prio>\d+): .*\[(?<a>[^\]]+)\]' | each {|r| $'($r.prio):($r.a)' } | str join ',')
+        backing_dev: (do $attr backing_dev | default '' | if $in == 'none' { '' } else { $in })
+        initialized: (do $attr initstate | into int)
+        disksize: (do $attr disksize | into int)
+        orig_data: ($mm | get 0?)
+        compr_data: ($mm | get 1?)
+        mem_used: ($mm | get 2?)
+        mem_limit: ($mm | get 3?)
+        mem_used_max: ($mm | get 4?)
+        same_pages: ($mm | get 5?)
+        pages_compacted: ($mm | get 6?)
+        huge_pages: ($mm | get 7?)
+        huge_pages_since: ($mm | get 8?)
+        failed_reads: ($io | get 0?)
+        failed_writes: ($io | get 1?)
+        notify_free: ($io | get 3?)
+        miss_free: (if ($debug | get 0?) == 'version: 1' {
+            $debug | get 1? | default '' | split row --regex '\s+' | get 1? | into int
+        })
+        backing_stored: ($bd | get 0? | if $in == null { null } else { $in * 4096 })
+        backing_read: ($bd | get 1? | if $in == null { null } else { $in * 4096 })
+        backing_written: ($bd | get 2? | if $in == null { null } else { $in * 4096 })
+        writeback_limit_enabled: (do $attr writeback_limit_enable | if $in == null { null } else { into int })
+        writeback_limit: (if $writeback_limit == null { null } else { ($writeback_limit | into int) * 4096 })
+        reads: ($stat | get 0?)
+        read_bytes: ($stat | get 2? | if $in == null { null } else { $in * 512 })
+        writes: ($stat | get 4?)
+        written_bytes: ($stat | get 6? | if $in == null { null } else { $in * 512 })
+        discards: ($stat | get 11?)
+        discarded_bytes: ($stat | get 13? | if $in == null { null } else { $in * 512 })
+    }
+}
+
+def devices [devices: list]: nothing -> list<string> {
+    # One series per device, of a field; none where it is null.
+    let rows = {|field|
+        $devices | each {|d|
+            let value = $d | get $field
+            if $value == null { [] } else { [{labels: {device: $d.device}, value: $value}] }
+        } | flatten
+    }
+    [
+        ...($devices | each {|d|
+                {labels: ($d | select device algorithm recomp_algorithms backing_dev), value: 1}
+            }
+            | metric zram_device_info "A zram device: its compression algorithm, its recompression ones (priority:algorithm), its backing device for writeback. Value: 1.")
+        ...(do $rows initialized
+            | metric zram_initialized 'The device has a disk size set, and is usable: 1 yes, 0 no.')
+        ...(do $rows disksize
+            | metric zram_disksize_bytes 'Size of the device, uncompressed: what it can hold.')
+        ...(do $rows orig_data
+            | metric zram_orig_data_bytes 'Data stored, uncompressed.')
+        ...(do $rows compr_data
+            | metric zram_compr_data_bytes 'Data stored, compressed.')
+        ...(do $rows mem_used
+            | metric zram_mem_used_bytes "RAM the device takes: the compressed data, with its allocator's fragmentation and metadata. No cgroup is charged for it.")
+        ...(do $rows mem_used_max
+            | metric zram_mem_used_max_bytes 'Most RAM the device took since it was set up, or its mem_used_max was reset.')
+        ...(do $rows mem_limit
+            | metric zram_mem_limit_bytes 'Most RAM the device may take (mem_limit); 0, no limit.')
+        ...(do $rows same_pages
+            | metric zram_same_pages 'Pages stored filled with one repeated value: they take no RAM.')
+        ...(do $rows huge_pages
+            | metric zram_huge_pages 'Pages stored uncompressed, being incompressible.')
+        ...(do $rows huge_pages_since
+            | metric zram_huge_pages_total --counter 'Incompressible pages written since the device was set up.')
+        ...(do $rows pages_compacted
+            | metric zram_pages_compacted_total --counter 'Pages freed by compaction of the allocator.')
+        ...(do $rows failed_reads
+            | metric zram_failed_reads_total --counter 'Reads that failed.')
+        ...(do $rows failed_writes
+            | metric zram_failed_writes_total --counter 'Writes that failed, as when the device reached its mem_limit.')
+        ...(do $rows notify_free
+            | metric zram_notify_free_total --counter 'Pages freed as swap released their slots, or as discards.')
+        ...(do $rows miss_free
+            | metric zram_miss_free_total --counter "Slot frees skipped, the slot being in use (debug_stat, version 1).")
+        ...(do $rows reads
+            | metric zram_reads_total --counter 'Reads completed: swap-ins of a swap device.')
+        ...(do $rows read_bytes
+            | metric zram_read_bytes_total --counter 'Bytes read, uncompressed.')
+        ...(do $rows writes
+            | metric zram_writes_total --counter 'Writes completed: swap-outs of a swap device.')
+        ...(do $rows written_bytes
+            | metric zram_written_bytes_total --counter 'Bytes written, uncompressed.')
+        ...(do $rows discards
+            | metric zram_discards_total --counter 'Discards completed.')
+        ...(do $rows discarded_bytes
+            | metric zram_discarded_bytes_total --counter 'Bytes discarded.')
+        ...(do $rows backing_stored
+            | metric zram_backing_stored_bytes 'Data written back to the backing device, and still there.')
+        ...(do $rows backing_read
+            | metric zram_backing_read_bytes_total --counter 'Bytes read from the backing device.')
+        ...(do $rows backing_written
+            | metric zram_backing_written_bytes_total --counter 'Bytes written to the backing device.')
+        ...(do $rows writeback_limit_enabled
+            | metric zram_writeback_limit_enabled 'Writeback to the backing device is limited by zram_writeback_limit_bytes: 1 yes, 0 no.')
+        ...(do $rows writeback_limit
+            | metric zram_writeback_limit_bytes 'Writeback left before the limit, when enabled.')
+    ]
+}
+
+# zram-generator's config, as it reads it (src/config.rs, read_devices): the
+# main file, the first of /run, /etc, /usr/local/lib, /usr/lib; then the
+# conf.d fragments by name, a later directory's replacing an earlier's of the
+# same name; their keys, the last one winning, in sections zram<N>. The
+# compression level is seen here only: the kernel's algorithm_params is
+# write-only. Keys as written, unevaluated; a key not set is empty, the
+# generator's default. Not read: zram-fraction and max-zram-size, deprecated
+# for zram-size; top-level variables; systemd.zram= on the kernel command line.
+def generator []: nothing -> list<string> {
+    let main = $CONFIG_DIRS | reverse | each {|d| $'($d)/systemd/zram-generator.conf' }
+        | where {|p| $p | path exists } | first 1
+    let fragments = $CONFIG_DIRS
+        | each {|d| glob $'($d)/systemd/zram-generator.conf.d/*.conf' | sort }
+        | flatten
+        | reduce --fold {} {|p, acc| $acc | upsert ($p | path basename) $p }
+        | transpose name path | sort-by name | get path? | default []
+    let keys = {
+        'zram-size': zram_size
+        'zram-resident-limit': zram_resident_limit
+        'compression-algorithm': compression_algorithm
+        'writeback-device': writeback_device
+        'swap-priority': swap_priority
+        'host-memory-limit': host_memory_limit
+        'memory-limit': host_memory_limit
+        'mount-point': mount_point
+        'fs-type': fs_type
+        'options': options
+    }
+    let empty = $keys | values | uniq | reduce --fold {} {|k, acc| $acc | insert $k '' }
+    $main | append $fragments
+        | each {|p| ini $p }
+        | flatten
+        | where {|r| $r.section =~ '^zram\d+$' and $r.key in ($keys | columns) }
+        | reduce --fold {} {|r, acc|
+            let config = if $r.section in ($acc | columns) { $acc | get $r.section } else { $empty }
+            $acc | upsert $r.section ($config | upsert ($keys | get $r.key) $r.value)
+        }
+        | transpose device config
+        | each {|d| {labels: ({device: $d.device} | merge $d.config), value: 1} }
+        | metric zram_generator_config_info "zram-generator's config of a device, its keys as written; empty: its default (zram-size min(ram / 2, 4096), compression-algorithm the kernel's, swap-priority 100, options discard). Value: 1."
+}
+
+# An ini file's {section, key, value}, as zram-generator's rust-ini reads it:
+# # and ; comments, keys before a section in none.
+def ini [path: string]: nothing -> list<record> {
+    open --raw $path | lines | each {|l| $l | str trim }
+        | where {|l| $l != '' and not ($l starts-with '#') and not ($l starts-with ';') }
+        | reduce --fold {section: '', rows: []} {|l, acc|
+            let section = $l | parse --regex '^\[(?<s>.+)\]$'
+            if ($section | is-not-empty) {
+                $acc | upsert section ($section.s.0 | str trim)
+            } else {
+                let kv = $l | parse --regex '^(?<key>[^=]+?)\s*=\s*(?<value>.*)$'
+                if ($kv | is-empty) { $acc } else {
+                    $acc | upsert rows ($acc.rows | append {section: $acc.section, key: $kv.key.0, value: $kv.value.0})
+                }
+            }
+        }
+        | get rows
+}
+
+# The kernel's settings for swap, zram's or any. Prefixed zram_: no other
+# exporter's name to take.
+def swap-settings []: nothing -> list<string> {
+    let sysctl = {|name| open --raw $'/proc/sys/vm/($name)' | str trim | into int }
+    let zswap = '/sys/module/zswap/parameters/enabled'
+    [
+        ...(do $sysctl swappiness | one
+            | metric zram_vm_swappiness "The kernel's vm.swappiness: how readily it swaps anonymous pages rather than drop file pages, 0 to 200.")
+        ...(do $sysctl page-cluster | one
+            | metric zram_vm_page_cluster "The kernel's vm.page-cluster: a swap-in reads 2^N pages at once.")
+        ...((if ($zswap | path exists) { if (open --raw $zswap | str trim) == 'Y' { 1 } else { 0 } }) | one
+            | metric zram_zswap_enabled 'zswap, a compressed cache in front of swap, is on: 1 yes, 0 no. In front of zram, it compresses pages twice.')
+    ]
+}

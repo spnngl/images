@@ -43,8 +43,9 @@ RUN <<EORUN
 # - openscap-scanner and scap-security-guide check the image (scan stage,
 #   below) and the nodes (openscap.timer); audispd-plugins holds audit's
 #   syslog plugin; nushell runs usr/libexec/openscap-scan,
-#   usr/libexec/etc-diff, usr/libexec/audit-metrics and
-#   usr/libexec/bootc-metrics, which write their results as metrics.
+#   usr/libexec/etc-diff, usr/libexec/audit-metrics,
+#   usr/libexec/bootc-metrics and usr/libexec/zram-metrics, which write
+#   their results as metrics.
 # - grype lists the CVEs of the image (scan stage, below) and of the nodes
 #   (grype.timer).
 #
@@ -169,7 +170,7 @@ sed -i -E '/^session\s+required\s+pam_loginuid\.so$/a session    required     pa
 [[ "$(grep -cx 'session    required     pam_tty_audit.so disable=\* enable=rootless' /etc/pam.d/sshd)" = 1 ]]
 chmod 0440 /etc/sudoers.d/{00-defaults,99-rootless}
 visudo -c
-chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan,audit-metrics,bootc-metrics}
+chmod 0755 /usr/libexec/{wx-remount,openscap-scan,etc-diff,grype-scan,audit-metrics,bootc-metrics,zram-metrics}
 
 # SELinux permissive, containerd runs with enable_selinux = false. It still labels files and logs denials.
 # TODO add it back ?

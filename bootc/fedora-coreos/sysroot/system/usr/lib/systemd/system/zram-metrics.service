@@ -1,0 +1,51 @@
+# Run by zram-metrics.timer: it takes a fraction of a second.
+# Root without capabilities: every file it reads is world-readable (sysfs,
+# /proc/sys, zram-generator's config), and /var/lib/zram-metrics stays
+# root's. Not DynamicUser: its StateDirectory is under /var/lib/private, 0700,
+# which node-exporter's mount can't cross.
+# zram.prom is 0644, like the other scans': node-exporter reads it.
+# Nice and the lowest best-effort I/O priority, not an idle class: an idle run
+# starves on a saturated node, when the metrics matter.
+# TimeoutStartSec: a oneshot waits forever by default, and a hung run holds
+# back every later one.
+# LC_ALL=C: the files' contents in the locale the script parses.
+# LogLevelMax=notice drops systemd's info lines about a run that succeeds
+# (Starting, Deactivated, Finished), 3 every run; SyslogLevel=warning keeps
+# the script's own output above it, so a failed run still logs its error
+# and systemd's failure lines. The audit subsystem's SERVICE_START and
+# SERVICE_STOP records stay: they aren't the journal's.
+[Unit]
+Description=zram's devices as metrics
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/zram-metrics
+StateDirectory=zram-metrics
+Environment=LC_ALL=C
+LogLevelMax=notice
+SyslogLevel=warning
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=30s
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=none
+SystemCallFilter=@system-service
+SystemCallArchitectures=native

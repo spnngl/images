@@ -151,6 +151,14 @@ command:
   zram took zstd's level:
     exec: "! journalctl -b -k --no-pager -o cat | grep -F 'Warning: algorithm'"
     exit-status: 0
+  zram-metrics.service writes zram0's statistics:
+    exec: |
+      systemctl start zram-metrics.service &&
+          grep -q '^zram_device_info{device="zram0",algorithm="zstd",' /var/lib/zram-metrics/zram.prom &&
+          grep -q '^zram_generator_config_info{device="zram0",zram_size="ram \* 0.2",' /var/lib/zram-metrics/zram.prom &&
+          grep -q '^zram_mem_used_bytes{device="zram0"} ' /var/lib/zram-metrics/zram.prom
+    exit-status: 0
+    timeout: 60000
   # systemd-networkd, not NetworkManager (capi-image-builder's systemd.yml).
   # `masked`, which goss' service resource can't tell from disabled.
   NetworkManager units are masked:

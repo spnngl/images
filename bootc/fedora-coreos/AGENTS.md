@@ -79,7 +79,8 @@ flavor. Sources and the reason for each choice:
   audit subsystem's state and event counters are written every 5 minutes
   (`audit-metrics.timer`, `/var/lib/audit-metrics`), and so are bootc's
   deployments and greenboot's boot counting (`bootc-metrics.timer`,
-  `/var/lib/bootc-metrics`).
+  `/var/lib/bootc-metrics`) and zram's statistics (`zram-metrics.timer`,
+  `/var/lib/zram-metrics`).
 - **grype** lists the CVEs of `/usr` and `/etc`, at build and daily on
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;
