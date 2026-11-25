@@ -1,6 +1,6 @@
 # Prometheus' text format, for node-exporter's textfile collector: the metrics
-# of usr/libexec/openscap-scan, usr/libexec/etc-diff, usr/libexec/audit-metrics
-# and usr/libexec/bootc-metrics.
+# of usr/libexec/openscap-scan, usr/libexec/etc-diff, usr/libexec/audit-metrics,
+# usr/libexec/bootc-metrics and usr/libexec/zram-metrics.
 #
 # Nushell of Fedora's package (0.99): no syntax of a later release.
 

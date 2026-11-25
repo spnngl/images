@@ -44,7 +44,12 @@ Read each at the version this repository pins.
   run
 - zram: `github.com/systemd/zram-generator` (`man/`, `src/config.rs`,
   `src/setup.rs`, `zram-generator.conf.example`), at the version of the
-  base's package; <https://docs.kernel.org/admin-guide/blockdev/zram.html>
+  base's package; the kernel's
+  `Documentation/admin-guide/blockdev/zram.rst` and
+  `drivers/block/zram/zram_drv.c`, at the base's kernel;
+  <https://docs.kernel.org/admin-guide/blockdev/zram.html>;
+  node-exporter's `collector/swap_linux.go` and
+  `collector/diskstats_linux.go`
 - systemd-oomd: `github.com/systemd/systemd` (`src/oom/`,
   `units/systemd-oomd.service.in`), at the version of the base's package;
   `man/systemd-oomd.service.xml`, `man/oomd.conf.xml`
@@ -1239,6 +1244,52 @@ interpreter: `noexec` doesn't stop `bash <file>`, it is defense in depth.
   … supplemental data … not written`, `src/setup.rs`):
   `test/system/node.yaml` fails on that warning, the file being
   write-only.
+- **zram's metrics, every 5 minutes** (`zram-metrics.timer`,
+  `usr/libexec/zram-metrics`, `zram.prom` in `/var/lib/zram-metrics`):
+  node-exporter reads no zram file; its diskstats collector skips
+  `zram` devices (`diskstatsDefaultIgnoredDevices`), and its `swap` collector (off by default,
+  `--collector.swap`) gives each swap device's size, use and priority,
+  not the compression. Every 5 minutes, like `audit-metrics`: every
+  minute was weighed, for the RAM zram takes, which no cgroup is charged
+  for; it costs a nushell start and two audit records a minute on every
+  node.
+- **Quiet when it succeeds** (`LogLevelMax=notice`,
+  `SyslogLevel=warning`): systemd's 3 info lines a run are dropped, the
+  script's errors and systemd's failure lines kept; tested with
+  `systemd-run` on a node (systemd 259). The audit records
+  (`SERVICE_START`, `SERVICE_STOP`) stay: an audit rule dropping them
+  would also drop every other unit's.
+- **Each sysfs statistic of each device** (the kernel's
+  `Documentation/admin-guide/blockdev/zram.rst`): `mm_stat`, `io_stat`,
+  `bd_stat` (writeback), `debug_stat`'s `miss_free`, the block layer's
+  `stat` (reads and writes are swap-ins and swap-outs), the algorithm,
+  the recompression ones and the backing device as labels of
+  `zram_device_info`. A file the kernel lacks gives no series. Not read:
+  `mm_stat`'s `invalid_io` (always 0), and the write-only files
+  (`algorithm_params`, `mem_limit`'s setter, `idle`, `compact`).
+- **zram-generator's config as written**
+  (`zram_generator_config_info`): the compression level is only there,
+  `algorithm_params` being write-only, and `zram-size`'s expression
+  explains `zram_disksize_bytes`. Read as zram-generator does
+  (`src/config.rs`, `read_devices`): the first `zram-generator.conf` of
+  `/run`, `/etc`, `/usr/local/lib`, `/usr/lib`, then the `conf.d`
+  fragments by name, a later directory's replacing an earlier's; the
+  last key wins, in `[zram<N>]` sections. Not evaluated: the expression
+  is the config, and its value is `zram_disksize_bytes`. Not read:
+  `zram-fraction` and `max-zram-size` (deprecated), top-level variables,
+  `systemd.zram=` on the kernel command line.
+- **The kernel's swap settings**, `zram_vm_swappiness`,
+  `zram_vm_page_cluster` and `zram_zswap_enabled`: they decide how much
+  goes to zram, and zswap in front of zram compresses twice.
+  node-exporter (v1.12.1) has no collector for them. Prefixed `zram_`,
+  like the rest of `zram.prom`: a bare `vm_swappiness` is any
+  exporter's to take.
+- **`zram-metrics.service` is root without capabilities, no network, no
+  socket**: every file it reads is world-readable, and
+  `/var/lib/zram-metrics` stays root's. Not `DynamicUser`: its
+  `StateDirectory` is under `/var/lib/private`, 0700, which
+  node-exporter's mount can't cross. Tested with the unit file on a
+  node; `systemd-analyze security` rates it 1.3.
 - **`kube.slice` never swaps** (`MemorySwapMax=0`): containerd, its
   shims and the kubelet stay in RAM, as Kubernetes' swap guide advises for
   the node's critical daemons. Pods are in `kubepods.slice`, untouched.
