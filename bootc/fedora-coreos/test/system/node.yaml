@@ -116,6 +116,15 @@ command:
           [ "$(count)" -gt "${before:-0}" ]
     exit-status: 0
     timeout: 120000
+  # greenboot's result left out: the checks may still run.
+  bootc-metrics.service writes the deployments:
+    exec: |
+      systemctl start bootc-metrics.service &&
+          grep -qx 'bootc_host 1' /var/lib/bootc-metrics/bootc.prom &&
+          grep -q '^bootc_deployment_info{slot="booted",' /var/lib/bootc-metrics/bootc.prom &&
+          grep -q '^greenboot_fallback ' /var/lib/bootc-metrics/bootc.prom
+    exit-status: 0
+    timeout: 120000
   etc-diff.service lists /etc's drift:
     exec: |
       systemctl start etc-diff.service &&

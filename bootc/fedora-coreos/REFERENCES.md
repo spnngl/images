@@ -62,7 +62,13 @@ Read each at the version this repository pins.
   (`README.md`, `deploy.yaml`), on `github.com/coreos/ign-converter`
   (`translate/v23tov30`)
 - `github.com/fedora-iot/greenboot-rs` (`README.md`, `greenboot-rs.spec`,
-  `usr/`)
+  `usr/`; its GRUB variables: `src/lib/grub.rs`, `src/main.rs`,
+  `grub2/08_greenboot.cfg`)
+- `github.com/bootc-dev/bootc`, at the version of the base's package:
+  `bootc status`'s JSON (`crates/lib/src/spec.rs`, `Host`; examples in
+  `crates/lib/src/fixtures/spec-*.yaml`), and what it needs to run
+  (`crates/lib/src/cli.rs` `prepare_for_write`, `crates/lib/src/lsm.rs`
+  `selinux_ensure_install`)
 - `github.com/bootc-dev/bootc-operator` (`api/v1alpha1/`,
   `internal/controller/rollout.go`)
 - OpenSCAP: `github.com/OpenSCAP/openscap` (`utils/oscap-im`,
@@ -1092,6 +1098,60 @@ image, the role chosen at provisioning.
   `test.sh greenboot`: three failed boots, then rollback. greenboot
   remounts `/boot` read-write for the operation and restores it, which
   W^X doesn't prevent.
+
+### Deployment metrics
+
+- **The deployments and boot counting, every 5 minutes**
+  (`bootc-metrics.timer`, `usr/libexec/bootc-metrics`, `bootc.prom` in
+  `/var/lib/bootc-metrics`): an update staged but not booted, a rollback,
+  or a node failing its health checks shows on no other metric. bootc's
+  from `bootc status --format json --format-version 1`; greenboot's from
+  its GRUB variables. Every 5 minutes, like `audit-metrics`: a staged
+  deployment and a failed boot need fresh values.
+- **One `bootc_deployment_info` series per deployment**, by `slot`
+  (`staged`, `booted`, `rollback`, `other`: pinned ones and other
+  stateroots) and `deployment` (its ostree commit, or its composefs
+  digest), with the image, digest and version as labels; its flags
+  (pinned, incompatible, soft-reboot capable, download-only) as 0/1
+  series on the same two labels. `bootc_spec_info` is the image the node
+  follows. Nodes on different images, or a staged deployment waiting for a
+  reboot, are queries on these.
+- **No `bootc upgrade --check`:** it pulls the registry's manifest, and
+  bootc-operator decides the updates. `bootc_deployment_update_info`
+  reports `cachedUpdate` when something else ran it, and only of another
+  digest than the deployment's, as `bootc status` shows it.
+- **`bootc_deployment_image_timestamp_seconds` kept, though 0 today:**
+  `SOURCE_DATE_EPOCH=0` zeroes the image's `created`, and bootc reads the
+  `org.opencontainers.image.created` label first; a build setting it
+  gives the image's age.
+- **greenboot's GRUB variables:** `boot_success`, `boot_counter` and
+  `fallback` (`src/lib/grub.rs` of greenboot-rs). An unset variable gives
+  no series, but `fallback`'s 0: GRUB reads unset as off. Read from
+  `/boot/grub2/grubenv` as a file, not with `grub2-editenv list`: that
+  resolves `/boot`'s device, which `PrivateDevices=` hides. Unreadable:
+  no greenboot series, a warning, and bootc's still written; bootc's
+  failing fails the run, and the stale
+  `bootc_metrics_last_run_timestamp_seconds` shows it.
+- **`bootc-metrics.service` is sandboxed**: root, as `bootc status`
+  requires, with `CAP_SYS_ADMIN` (its root check, and its remount of
+  `/sysroot` read-write in its mount namespace: `@mount`),
+  `CAP_SYS_PTRACE` (it reads `/proc/1/ns/mnt`) and `CAP_MAC_ADMIN` (it
+  checks it may write a label unknown to the SELinux policy; without it,
+  it copies itself to `/tmp` to re-exec, which `noexec` refuses). No
+  network: it reads local state only. Tested under these settings with
+  `systemd-run` on a node, each capability's absence failing it.
+- **`TimeoutStartSec=15min`:** `bootc status` takes ostree's sysroot
+  lock, waiting for it (`crates/lib/src/store/mod.rs`,
+  `SysrootLock::new_from_sysroot`), and an upgrade holds it through its
+  pull. Two minutes would fail a run during an update's pull, when the
+  metrics matter; fifteen let it wait and write the new deployment. The
+  timer skips its runs while one waits. Our run holds the lock about
+  0.3 s, which an upgrade or `ostree-finalize-staged` waits out. Reading
+  the status without the lock (`rpm-ostree status --json`) was rejected:
+  another tool and format for the same state.
+  `bootc_metrics_last_run_timestamp_seconds` shows a stale file.
+- **The composefs backend isn't covered** past `deployment`: its other
+  fields (`bootloader`, `bootType`) describe a backend the nodes don't use.
 
 ### W^X
 
