@@ -869,6 +869,12 @@ image, the role chosen at provisioning.
   score; EPSS and CVSS by id; counts of every match by severity and fix
   state, and of the ignored ones by id, so an ignore rule stays visible;
   the database's age. `grype.json` keeps every match.
+- **The kernel's `fixed_in`, from the node's branch on:** grype matches
+  `vmlinuz` by NVD's CPE, whose fix versions name every upstream stable
+  branch (`5.10.273 5.15.224 … 7.2.13 7.3`); the older branches don't
+  apply to the node. Fedora's kernel follows upstream's stable releases,
+  so these matches hold, and they are more than Fedora's advisories for
+  the `kernel` rpm list (276 against 5, on 7.2.11-200.fc44).
 - **A report, not a build check** (the `check` stage's `summary.txt`):
   the image holds a whole distribution, whose fixes come with the base's
   next release, and a failed build would keep the older, more vulnerable
