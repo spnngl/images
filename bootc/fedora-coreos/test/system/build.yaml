@@ -66,6 +66,7 @@ file:
   /usr/lib/systemd/system/timers.target.wants/etc-diff.timer: {exists: true, filetype: symlink, linked-to: ../etc-diff.timer}
   /usr/lib/systemd/system/timers.target.wants/grype.timer: {exists: true, filetype: symlink, linked-to: ../grype.timer}
   /usr/lib/systemd/system/timers.target.wants/audit-metrics.timer: {exists: true, filetype: symlink, linked-to: ../audit-metrics.timer}
+  /usr/lib/systemd/system/timers.target.wants/bootc-metrics.timer: {exists: true, filetype: symlink, linked-to: ../bootc-metrics.timer}
   /usr/lib/systemd/system/sysinit.target.wants/wx-remount.service: {exists: true, filetype: symlink, linked-to: ../wx-remount.service}
   /usr/lib/systemd/system/network-online.target.wants/systemd-networkd-wait-online.service: {exists: true, filetype: symlink, linked-to: ../systemd-networkd-wait-online.service}
   /usr/lib/systemd/system/ostree-finalize-staged.service.requires/greenboot-set-rollback-trigger.service: {exists: true, filetype: symlink, linked-to: ../greenboot-set-rollback-trigger.service}

@@ -1,0 +1,54 @@
+# Run by bootc-metrics.timer: it takes a second, and the alerts on a staged
+# deployment or a failed boot need fresh values.
+# Root: `bootc status` refuses to run without it, as for a write
+# (crates/lib/src/cli.rs, prepare_for_write). Of root's capabilities, bootc
+# needs:
+# - CAP_SYS_ADMIN: its root check requires it, and it remounts /sysroot
+#   read-write in its mount namespace (hence @mount);
+# - CAP_SYS_PTRACE: it reads /proc/1/ns/mnt, to see that it already has a
+#   mount namespace of its own (ProtectSystem's), else it makes one;
+# - CAP_MAC_ADMIN: it writes a label unknown to the SELinux policy, to check
+#   that it may (crates/lib/src/lsm.rs, test_install_t); without, it copies
+#   itself to /tmp to re-exec under install_t, which noexec /tmp refuses.
+# GRUB's environment block is read as a file (/boot/grub2/grubenv), so no
+# device is needed.
+# bootc.prom is 0644, like the other scans': node-exporter reads it.
+# Nice and the lowest best-effort I/O priority, as audit-metrics.service.
+# TimeoutStartSec: a oneshot waits forever by default, and a hung run holds
+# back every later one. 15 minutes, not 2: `bootc status` waits for ostree's
+# sysroot lock (crates/lib/src/store/mod.rs, SysrootLock::new_from_sysroot),
+# which an upgrade holds through its pull; the run then writes the new
+# deployment rather than failing. The timer skips its runs meanwhile.
+[Unit]
+Description=bootc's deployments and greenboot's boot counting as metrics
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/bootc-metrics
+StateDirectory=bootc-metrics
+Environment=LC_ALL=C
+Nice=19
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7
+TimeoutStartSec=15min
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_SYS_PTRACE CAP_MAC_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX
+SystemCallFilter=@system-service @mount
+SystemCallArchitectures=native

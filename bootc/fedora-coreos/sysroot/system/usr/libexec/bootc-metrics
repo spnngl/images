@@ -1,0 +1,141 @@
+#!/usr/bin/nu --no-config-file
+# The node's deployments, as metrics: bootc's status (the image of each
+# deployment, booted, staged, rollback) and greenboot's boot counting (its
+# GRUB variables). See usr/lib/systemd/system/bootc-metrics.service.
+#
+# Output, in /var/lib/bootc-metrics:
+#   bootc.prom  for node-exporter's textfile collector: mount
+#               /var/lib/bootc-metrics into its pod, and give that path to
+#               --collector.textfile.directory
+#
+# Nushell of Fedora's package (0.99): no syntax of a later release.
+
+use /usr/share/nushell/prometheus.nu [metric one save-metrics]
+
+const DIR = '/var/lib/bootc-metrics'
+# greenboot's (src/lib/grub.rs, GRUB_PATH).
+const GRUBENV = '/boot/grub2/grubenv'
+
+def main [] {
+    cd $DIR
+    [
+        ...(bootc)
+        ...(greenboot)
+        ...((date now | format date '%s') | one
+            | metric bootc_metrics_last_run_timestamp_seconds 'Last run of bootc-metrics.')
+    ] | save-metrics bootc.prom
+}
+
+# bootc's status (crates/lib/src/spec.rs, Host): what the node boots, and
+# what it boots next.
+def bootc []: nothing -> list<string> {
+    let out = ^bootc status --format json --format-version 1 | complete
+    if $out.exit_code != 0 {
+        error make {msg: $"bootc status exited ($out.exit_code): ($out.stderr)"}
+    }
+    let host = $out.stdout | from json
+    let status = $host.status
+    # otherDeployments: the pinned ones, and those of other stateroots.
+    let entries = [[slot entry]; [staged $status.staged] [booted $status.booted] [rollback $status.rollback]]
+        | where entry != null
+        | append ($status.otherDeployments? | default [] | each {|e| {slot: other, entry: $e} })
+        | each {|e| {labels: (deployment-labels $e.slot $e.entry), entry: $e.entry} }
+    let flag = {|field| $entries | each {|e| {labels: $e.labels, value: (bool ($e.entry | get $field))} } }
+    let overlay = $status.usrOverlay
+    [
+        ...((bool ($status.type == 'bootcHost')) | one
+            | metric bootc_host 'The node booted a container image, which bootc manages (status.type bootcHost): 1 yes, 0 no.')
+        ...((if $host.spec.image == null { [] } else { [{labels: (image-labels $host.spec.image), value: 1}] })
+            | metric bootc_spec_info "The image the node follows, the staged deployment's or else the booted one's: `bootc upgrade` pulls its tag. Value: 1.")
+        ...((bool $status.rollbackQueued) | one
+            | metric bootc_rollback_queued 'The next boot is the rollback deployment (`bootc rollback`, spec.bootOrder rollback): 1 yes, 0 no.')
+        ...((bool $status.readOnly) | one
+            | metric bootc_sysroot_read_only "/sysroot is on a read-only medium (a live ISO): no upgrade, switch or rollback. 1 yes, 0 no.")
+        ...([{
+                labels: {access_mode: ($overlay.accessMode? | default ''), persistence: ($overlay.persistence? | default '')}
+                value: (bool ($overlay != null))
+            }]
+            | metric bootc_usr_overlay 'An overlay is on /usr (`bootc usr-overlay`, `ostree admin unlock`), with its access mode and persistence: 1 yes, 0 no.')
+        ...($entries | each {|e|
+                let image = $e.entry.image
+                let ostree = $e.entry.ostree
+                {
+                    labels: ($e.labels | merge (image-labels $image.image?) | merge {
+                        digest: ($image.imageDigest? | default '')
+                        version: ($image.version? | default '')
+                        architecture: ($image.architecture? | default '')
+                        store: ($e.entry.store? | default '')
+                        stateroot: ($ostree.stateroot? | default '')
+                        serial: ($ostree.deploySerial? | default '')
+                    })
+                    value: 1
+                }
+            }
+            | metric bootc_deployment_info "A deployment, by slot (booted, staged, rollback, other), with its image; an incompatible one has none. deployment: its ostree commit, or its composefs image's fs-verity digest. Value: 1.")
+        ...($entries | where entry.image?.timestamp? != null
+            | each {|e| {labels: $e.labels, value: ($e.entry.image.timestamp | into datetime | format date '%s')} }
+            | metric bootc_deployment_image_timestamp_seconds "Build time of the deployment's image: its org.opencontainers.image.created label, else its config's created.")
+        ...(do $flag pinned
+            | metric bootc_deployment_pinned 'The deployment is pinned, kept by garbage collection: 1 yes, 0 no.')
+        ...(do $flag incompatible
+            | metric bootc_deployment_incompatible "The deployment has rpm-ostree changes (layered or overridden packages), which bootc can't represent: 1 yes, 0 no.")
+        ...(do $flag softRebootCapable
+            | metric bootc_deployment_soft_reboot_capable "The node can switch to the deployment with a soft reboot (`systemctl soft-reboot`), keeping its kernel: 1 yes, 0 no.")
+        ...(do $flag downloadOnly
+            | metric bootc_deployment_download_only "The staged deployment is download-only (`bootc upgrade --download-only`): shutdown doesn't finalize it, the next boot stays on the booted one. 1 yes, 0 no.")
+        # As `bootc status` shows it: an update of another digest only.
+        ...($entries | each {|e|
+                let update = $e.entry.cachedUpdate
+                if $update == null or $update.imageDigest == $e.entry.image?.imageDigest? { [] } else {
+                    [{labels: ($e.labels | merge {digest: $update.imageDigest, version: ($update.version? | default '')}), value: 1}]
+                }
+            } | flatten
+            | metric bootc_deployment_update_info "An update of the deployment's image, found by the last `bootc upgrade --check` (cachedUpdate). Value: 1.")
+    ]
+}
+
+# The labels naming a deployment: its slot, and its ostree commit (or its
+# composefs image's fs-verity digest), which tells apart those of slot other.
+def deployment-labels [slot: string, entry: record]: nothing -> record {
+    {slot: $slot, deployment: ($entry.ostree?.checksum? | default $entry.composefs?.verity? | default '')}
+}
+
+# An image reference's labels. signature: containerPolicy, insecure, or
+# ostreeRemote:<remote>.
+def image-labels [image: any]: nothing -> record {
+    let signature = $image.signature?
+    {
+        image: ($image.image? | default '')
+        transport: ($image.transport? | default '')
+        signature: (if ($signature | describe) =~ '^record' {
+            $signature | transpose kind remote | each {|s| $"($s.kind):($s.remote)" } | first
+        } else { $signature | default '' })
+    }
+}
+
+def bool [value: bool]: nothing -> int {
+    if $value { 1 } else { 0 }
+}
+
+# greenboot's GRUB variables (greenboot-rs, src/lib/grub.rs; grub2/08_greenboot.cfg).
+# An unset one gives no metric, but fallback: unset is 0. Unreadable: none,
+# with a warning, and bootc's metrics are still written.
+def greenboot []: nothing -> list<string> {
+    # GRUB's environment block, read as a file: `grub2-editenv list` resolves
+    # /boot's device, which the service's PrivateDevices= hides. `key=value`
+    # lines, then # up to its 1024 bytes.
+    let raw = try { open --raw $GRUBENV } catch {|err|
+        print --stderr $"no greenboot metrics: reading ($GRUBENV): ($err.msg)"
+        return []
+    }
+    let vars = $raw | lines | parse --regex '^(?<key>[^=#]+)=(?<value>.*)$'
+        | reduce --fold {} {|v, acc| $acc | upsert $v.key $v.value }
+    [
+        ...($vars.boot_success? | one
+            | metric greenboot_boot_success "greenboot's health checks passed on this boot: 1 yes; 0 failed, or not done yet (GRUB sets 0 at each boot).")
+        ...($vars.boot_counter? | one
+            | metric greenboot_boot_counter 'Boots left to pass the health checks, set at their first failure (GREENBOOT_MAX_BOOT_ATTEMPTS); GRUB lowers it at each boot, and at 0 boots the rollback deployment, then -1.')
+        ...(($vars.fallback? | default 0) | one
+            | metric greenboot_fallback "GRUB boots the rollback deployment if the next one's kernel fails, armed at shutdown with a staged deployment (greenboot-set-rollback-trigger.service) and disarmed once its kernel boots: 1 yes, 0 no.")
+    ]
+}

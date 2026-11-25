@@ -77,7 +77,9 @@ flavor. Sources and the reason for each choice:
   list `/etc`'s drift hourly (`etc-diff.timer`, `/var/lib/etc-diff`); the
   paths the node writes on purpose are in `usr/libexec/etc-diff`. The
   audit subsystem's state and event counters are written every 5 minutes
-  (`audit-metrics.timer`, `/var/lib/audit-metrics`).
+  (`audit-metrics.timer`, `/var/lib/audit-metrics`), and so are bootc's
+  deployments and greenboot's boot counting (`bootc-metrics.timer`,
+  `/var/lib/bootc-metrics`).
 - **grype** lists the CVEs of `/usr` and `/etc`, at build and daily on
   the nodes (`grype.timer`, `/var/lib/grype`), with `usr/libexec/grype-scan`.
   `grype.prom` holds the fixable ones of Medium severity and above;
