@@ -39,13 +39,20 @@ jq -r --arg now "$(date +%s)" '
 def esc: tostring | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"") | gsub("\n"; "\\n");
 def labels: to_entries | map("\(.key)=\"\(.value | esc)\"") | join(",") | "{\(.)}";
 def metric(name; help): "# HELP \(name) \(help)", "# TYPE \(name) gauge";
+# The branch of a kernel version, [major, minor]: 7.2.11-200.fc44.x86_64 is [7, 2].
+def branch: capture("^(?<a>[0-9]+)\\.(?<b>[0-9]+)") | [(.a | tonumber), (.b | tonumber)];
+# The fix versions of the kernel (NVD CPE data) name every upstream stable
+# branch: keep the branch of the node and the newer ones.
+def fixes($m): if $m.artifact.type == "linux-kernel"
+    then ($m.artifact.version | branch) as $b | map(select(branch >= $b))
+    else . end;
 
 def row: . as $m | .vulnerability | {
     id, severity,
     package: $m.artifact.name, version: $m.artifact.version,
     type: $m.artifact.type,
     path: ("/" + ($m.artifact.locations[0].path // "" | ltrimstr("/"))),
-    fix_state: .fix.state, fixed_in: (.fix.versions | join(" ")),
+    fix_state: .fix.state, fixed_in: (.fix.versions | fixes($m) | join(" ")),
     known_exploited: ((.knownExploited // []) | length > 0),
     risk: (.risk // 0), epss: (.epss[0].epss // null),
     cvss: ([.cvss[], $m.relatedVulnerabilities[]?.cvss[]?

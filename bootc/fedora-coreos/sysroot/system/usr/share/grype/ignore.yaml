@@ -53,3 +53,8 @@ ignore:
     package:
       name: github.com/containers/podman/v5
       version: v5.0.0-20261012000000-9c608fd3e228+dirty
+  - vulnerability: CVE-2020-27815
+    reason: >-
+      kernel's JFS, fixed in 5.10.4; NVD's range for it, "> 4.4.249", is open-ended and matches every
+      kernel since
+    package: {name: linux-kernel, version: 7.2.11-200.fc44.x86_64}
