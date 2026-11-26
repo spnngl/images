@@ -485,7 +485,8 @@ Read each at the version this repository pins.
   price: the `system` packages refresh only on a base or `system`
   change, and on the Sunday and manual runs, which read no cache; the
   nodes' daily grype scan reports what is fixable meanwhile. The image's
-  `created` is the build's time. The split costs about 10 MB (1.256 GB
+  config `created` is then 1970, its `created` label the last commit
+  ("Labels" below). The split costs about 10 MB (1.256 GB
   against 1.247): `kube`'s `dnf install` writes the rpm and dnf
   databases again.
 - **A file's layer:** `vm` or `metal` if only that platform uses it,
@@ -499,6 +500,22 @@ Read each at the version this repository pins.
   `bootc container lint` runs last. The initramfs stays in `system`: no
   `kube` package adds a dracut module (the tree diff of the split found
   the same initramfs).
+- **Labels:** the base's say Fedora CoreOS's: `title`, `description`
+  and `url` are replaced by this image's (`docker-bake.hcl`), and
+  `revision`, a commit of fedora-coreos-config, by ours. `created` and
+  `revision` are the last commit of the files the image is built from,
+  as its `SOURCE_DATE_EPOCH` would be (bake-discover, set by bake-build),
+  not the build's time: a label is in the image's config, so a new value
+  is a new digest, which bootc-operator rolls out with a reboot of every
+  node, the layers unchanged. A Sunday rebuild with no package update,
+  or a re-run, then changes nothing. The price: `created` does not tell
+  how fresh the packages are; the daily grype scan does. Not in the Bake
+  file: bake-discover compares each target's definition with the base's,
+  and a timestamp there would rebuild every image on every push. Kept
+  from the base: `version`, the Fedora CoreOS release that `bootc status`
+  and the deployment metrics show; `ostree.*`, which bootc reads
+  (`ostree.final-diffid`: the base's last layer); `com.coreos.*`, which
+  describe the base.
 
 ### k3s
 
@@ -1125,10 +1142,10 @@ image, the role chosen at provisioning.
   bootc-operator decides the updates. `bootc_deployment_update_info`
   reports `cachedUpdate` when something else ran it, and only of another
   digest than the deployment's, as `bootc status` shows it.
-- **`bootc_deployment_image_timestamp_seconds` kept, though 0 today:**
-  `SOURCE_DATE_EPOCH=0` zeroes the image's `created`, and bootc reads the
-  `org.opencontainers.image.created` label first; a build setting it
-  gives the image's age.
+- **`bootc_deployment_image_timestamp_seconds`:** bootc reads the
+  `org.opencontainers.image.created` label first, CI's last commit of the
+  image's files ("Layers", "Labels"); without it, as in a local build,
+  the config's `created`, 0 (`SOURCE_DATE_EPOCH=0`).
 - **greenboot's GRUB variables:** `boot_success`, `boot_counter` and
   `fallback` (`src/lib/grub.rs` of greenboot-rs). An unset variable gives
   no series, but `fallback`'s 0: GRUB reads unset as off. Read from

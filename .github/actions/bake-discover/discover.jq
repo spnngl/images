@@ -1,8 +1,8 @@
 # The targets to build: those of the HEAD bake definition that changed.
 # Run by action.yml; its comments say what each argument is.
 #
-# `.` is `git log --format=@%ct --name-only --no-renames`, whole, to date
-# each target's SOURCE_DATE_EPOCH.
+# `.` is `git log --format='@%ct %H' --name-only --no-renames`, whole, to
+# date each target's SOURCE_DATE_EPOCH and label its image with its commit.
 
 # A .dockerignore glob as a regular expression, as BuildKit reads it:
 # `*` stops at `/`, `**` does not, `**/` also matches nothing.
@@ -59,7 +59,9 @@ def commits:
   split("\n")
   | reduce .[] as $line (
       [];
-      if $line | startswith("@") then . + [{ct: $line[1:], files: []}]
+      if $line | startswith("@") then
+        ($line[1:] | split(" ")) as [$ct, $sha]
+        | . + [{ct: $ct, sha: $sha, files: []}]
       elif $line == "" then .
       else .[-1].files += [$line]
       end
@@ -113,6 +115,10 @@ def commits:
 | map(
     . as $t
     | select(($t.target.tags // []) | length > 0)
+    # The last commit of what the build reads. Per target: other targets'
+    # commits keep its cache, and its image's digest.
+    | (first($commits[] | select(any(.files[]; read_by($t) or IN($t.bake[]))))
+        // {ct: $headct, sha: $headsha}) as $last
     | {
         build: (
           $everything
@@ -147,15 +153,13 @@ def commits:
             if index([$r]) then . else . + [$r] end
           )
         ),
-        # The last commit of what the build reads, unless the target
-        # sets it. Per target: other targets' commits keep its cache.
-        epoch: (
-          if $t.target.args.SOURCE_DATE_EPOCH != null then ""
-          else
-            (first($commits[] | select(any(.files[]; read_by($t) or IN($t.bake[])))) | .ct)
-            // $headct
-          end
-        ),
+        # Its last commit's time, unless the target sets it.
+        epoch: (if $t.target.args.SOURCE_DATE_EPOCH != null then "" else $last.ct end),
+        # The image's org.opencontainers.image.created and .revision: its
+        # last commit, whatever its SOURCE_DATE_EPOCH: a rebuild of the
+        # same sources changes no label, so no digest that its layers keep.
+        created: ($last.ct | tonumber | todate),
+        revision: $last.sha,
         rewritetimestamp: (first($t.target.output[]? | ."rewrite-timestamp" // empty) // "true"),
         allow: (($t.target.entitlements // []) | join(","))
       }

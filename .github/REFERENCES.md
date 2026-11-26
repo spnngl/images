@@ -128,6 +128,13 @@ Dalec, and one way to build, attest and sign is simpler.
   `build-bootc.yml`'s podman images: the Containerfiles set it as `ENV`
   before their first `RUN`, so each new value misses the build cache. A
   target that sets it itself keeps its own. Bake can't read git history.
+  The same commit, whatever the target's `SOURCE_DATE_EPOCH`, gives the
+  `org.opencontainers.image.created` (its time) and `.revision` (its SHA)
+  labels: a rebuild of the same files with the same layers keeps its
+  digest, which a bootc host would otherwise roll out with a reboot
+  (`bootc/fedora-coreos/REFERENCES.md`, "Labels"). Not in the Bake
+  files: `discover.jq` compares each target with the base's, and a value
+  that changes every commit would rebuild every target.
 - **One export per build:** an image pushed by digest and an OCI archive
   of the same build report one digest, and it isn't the pushed one
   (spike: `imagetools create` failed with `not found`). Pushes export

@@ -43,7 +43,8 @@ Rules of the actions, so a workflow stays a list of `uses:`:
 
 - A Bake target carries what its image is (context, Containerfile,
   arguments, tags, entitlements); the workflow passes only what CI
-  decides: the platform, the cache, the output, `SOURCE_DATE_EPOCH`.
+  decides: the platform, the cache, the output, `SOURCE_DATE_EPOCH`, the
+  `org.opencontainers.image.created` and `.revision` labels.
 - `bake-discover` rebuilds a target when its resolved definition changed,
   or a file its context keeps changed (its `.dockerignore`), or the
   workflow or an action changed (on a pull request, only its `sample`).
