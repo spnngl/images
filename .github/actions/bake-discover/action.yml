@@ -40,12 +40,14 @@ outputs:
   targets:
     description: >-
       JSON array of {id, context, file, args, arches, target, tags,
-      repositories, epoch, rewritetimestamp, allow}: the target's name, its
-      build context and Containerfile or spec, its Bake args, its platforms
-      (amd64, arm64), its Bake `target`, tags, the repositories of those,
-      SOURCE_DATE_EPOCH to set (empty when the target sets it), the output's
-      rewrite-timestamp and its entitlements, comma-separated. Targets
-      without tags (reports, checks) aren't listed.
+      repositories, epoch, created, revision, rewritetimestamp, allow}: the
+      target's name, its build context and Containerfile or spec, its Bake
+      args, its platforms (amd64, arm64), its Bake `target`, tags, the
+      repositories of those, SOURCE_DATE_EPOCH to set (empty when the
+      target sets it), the time (RFC 3339) and SHA of the last commit of
+      what it reads, the output's rewrite-timestamp and its entitlements,
+      comma-separated. Targets without tags (reports, checks) aren't
+      listed.
     value: ${{ steps.find.outputs.targets }}
   builds:
     description: >-
@@ -73,8 +75,8 @@ outputs:
 runs:
   using: composite
   steps:
-    # The whole history: each target's SOURCE_DATE_EPOCH is the last commit
-    # of its files.
+    # The whole history: each target's SOURCE_DATE_EPOCH, and its image's
+    # created and revision labels, are the last commit of its files.
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       with:
         fetch-depth: 0
@@ -171,7 +173,7 @@ runs:
           changed=null
         fi
 
-        git log --format=@%ct --name-only --no-renames | jq -Rs -c -f "${ACTION_PATH}/discover.jq" \
+        git log --format='@%ct %H' --name-only --no-renames | jq -Rs -c -f "${ACTION_PATH}/discover.jq" \
           --slurpfile head "${RUNNER_TEMP}/head.json" \
           --slurpfile base "${RUNNER_TEMP}/base.json" \
           --argjson ign "$(< "${RUNNER_TEMP}/ignores.json")" \
@@ -180,6 +182,7 @@ runs:
           --arg workflow "${WORKFLOW}" \
           --argjson sample "$(jq -Rcn '[inputs | select(length > 0)] | if length > 0 then . else null end' <<< "${SAMPLE}")" \
           --arg headct "$(git log -1 --format=%ct)" \
+          --arg headsha "$(git rev-parse HEAD)" \
           > "${RUNNER_TEMP}/discovered.json"
         {
           echo "files<<EOF"

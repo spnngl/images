@@ -77,6 +77,19 @@ variable "NVIDIA_CONTAINER_TOOLKIT" {
   default = "1.20.2"
 }
 
+# This image's title, description and url, over the base's, which say Fedora
+# CoreOS's. The bootc target's source, and CI's created and revision, are
+# merged with them; the base's version, ostree.* and com.coreos.* stay
+# (REFERENCES.md, "Layers", "Labels").
+function "fcos_labels" {
+  params = [title, description]
+  result = {
+    "org.opencontainers.image.title"       = title
+    "org.opencontainers.image.description" = description
+    "org.opencontainers.image.url"         = "https://github.com/spnngl/images/tree/main/bootc/fedora-coreos"
+  }
+}
+
 # fedora-coreos-<line> and fedora-coreos-nvidia-<line>, e.g.
 # fedora-coreos-1-36. The GPU image is amd64 alone, nodes with GPUs being
 # x86_64. SOURCE_DATE_EPOCH is "0": a per-commit value would rebuild every
@@ -103,6 +116,10 @@ target "fedora-coreos" {
       NVIDIA_CONTAINER_TOOLKIT_VERSION = NVIDIA_CONTAINER_TOOLKIT
     } : {},
   )
+  labels = fcos_labels(
+    "Fedora CoreOS ${BASE}, kubeadm ${kube}${gpu ? ", NVIDIA GPU" : ""}",
+    "Fedora CoreOS bootc image of Kubernetes ${line(kube)} nodes joined with kubeadm${gpu ? ", with NVIDIA's open driver and Container Toolkit" : ""}.",
+  )
   tags = tags("fedora-coreos${gpu ? "-nvidia" : ""}", ["${split(".", BASE)[0]}-v${line(kube)}"])
 }
 
@@ -126,6 +143,10 @@ target "fedora-coreos-k3s" {
     K3S_CHECKSUM_ARM64 = k3s.arm64.checksum
     SOURCE_DATE_EPOCH  = "0"
   }
+  labels = fcos_labels(
+    "Fedora CoreOS ${BASE}, k3s ${k3s.amd64.version}",
+    "Fedora CoreOS bootc image of Kubernetes ${line(trimprefix(k3s.amd64.version, "v"))} nodes running k3s.",
+  )
   tags = tags("fedora-coreos", ["${split(".", BASE)[0]}-v${line(trimprefix(k3s.amd64.version, "v"))}k3s"])
 }
 

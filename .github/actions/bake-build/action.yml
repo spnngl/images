@@ -127,6 +127,9 @@ runs:
     # - platform: the runner's.
     # - SOURCE_DATE_EPOCH: BuildKit dates the image and clamps the layers'
     #   file times with it; the target's own wins (empty epoch).
+    # - labels org.opencontainers.image.created and .revision: the last
+    #   commit of what the target reads, as bake-discover dates it. Not in
+    #   the Bake files: bake-discover would see every target changed.
     # - cache: the step above's.
     # - output, pushed: by digest, untagged. rewrite-timestamp: BuildKit
     #   also clamps the layers' file times to SOURCE_DATE_EPOCH, otherwise
@@ -177,6 +180,8 @@ runs:
           ${{ inputs.also != '' && format('{0}.cache-to=', inputs.also) || '' }}
           ${{ fromJSON(inputs.item).id }}.platform=linux/${{ inputs.arch }}
           ${{ fromJSON(inputs.item).epoch != '' && format('{0}.args.SOURCE_DATE_EPOCH={1}', fromJSON(inputs.item).id, fromJSON(inputs.item).epoch) || '' }}
+          ${{ fromJSON(inputs.item).id }}.labels.org.opencontainers.image.created=${{ fromJSON(inputs.item).created }}
+          ${{ fromJSON(inputs.item).id }}.labels.org.opencontainers.image.revision=${{ fromJSON(inputs.item).revision }}
           ${{ steps.cache.outputs.from }}
           ${{ fromJSON(inputs.item).id }}.cache-to=${{ steps.cache.outputs.to }}
           ${{ inputs.push == 'true' && format('{0}.output=type=image,name={1},push-by-digest=true,name-canonical=true,push=true,rewrite-timestamp={2}', fromJSON(inputs.item).id, fromJSON(inputs.item).repositories[0], fromJSON(inputs.item).rewritetimestamp) || format('{0}.output=type=oci,dest={1},tar=false,rewrite-timestamp={2}', fromJSON(inputs.item).id, inputs.oci-dir, fromJSON(inputs.item).rewritetimestamp) }}

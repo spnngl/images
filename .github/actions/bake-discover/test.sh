@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tests of discover.jq: which targets a change builds, and their
-# SOURCE_DATE_EPOCH. Each case runs discover.jq on the fixtures below, as
+# SOURCE_DATE_EPOCH and labels. Each case runs discover.jq on the fixtures below, as
 # action.yml does, and checks one jq expression on its output.
 #
 # Usage: .github/actions/bake-discover/test.sh
@@ -38,20 +38,20 @@ ign='{
   "app-reports": ["**/*.md", "!keep.md", "structure-test.yaml"]
 }'
 bakefiles='["docker-bake.hcl", "bootc/docker-bake.hcl", "bootc/fedora/docker-bake.hcl", "bootc/alma/docker-bake.hcl", "containers/app/docker-bake.hcl"]'
-# `git log --format=@%ct --name-only --no-renames`, newest first.
-log='@500
+# `git log --format='@%ct %H' --name-only --no-renames`, newest first.
+log='@500 c500
 containers/app/structure-test.yaml
 
-@400
+@400 c400
 bootc/alma/docker-bake.hcl
 
-@300
+@300 c300
 bootc/alma/x.sh
 
-@200
+@200 c200
 bootc/fedora/docker-bake.hcl
 
-@100
+@100 c100
 bootc/fedora/sysroot/etc/a
 containers/app/main.go
 '
@@ -70,7 +70,8 @@ discover() {
     --argjson changed "$1" \
     --argjson sample "${2:-null}" \
     --arg workflow build.yml \
-    --arg headct 999
+    --arg headct 999 \
+    --arg headsha c999
 }
 
 failed=0
@@ -82,7 +83,7 @@ check() {
     echo "ok: ${name}"
   else
     echo "FAIL: ${name}: ${expression}, got:"
-    discover "$@" | jq -c '{targets: [.targets[] | {id, epoch}], groups}'
+    discover "$@" | jq -c '{targets: [.targets[] | {id, epoch, created, revision}], groups}'
     failed=1
   fi
 }
@@ -115,6 +116,8 @@ check "a sample alone builds nothing" "$(builds)" '[]' '["app"]'
 check "no base builds every target, sample or not" "$(builds fedora alma app)" null '["app"]'
 check "epoch: the last commit of the files it reads, or of its Bake file" \
   '[.targets[] | {(.id): .epoch}] | add == {"fedora": "200", "alma": "", "app": "100"}' null
+check "created and revision: the last commit of what it reads, its own SOURCE_DATE_EPOCH or not" \
+  '[.targets[] | {(.id): [.created, .revision]}] | add == {"fedora": ["1970-01-01T00:03:20Z", "c200"], "alma": ["1970-01-01T00:06:40Z", "c400"], "app": ["1970-01-01T00:01:40Z", "c100"]}' null
 check "platforms, repositories, one build per platform" \
   '(.targets[] | select(.id == "app") | .arches == ["amd64"] and .repositories == ["r/app", "d/app"])
    and (.builds.include | length) == 5' null
