@@ -22,7 +22,7 @@ target "flux-toolbox" {
     ]
     flux_operator = [
       # renovate: datasource=github-release-attachments depName=controlplaneio-fluxcd/flux-operator depType=automerge
-      { version = "v0.62.1", checksum = "3fe087eee8c0d778d23cc3bc80d10cda68b69d5209924b6dec28cf8770c2ad1d" },
+      { version = "v0.63.1", checksum = "6ac4c4d5a4ae58d54d8ff7fb5d1a7f413abfd20f4f7bf4fd19ec1d1c20125a90" },
     ]
     flux_schema = [
       # renovate: datasource=github-release-attachments depName=fluxcd/flux-schema depType=automerge
