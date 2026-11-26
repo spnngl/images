@@ -28,7 +28,7 @@ target "buildkit" {
     ]
     shadow = [
       # renovate: datasource=github-tags depName=shadow-maint/shadow extractVersion=^(?<version>\d+\.\d+\.\d+)$ depType=automerge
-      { version = "4.20.3", checksum = "7188fbf46f397ab40d2e77d6f0bb8ebbe479cc0c" },
+      { version = "4.20.4", checksum = "759bb9668de015c6e18a51e0bb7c775ef2546e1d" },
     ]
   }
   args = {
