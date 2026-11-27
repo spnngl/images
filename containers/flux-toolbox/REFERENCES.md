@@ -25,6 +25,18 @@
 - kustomize: `github.com/kubernetes-sigs/kustomize`, release
   `kustomize/v<KUSTOMIZE_VERSION>`: `checksums.txt`,
   `kustomize_v<version>_linux_<arch>.tar.gz`, `LICENSE` (at the tag)
+- kyverno: `github.com/kyverno/kyverno`, release `v<KYVERNO_VERSION>`:
+  `checksums.txt`, `kyverno-cli_v<version>_linux_<x86_64|arm64>.tar.gz`
+  (`kyverno`, `LICENSE`); `.goreleaser.yml` (`CGO_ENABLED=0`,
+  `-X .../pkg/version.BuildVersion`), `cmd/cli/kubectl-kyverno/commands/apply`
+  (`--crd-paths`, exit 1 on a failure)
+- cocogitto: `github.com/cocogitto/cocogitto`, tag `<COCOGITTO_VERSION>`
+  (commit `COCOGITTO_CHECKSUM`), with its `LICENSE`;
+  `.github/workflows/Deploy.yaml` (release targets: x86_64 musl,
+  aarch64 gnu; `cargo build --release --locked`; no checksum file),
+  `Cargo.lock`, `crates/cocogitto/src/bin/cog/main.rs` (`Verify`:
+  `get_committer().unwrap()` in a git repository); Rust:
+  `containers/garage`'s `rust` image
 - nushell: `github.com/nushell/nushell`, release `<NUSHELL_VERSION>`:
   `SHA256SUMS`, `nu-<version>-<x86_64|aarch64>-unknown-linux-musl.tar.gz`
   (`nu`, its plugins, `LICENSE`)
@@ -72,6 +84,29 @@
   Renovate keeps one digest per dependency. Built from the tag as sops
   is, in the same stage: one commit pins every platform, and it gets the
   current Go. `go -C` builds each module from its own folder.
+- **kyverno from its release:** static (Go's, `CGO_ENABLED=0`), checked
+  against `checksums.txt` like flux's. Its archives name amd64
+  `x86_64`. `kyverno apply` with `--crd-paths` evaluates a
+  ValidatingAdmissionPolicy offline, on a CRD's kind too, and exits 1
+  on a failure; the smoke test applies one to the kind flux-schema's
+  test defines. It writes nothing under `HOME`.
+- **cocogitto built, not its release binary:** its release has no
+  checksum file Bake could pin, and its aarch64 Linux build is glibc's,
+  dynamic (`aarch64-unknown-linux-gnu`): it would not run on the git
+  image. Built from the tag as upstream's release is (`cargo build
+  --release --locked`), on musl for both platforms, which rustup's
+  targets link statically, and with `cargo auditable` so that the scans
+  see its crates. On the `rust` image (tag and digest) and Debian
+  snapshot of `containers/garage`, which also gives `musl-gcc` for its
+  vendored C (libgit2, zlib). Renovate's `github-tags` datasource pins
+  the tag's commit; `extractVersion` keeps its bare `<x.y.z>` tags,
+  not the crates' (`cocogitto-<x.y.z>`, ...).
+- **`cog verify` in a git repository needs git's `user.name`:** it
+  reads the committer (`get_committer().unwrap()`) and panics (exit
+  134) without one; outside a repository it does not. The image sets
+  none: `git config --global user.name ...` (`HOME` is `/tmp`) before
+  it. The smoke test runs it outside a repository and checks that a
+  refusal exits 1.
 - **flate's smoke test, offline:** a GitRepository whose URL is the
   checkout's remote, with a branch ref, is read from the committed
   files (`README.md`, "What flate renders"); its Kustomization
@@ -136,7 +171,8 @@
 - **Licenses:** flux `Apache-2.0`, flux-schema `Apache-2.0`,
   flux-operator `AGPL-3.0-only`, flate `AGPL-3.0-only` (its `LICENSE`,
   version 3, with no "or later" notice), kustomize `Apache-2.0`, helm
-  `Apache-2.0`, sops `MPL-2.0`, nushell `MIT`, kubectl `Apache-2.0` (its
+  `Apache-2.0`, sops `MPL-2.0`, kyverno `Apache-2.0`, cocogitto `MIT`,
+  nushell `MIT`, kubectl `Apache-2.0` (its
   vendored code's in `/usr/share/doc/kubectl/`), all in
   `/usr/share/doc/<name>/`; git `GPL-2.0-only`, OpenSSH `SSH-OpenSSH`
   and busybox `GPL-2.0-only` from the base.

@@ -23,4 +23,4 @@ commandTests:
   # FLUXCD_PLUGINS, and the image's user reads every license.
   - name: "every program runs, every license reads"
     command: /bin/sh
-    args: ["-euc", "git --version && flux version --client && flux schema version && flux-operator version --client && flate --version && kustomize version && kubectl version --client && helm version && sops --version --disable-version-check && nu --version && cat /usr/share/doc/*/LICENSE > /dev/null"]
+    args: ["-euc", "git --version && flux version --client && flux schema version && flux-operator version --client && flate --version && kustomize version && kubectl version --client && helm version && sops --version --disable-version-check && kyverno version && cog --version && nu --version && cat /usr/share/doc/*/LICENSE > /dev/null"]

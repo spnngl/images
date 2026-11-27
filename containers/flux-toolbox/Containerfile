@@ -1,18 +1,21 @@
 # syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 # A Flux toolbox: flux (with its schema plugin), flux-operator, flate,
-# kustomize, kubectl, helm, sops and nushell (with its plugins) on this
-# repository's git image, so with git, ssh and busybox's shell. For CI
-# jobs and Kubernetes jobs that render, validate, diff or apply what Flux
-# deploys, and scripts that bootstrap it. flux, flux-schema,
-# flux-operator, kustomize and nushell are upstream's release binaries,
-# from GitHub releases, each checked against its release's checksum file;
-# sops is built from its tag with the current Go (its release binary's Go
-# has a critical fixed vulnerability), flate too (its release has no
-# checksum file for all platforms); kubectl and helm come from this
-# repository's kubectl and kustomize images (neither project publishes a
-# GitHub release binary). Every program is static: the git image has no
-# C library. A shell, against containers/AGENTS.md's rule:
+# kustomize, kubectl, helm, sops, kyverno, cog (cocogitto) and nushell
+# (with its plugins) on this repository's git image, so with git, ssh and
+# busybox's shell. For CI jobs and Kubernetes jobs that render, validate,
+# diff or apply what Flux deploys, check its policies and commit
+# messages, and scripts that bootstrap it. flux, flux-schema,
+# flux-operator, kustomize, kyverno and nushell are upstream's release
+# binaries, from GitHub releases, each checked against its release's
+# checksum file; sops is built from its tag with the current Go (its
+# release binary's Go has a critical fixed vulnerability), flate too (its
+# release has no checksum file for all platforms); cocogitto is built
+# from its tag with Rust on musl (its release has no checksum file, and
+# its aarch64 Linux build is glibc's, dynamic); kubectl and helm come
+# from this repository's kubectl and kustomize images (neither project
+# publishes a GitHub release binary). Every program is static: the git
+# image has no C library. A shell, against containers/AGENTS.md's rule:
 # it is the image's purpose (containers/flux-toolbox/REFERENCES.md).
 #
 # Runtime contract: UID/GID 65532 (nonroot, HOME /tmp: busybox's passwd).
@@ -37,7 +40,8 @@
 # `docker buildx bake` (containers/AGENTS.md); git's, kubectl's and helm's
 # are these FROM lines, their images' tags (helm's: the kustomize image's
 # Helm, its HELM_VERSION). Go's too: the golang tag and digest of
-# containers/kustomize, so that Renovate moves both together.
+# containers/kustomize, so that Renovate moves both together; Rust's, the
+# rust tag and digest of the other Rust images (containers/garage).
 FROM ghcr.io/spnngl/images/git:2.56.1@sha256:2ae09cc91b8f61e7ea36c372b84927ce5416e52c522b62d4243df747c0892da8 AS base
 FROM ghcr.io/spnngl/images/kubectl:1.37.2@sha256:1658d36cdb5db1621b91ec32175d4d84b71759ff461bd9b777352ca3b03951f8 AS kubectl
 FROM ghcr.io/spnngl/images/kustomize:5.8.3@sha256:8ceb710ec9636feeabea7987adfb16ff4bc8750d7088b1545e6e86e43929249a AS helm
@@ -102,6 +106,72 @@ for b in sops age-keygen flate; do
 done
 EORUN
 
+# cocogitto's cog, as tagged (its crates as locked), built with this Rust
+# rather than taken from its release: the release has no checksum file
+# that Bake could pin, and its aarch64 Linux build is glibc's, dynamic.
+# Built as upstream's release (.github/workflows/Deploy.yaml): cargo
+# build --release --locked, the workspace's release profile, on musl, as
+# its x86_64 release, static: rustup's musl targets link statically by
+# default. Tested in the build stage below, with the others.
+FROM docker.io/library/rust:1.100-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS rust
+
+ARG COCOGITTO_VERSION
+ARG COCOGITTO_CHECKSUM
+ARG DEBIAN_CODENAME
+ENV DEBIAN_FRONTEND=noninteractive
+ENV DEBCONF_NOWARNINGS="yes"
+ARG DEBIAN_SNAPSHOT_VERSION
+SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
+
+# musl-tools: musl-gcc, for the C code of the crates (libgit2 and zlib,
+# which git2 and libz-sys build). cargo-auditable: embeds the dependency
+# list in the binary, for the SBOM and the vulnerability scans.
+# Not pinned (DL3008): versions follow the snapshot, which Renovate moves.
+# rustup's musl target is installed here too, while root.
+# Checks first: outside Bake, or on another Debian release than the build
+# args name, the build fails here.
+# Snapshot: see containers/AGENTS.md. No Valid-Until: snapshot Release
+# files expire.
+# hadolint ignore=DL3008
+RUN <<EORUN
+: "${COCOGITTO_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+[ "$(. /etc/os-release; echo "${VERSION_CODENAME}")" = "${DEBIAN_CODENAME:?build with docker buildx bake, see containers/AGENTS.md}" ]
+sed -i -E "s#^URIs: http://deb\.debian\.org/(debian(-security)?)\$#URIs: http://snapshot.debian.org/archive/\1/${DEBIAN_SNAPSHOT_VERSION:?build with docker buildx bake, see containers/AGENTS.md}/#" /etc/apt/sources.list.d/debian.sources
+echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99snapshot
+apt-get update
+apt-get install -y --no-install-recommends cargo-auditable musl-tools
+rm -rf /var/lib/apt/lists/*
+rustup target add "$(uname -m)-unknown-linux-musl"
+EORUN
+
+# --checksum: the tag must resolve to its commit, tags can be moved. No
+# .git: the build reads none.
+ADD --link \
+    --checksum=${COCOGITTO_CHECKSUM} \
+    https://github.com/cocogitto/cocogitto.git#${COCOGITTO_VERSION} /src/cocogitto
+
+# Build as the image's user, not root: the crates' build scripts don't
+# get root, and the source stays root's. No passwd entry needed:
+# CARGO_HOME and RUSTUP_HOME are set, /usr/local/cargo is writable by
+# all. WORKDIR creates its folder owned by USER: /out takes the binary.
+# CC_<target>: cc-rs builds the C code with musl-gcc, matching the musl
+# target. Caches: containers/garage's registry id, the same user; the
+# target an id of its own.
+USER 65532:65532
+WORKDIR /out
+WORKDIR /src/cocogitto
+RUN --mount=type=cache,id=cargo-registry-65532,uid=65532,gid=65532,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=flux-toolbox-cocogitto-target-65532,uid=65532,gid=65532,target=/src/cocogitto/target \
+    <<EORUN
+target="$(uname -m)-unknown-linux-musl"
+export "CC_${target//-/_}=musl-gcc"
+cargo auditable build --locked --release --target "${target}" --package cocogitto --bin cog
+cp "target/${target}/release/cog" /out/
+# grep without -q reads all of readelf's output (no SIGPIPE) and prints
+# the entries it finds.
+if readelf -dW /out/cog | grep -F NEEDED; then exit 1; fi
+EORUN
+
 # The build stage is the base itself: busybox has what checking and
 # unpacking need (sha256sum, tar, gzip), and the binaries are tested on
 # the libc-less system they ship on.
@@ -110,6 +180,7 @@ FROM base AS build
 ARG TARGETARCH
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
+ARG COCOGITTO_VERSION
 ARG FLATE_VERSION
 ARG FLUX_OPERATOR_VERSION
 ARG FLUX_OPERATOR_CHECKSUM
@@ -117,11 +188,15 @@ ARG FLUX_SCHEMA_VERSION
 ARG FLUX_SCHEMA_CHECKSUM
 ARG KUSTOMIZE_VERSION
 ARG KUSTOMIZE_CHECKSUM
+ARG KYVERNO_VERSION
+ARG KYVERNO_CHECKSUM
 ARG NUSHELL_VERSION
 ARG NUSHELL_CHECKSUM
 ARG SOPS_VERSION
-# nushell names its builds by Rust target (x86_64, aarch64), the others
-# by Go's GOARCH, as TARGETARCH (amd64, arm64).
+# nushell names its builds by Rust target (x86_64, aarch64), kyverno
+# amd64 as x86_64, the others by Go's GOARCH, as TARGETARCH (amd64,
+# arm64).
+ARG KYVERNO_ARCH=${TARGETARCH/amd64/x86_64}
 ARG NUSHELL_ARCH_AMD64=${TARGETARCH/amd64/x86_64}
 ARG NUSHELL_ARCH=${NUSHELL_ARCH_AMD64/arm64/aarch64}
 # busybox's shell, ash: POSIX, with pipefail. By its name, so that
@@ -131,10 +206,12 @@ SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
 # Checks first: outside Bake, the build fails here.
 RUN <<EORUN
 : "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${COCOGITTO_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${FLATE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${FLUX_OPERATOR_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${FLUX_SCHEMA_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${KUSTOMIZE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${KYVERNO_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${NUSHELL_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${SOPS_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 EORUN
@@ -170,6 +247,11 @@ ADD --link --chown=65532:65532 \
 ADD --link --chown=65532:65532 \
     https://raw.githubusercontent.com/kubernetes-sigs/kustomize/kustomize/v${KUSTOMIZE_VERSION}/LICENSE /dl/kustomize/
 ADD --link --chown=65532:65532 \
+    --checksum=sha256:${KYVERNO_CHECKSUM} \
+    https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/checksums.txt /dl/kyverno/
+ADD --link --chown=65532:65532 \
+    https://github.com/kyverno/kyverno/releases/download/v${KYVERNO_VERSION}/kyverno-cli_v${KYVERNO_VERSION}_linux_${KYVERNO_ARCH}.tar.gz /dl/kyverno/
+ADD --link --chown=65532:65532 \
     --checksum=sha256:${NUSHELL_CHECKSUM} \
     https://github.com/nushell/nushell/releases/download/${NUSHELL_VERSION}/SHA256SUMS /dl/nushell/
 ADD --link --chown=65532:65532 \
@@ -183,8 +265,8 @@ WORKDIR /tmp/unpack
 
 # Each archive checked against its release's checksum file: its line,
 # by file name (sha256sum -c of no line passes). Each archive unpacked
-# into its tool's folder: flux-operator's and flux-schema's both hold a
-# LICENSE. Then the programs into /usr/bin, flux's plugins into
+# into its tool's folder: flux-operator's, flux-schema's and kyverno's
+# each hold a LICENSE. Then the programs into /usr/bin, flux's plugins into
 # /usr/libexec/flux/plugins (FLUXCD_PLUGINS, below), the licenses into
 # /usr/share/doc/<name>/. Nushell's plugins but the examples and test
 # fixtures (example, custom_values, stress_internals).
@@ -198,24 +280,28 @@ verify flux "flux_${BASE_VERSION}_checksums.txt" "flux_${BASE_VERSION}_linux_${T
 verify flux-operator "flux-operator_${FLUX_OPERATOR_VERSION}_checksums.txt" "flux-operator_${FLUX_OPERATOR_VERSION}_linux_${TARGETARCH}.tar.gz"
 verify flux-schema "flux-schema_${FLUX_SCHEMA_VERSION}_checksums.txt" "flux-schema_${FLUX_SCHEMA_VERSION}_linux_${TARGETARCH}.tar.gz"
 verify kustomize checksums.txt "kustomize_v${KUSTOMIZE_VERSION}_linux_${TARGETARCH}.tar.gz"
+verify kyverno checksums.txt "kyverno-cli_v${KYVERNO_VERSION}_linux_${KYVERNO_ARCH}.tar.gz"
 nushell="nu-${NUSHELL_VERSION}-${NUSHELL_ARCH}-unknown-linux-musl"
 verify nushell SHA256SUMS "${nushell}.tar.gz"
-for d in flux flux-operator flux-schema kustomize nushell; do
+for d in flux flux-operator flux-schema kustomize kyverno nushell; do
     mkdir "${d}"
     tar -xzf "/dl/${d}/"*.tar.gz -C "${d}"
 done
 mkdir -p /out/usr/bin /out/usr/libexec/flux/plugins /out/usr/share/doc/flux \
     /out/usr/share/doc/flux-operator /out/usr/share/doc/flux-schema \
-    /out/usr/share/doc/kustomize /out/usr/share/doc/nushell
-cp flux/flux flux-operator/flux-operator kustomize/kustomize "nushell/${nushell}/nu" \
-    "nushell/${nushell}/nu_plugin_formats" "nushell/${nushell}/nu_plugin_gstat" \
-    "nushell/${nushell}/nu_plugin_inc" "nushell/${nushell}/nu_plugin_polars" \
-    "nushell/${nushell}/nu_plugin_query" /out/usr/bin/
+    /out/usr/share/doc/kustomize /out/usr/share/doc/kyverno \
+    /out/usr/share/doc/nushell
+cp flux/flux flux-operator/flux-operator kustomize/kustomize kyverno/kyverno \
+    "nushell/${nushell}/nu" "nushell/${nushell}/nu_plugin_formats" \
+    "nushell/${nushell}/nu_plugin_gstat" "nushell/${nushell}/nu_plugin_inc" \
+    "nushell/${nushell}/nu_plugin_polars" "nushell/${nushell}/nu_plugin_query" \
+    /out/usr/bin/
 cp flux-schema/flux-schema /out/usr/libexec/flux/plugins/
 cp /dl/flux/LICENSE /out/usr/share/doc/flux/
 cp flux-operator/LICENSE /out/usr/share/doc/flux-operator/
 cp flux-schema/LICENSE /out/usr/share/doc/flux-schema/
 cp /dl/kustomize/LICENSE /out/usr/share/doc/kustomize/
+cp kyverno/LICENSE /out/usr/share/doc/kyverno/
 cp "nushell/${nushell}/LICENSE" /out/usr/share/doc/nushell/
 # A remote ADD writes 0600: readable by every user in the image.
 chmod 644 /out/usr/share/doc/*/LICENSE
@@ -237,14 +323,19 @@ COPY --link --from=go /out/sops /out/flate /out/usr/bin/
 COPY --link --from=go /src/sops/LICENSE /out/usr/share/doc/sops/
 COPY --link --from=go /src/flate/LICENSE /out/usr/share/doc/flate/
 COPY --link --from=go /out/age-keygen /usr/local/bin/
+# cog and its license, built above.
+COPY --link --from=rust /out/cog /out/usr/bin/
+COPY --link --from=rust /src/cocogitto/LICENSE /out/usr/share/doc/cocogitto/
 
 # Smoke test, offline, with the image's binaries first in PATH. Every
 # version is the pinned one, every program runs here (no C library: a
 # dynamic one fails), and each does something real: manifests generated
 # client-side (flux, flux-operator, kubectl), a schema extracted from a
 # CRD and manifests validated against it (flux-schema, run as flux's
-# plugin), a chart rendered (helm), a file encrypted and decrypted
-# (sops), a kustomization built and compared byte for byte, a Flux
+# plugin), a ValidatingAdmissionPolicy applied to that CRD's kind
+# (kyverno), a commit message accepted and one refused (cog), a chart
+# rendered (helm), a file encrypted and decrypted (sops), a
+# kustomization built and compared byte for byte, a Flux
 # repository rendered from its own commit (flate: a Kustomization's
 # substitution, a HelmRelease's chart), each nushell plugin loaded at nu's
 # version and used. helm's version is the kustomize
@@ -262,6 +353,8 @@ kubectl version --client
 helm version --template '{{ .Version }}' | grep -Ex 'v4\.[0-9]+\.[0-9]+'
 sops --version --disable-version-check | grep -Fx "sops ${SOPS_VERSION}"
 flate --version | grep -Fx "flate version ${FLATE_VERSION}"
+kyverno version | grep -Fx "Version: v${KYVERNO_VERSION}"
+cog --version | grep -Fx "cog ${COCOGITTO_VERSION}"
 
 flux create source git smoke --url=https://example.com/smoke.git --branch=main --export > flux.yaml
 grep -Fx 'kind: GitRepository' flux.yaml
@@ -318,6 +411,42 @@ flux schema validate good.yaml --schema-location ./schemas
 if flux schema validate bad.yaml --schema-location ./schemas; then
     exit 1
 fi
+
+# A ValidatingAdmissionPolicy (CEL) on the CRD's kind, applied offline:
+# kyverno maps the kind to its resource from the CRD (--crd-paths), then
+# passes good.yaml and fails many.yaml, exiting 1 on the violation.
+cat > vap.yaml <<EOF
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: smoke
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [example.com]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [smokes]
+  validations:
+    - expression: object.spec.replicas <= 3
+      message: at most 3 replicas
+EOF
+printf 'apiVersion: example.com/v1\nkind: Smoke\nmetadata:\n  name: many\nspec:\n  replicas: 5\n' > many.yaml
+kyverno apply vap.yaml --resource good.yaml --crd-paths crd.yaml > kyverno.txt
+grep -F 'pass: 1, fail: 0,' kyverno.txt
+if kyverno apply vap.yaml --resource many.yaml --crd-paths crd.yaml > kyverno.txt; then
+    exit 1
+fi
+grep -F 'pass: 0, fail: 1,' kyverno.txt
+
+# Outside a git repository: in one, cog verify needs git's user.name
+# (containers/flux-toolbox/REFERENCES.md). Refused: exit 1, not a
+# panic's 134.
+cog verify 'feat(smoke): a conventional commit'
+rc=0
+cog verify 'bad message' || rc=$?
+[ "${rc}" = 1 ]
 
 mkdir -p chart/templates
 printf 'apiVersion: v2\nname: smoke\nversion: 0.1.0\n' > chart/Chart.yaml
