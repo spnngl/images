@@ -3,10 +3,10 @@
 # tag. git, busybox, kubectl and helm come from this repository's images,
 # the Containerfile's FROM lines (Renovate's dockerfile manager).
 # No debian matrix and no Debian arguments: the binaries are upstream's
-# static release builds, on the git image, and sops, static, built on
-# golang's image, which installs no Debian package.
+# static release builds, on the git image, and sops and flate, static,
+# built on golang's image, which installs no Debian package.
 #
-# Each entry but sops' is a GitHub release tag, as Renovate's
+# Each entry but sops' and flate's is a GitHub release tag, as Renovate's
 # github-release-attachments datasource looks it up (releases/tags/<tag>),
 # and the sha256 of the release's checksum file, which it rewrites with
 # the version (containers/flux-toolbox/REFERENCES.md). The build gets the
@@ -38,8 +38,13 @@ target "flux-toolbox" {
       # renovate: datasource=github-release-attachments depName=nushell/nushell depType=automerge
       { version = "0.117.0", checksum = "b7261d7a734d4382f43389f7d35a2578883e51f0bb6bb462a1091aa75d39b839" },
     ]
-    # Built from its tag, not a release binary: the version and its
-    # commit, as containers/kustomize's, checked by ADD --checksum.
+    # sops and flate: built from their tags, not release binaries, each
+    # the version and its commit, as containers/kustomize's, checked by
+    # ADD --checksum.
+    flate = [
+      # renovate: datasource=github-tags depName=home-operations/flate extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
+      { version = "0.8.0", checksum = "4e07f351352d235a335e5a1f0a088eab7ec40997" },
+    ]
     sops = [
       # renovate: datasource=github-tags depName=getsops/sops extractVersion=^v(?<version>\d+\.\d+\.\d+)$ depType=automerge
       { version = "3.13.3", checksum = "26e2f4784ca61353082c32dbd987c25eda086dc9" },
@@ -48,6 +53,8 @@ target "flux-toolbox" {
   args = {
     BASE_VERSION           = trimprefix(base.version, "v")
     BASE_CHECKSUM          = base.checksum
+    FLATE_VERSION          = flate.version
+    FLATE_CHECKSUM         = flate.checksum
     FLUX_OPERATOR_VERSION  = trimprefix(flux_operator.version, "v")
     FLUX_OPERATOR_CHECKSUM = flux_operator.checksum
     FLUX_SCHEMA_VERSION    = trimprefix(flux_schema.version, "v")
