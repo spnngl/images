@@ -37,7 +37,8 @@ action; a Bake file describes the build, the workflow only runs it.
    tests the pushed images not built, when their kind's
    `structure-test.yaml` or `bake-test` changed.
 3. `push` (`actions/bake-push`) merges the platforms into one manifest
-   list with every tag, then signs, verifies and attests it.
+   list with every tag, then signs, verifies and attests it, and runs
+   the image's `verify.sh` on it, when its folder has one.
 
 Rules of the actions, so a workflow stays a list of `uses:`:
 

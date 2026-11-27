@@ -1,5 +1,6 @@
 # Merge the platforms bake-build pushed into one manifest list with all the
-# target's tags, then sign, check and attest it. The caller's job needs
+# target's tags, then sign, check and attest it, and run the image's own
+# check of it (verify.sh), when it has one. The caller's job needs
 # `id-token: write` and `attestations: write` (build provenance), and
 # `packages: write` (.github/AGENTS.md, "Bake workflows"), and the checkout
 # holds `public-key`.
@@ -145,3 +146,19 @@ runs:
         subject-digest: ${{ steps.merge.outputs.digest }}
         push-to-registry: true
         create-storage-record: false
+
+    # The image's own check of the list as pushed, signed and attested:
+    # verify.sh beside its Containerfile or spec, given
+    # <repositories[0]>@<digest> (containers/speculaire). Last: it reads
+    # the attestation above. A failure leaves the tags, and fails the run.
+    - shell: bash
+      env:
+        ITEM: ${{ inputs.item }}
+        DIGEST: ${{ steps.merge.outputs.digest }}
+      run: |-
+        dir="$(jq -r '.file | sub("/[^/]*$"; "")' <<< "${ITEM}")"
+        if [[ ! -f "${dir}/verify.sh" ]]; then
+          echo "${dir}: no verify.sh"
+          exit 0
+        fi
+        "${dir}/verify.sh" "$(jq -r '.repositories[0]' <<< "${ITEM}")@${DIGEST}"

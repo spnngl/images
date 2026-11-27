@@ -29,6 +29,14 @@ containerd config in `/tmp`, as the init container runs it. Neither the
 agent nor `check-config` runs: both need a runtime's socket. Upstream's
 own tests run in upstream's CI, on the same commit.
 
+Once pushed, signed and attested, `verify.sh` runs `speculaire verify`
+from the list on itself under `policy.yaml` (bake-push; upstream
+D199): it prints `allow` and exits 0. By hand, on a pushed digest:
+`containers/speculaire/verify.sh ghcr.io/spnngl/images/speculaire@<digest>`.
+`policy.yaml` names `build-apps.yml` at `refs/heads/main`: a rename
+of the workflow, or a push from another branch, fails the check until
+the policy follows.
+
 ## Updates
 
 Never automerged; proposed on Saturday (`renovate.json5`). Every update
