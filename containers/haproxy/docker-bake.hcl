@@ -15,7 +15,7 @@ target "haproxy" {
       # renovate: datasource=custom.haproxy depName=haproxy-2.8 registryUrl=https://www.haproxy.org/download/2.8/src/releases.json versioning=semver extractVersion=^(?<version>2\.8\.\d+)$ depType=automerge
       { version = "2.8.33", checksum = "bb968c3b241692c448672d4c90bddb1e759cdeaf0d4eab1178c734b162fd5f48" },
       # renovate: datasource=custom.haproxy depName=haproxy-3.0 registryUrl=https://www.haproxy.org/download/3.0/src/releases.json versioning=semver extractVersion=^(?<version>3\.0\.\d+)$ depType=automerge
-      { version = "3.0.31", checksum = "5c423b6db7e99b0e61dcb1e310648274b00976ef24049ebbbebf28b3c183083c" },
+      { version = "3.0.32", checksum = "e9e93866280b8c8ef115eefe519ea17b1d7a2d893cc80c159251009dba5fd2a1" },
       # renovate: datasource=custom.haproxy depName=haproxy-3.2 registryUrl=https://www.haproxy.org/download/3.2/src/releases.json versioning=semver extractVersion=^(?<version>3\.2\.\d+)$ depType=automerge
       { version = "3.2.27", checksum = "3363a337dcde55a871b0f63ac483a4476db647418b85dee069b35f39291ee177" },
       # renovate: datasource=custom.haproxy depName=haproxy-3.4 registryUrl=https://www.haproxy.org/download/3.4/src/releases.json versioning=semver extractVersion=^(?<version>3\.4\.\d+)$ depType=automerge
