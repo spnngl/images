@@ -1,14 +1,15 @@
 # syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
-# A Flux toolbox: flux (with its schema plugin), flux-operator, kustomize,
-# kubectl, helm, sops and nushell (with its plugins) on this repository's
-# git image, so with git, ssh and busybox's shell. For CI jobs and
-# Kubernetes jobs that render, validate, diff or apply what Flux deploys,
-# and scripts that bootstrap it. flux, flux-schema, flux-operator,
-# kustomize and nushell are upstream's release binaries, from GitHub
-# releases, each checked against its release's checksum file; sops is
-# built from its tag with the current Go (its release binary's Go has a
-# critical fixed vulnerability); kubectl and helm come from this
+# A Flux toolbox: flux (with its schema plugin), flux-operator, flate,
+# kustomize, kubectl, helm, sops and nushell (with its plugins) on this
+# repository's git image, so with git, ssh and busybox's shell. For CI
+# jobs and Kubernetes jobs that render, validate, diff or apply what Flux
+# deploys, and scripts that bootstrap it. flux, flux-schema,
+# flux-operator, kustomize and nushell are upstream's release binaries,
+# from GitHub releases, each checked against its release's checksum file;
+# sops is built from its tag with the current Go (its release binary's Go
+# has a critical fixed vulnerability), flate too (its release has no
+# checksum file for all platforms); kubectl and helm come from this
 # repository's kubectl and kustomize images (neither project publishes a
 # GitHub release binary). Every program is static: the git image has no
 # C library. A shell, against containers/AGENTS.md's rule:
@@ -21,8 +22,9 @@
 # by KUBECONFIG, or in a pod its service account; git's as the git
 # image's header says; sops' keys too (SOPS_AGE_KEY, SOPS_AGE_KEY_FILE).
 # No port. With --read-only, mount a tmpfs on /tmp (HOME: kubectl's,
-# helm's and nushell's caches and configuration). Runs with no capability
-# and no-new-privileges. flux's plugins are in /usr/libexec/flux/plugins,
+# helm's and nushell's caches and configuration; flate's cache is in
+# memory unless given --cache-dir or FLATE_CACHE_DIR). Runs with no
+# capability and no-new-privileges. flux's plugins are in /usr/libexec/flux/plugins,
 # named by FLUXCD_PLUGINS (flux's default, ~/.fluxcd/plugins, is under
 # HOME): `flux schema ...`. Point FLUXCD_PLUGINS at a writable folder for
 # `flux plugin install`. Nushell's plugins are in /usr/bin, not
@@ -45,11 +47,16 @@ FROM ghcr.io/spnngl/images/kustomize:5.8.3@sha256:8ceb710ec9636feeabea7987adfb16
 # released with: a fixed vulnerability of the standard library stays in
 # it until sops' next release. Built as upstream's release
 # (.goreleaser.yaml, binary-linux): CGO_ENABLED=0, -trimpath,
-# -mod=readonly, the version by -X. Tested in the build stage below,
-# with the others. age-keygen too, for that test alone (sops makes no age
-# key): from sops' own module graph, the age it vendors; not shipped.
-FROM docker.io/library/golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f AS sops
+# -mod=readonly, the version by -X. age-keygen too, for the smoke test
+# alone (sops makes no age key): from sops' own module graph, the age it
+# vendors; not shipped. flate the same way, as its release
+# (.goreleaser.yaml): its release has a checksum file per archive, not
+# one for every platform that Bake could pin. All tested in the build
+# stage below, with the others.
+FROM docker.io/library/golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f AS go
 
+ARG FLATE_VERSION
+ARG FLATE_CHECKSUM
 ARG SOPS_VERSION
 ARG SOPS_CHECKSUM
 # HOME for the build user below (no passwd entry): go reads it, and
@@ -59,30 +66,40 @@ ENV HOME=/tmp
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 # Checks first: outside Bake, the build fails here.
-RUN : "${SOPS_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+RUN <<EORUN
+: "${FLATE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${SOPS_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+EORUN
 
 # --checksum: the tag must resolve to its commit, tags can be moved. No
-# .git: the release build reads none, the version is set below.
+# .git: the release builds read none, the versions are set below.
 ADD --link \
     --checksum=${SOPS_CHECKSUM} \
-    https://github.com/getsops/sops.git#v${SOPS_VERSION} /src
+    https://github.com/getsops/sops.git#v${SOPS_VERSION} /src/sops
+ADD --link \
+    --checksum=${FLATE_CHECKSUM} \
+    https://github.com/home-operations/flate.git#v${FLATE_VERSION} /src/flate
 
 # Build as the image's user, not root, the sources staying root's.
 # WORKDIR creates its folder owned by USER: /out takes the binaries.
-# Caches: containers/minio's ids, the same user.
+# Caches: containers/minio's ids, the same user. go -C: each module
+# from its own folder, its own go.mod.
 USER 65532:65532
 WORKDIR /out
-WORKDIR /src
 RUN --mount=type=cache,id=go-mod-65532,uid=65532,gid=65532,target=/go/pkg/mod \
     --mount=type=cache,id=go-build-65532,uid=65532,gid=65532,target=/tmp/.cache/go-build \
     <<EORUN
-CGO_ENABLED=0 go build -trimpath -mod=readonly -o /out/sops -ldflags \
+CGO_ENABLED=0 go -C /src/sops build -trimpath -mod=readonly -o /out/sops -ldflags \
     "-s -w -X github.com/getsops/sops/v3/version.Version=${SOPS_VERSION}" \
     ./cmd/sops
-CGO_ENABLED=0 go build -trimpath -mod=readonly -o /out/age-keygen \
+CGO_ENABLED=0 go -C /src/sops build -trimpath -mod=readonly -o /out/age-keygen \
     filippo.io/age/cmd/age-keygen
-go version -m /out/sops | grep -E '^\s+build\s+CGO_ENABLED=0$'
-go version -m /out/age-keygen | grep -E '^\s+build\s+CGO_ENABLED=0$'
+CGO_ENABLED=0 go -C /src/flate build -trimpath -mod=readonly -o /out/flate -ldflags \
+    "-s -w -X main.version=${FLATE_VERSION}" \
+    ./cmd/flate
+for b in sops age-keygen flate; do
+    go version -m "/out/${b}" | grep -E '^\s+build\s+CGO_ENABLED=0$'
+done
 EORUN
 
 # The build stage is the base itself: busybox has what checking and
@@ -93,6 +110,7 @@ FROM base AS build
 ARG TARGETARCH
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
+ARG FLATE_VERSION
 ARG FLUX_OPERATOR_VERSION
 ARG FLUX_OPERATOR_CHECKSUM
 ARG FLUX_SCHEMA_VERSION
@@ -113,6 +131,7 @@ SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
 # Checks first: outside Bake, the build fails here.
 RUN <<EORUN
 : "${BASE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
+: "${FLATE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${FLUX_OPERATOR_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${FLUX_SCHEMA_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
 : "${KUSTOMIZE_VERSION:?build with docker buildx bake, see containers/AGENTS.md}"
@@ -211,12 +230,13 @@ COPY --link --from=kubectl /usr/share/doc/kubectl/ /out/usr/share/doc/kubectl/
 # tag, static): tested below with the others.
 COPY --link --from=helm /usr/bin/helm /out/usr/bin/
 COPY --link --from=helm /usr/share/doc/helm/ /out/usr/share/doc/helm/
-# sops and its license, built above. age-keygen outside /out, the smoke
-# test's alone; not in /tmp, which a --link COPY would recreate root's,
-# 0755.
-COPY --link --from=sops /out/sops /out/usr/bin/
-COPY --link --from=sops /src/LICENSE /out/usr/share/doc/sops/
-COPY --link --from=sops /out/age-keygen /usr/local/bin/
+# sops, flate and their licenses, built above. age-keygen outside /out,
+# the smoke test's alone; not in /tmp, which a --link COPY would recreate
+# root's, 0755.
+COPY --link --from=go /out/sops /out/flate /out/usr/bin/
+COPY --link --from=go /src/sops/LICENSE /out/usr/share/doc/sops/
+COPY --link --from=go /src/flate/LICENSE /out/usr/share/doc/flate/
+COPY --link --from=go /out/age-keygen /usr/local/bin/
 
 # Smoke test, offline, with the image's binaries first in PATH. Every
 # version is the pinned one, every program runs here (no C library: a
@@ -224,8 +244,10 @@ COPY --link --from=sops /out/age-keygen /usr/local/bin/
 # client-side (flux, flux-operator, kubectl), a schema extracted from a
 # CRD and manifests validated against it (flux-schema, run as flux's
 # plugin), a chart rendered (helm), a file encrypted and decrypted
-# (sops), a kustomization built and compared byte for byte, each nushell
-# plugin loaded at nu's version and used. helm's version is the kustomize
+# (sops), a kustomization built and compared byte for byte, a Flux
+# repository rendered from its own commit (flate: a Kustomization's
+# substitution, a HelmRelease's chart), each nushell plugin loaded at nu's
+# version and used. helm's version is the kustomize
 # image's: its major checked, Helm 4. Automerged updates rely on it.
 WORKDIR /tmp/smoke
 RUN <<EORUN
@@ -239,6 +261,7 @@ nu --version | grep -Fx "${NUSHELL_VERSION}"
 kubectl version --client
 helm version --template '{{ .Version }}' | grep -Ex 'v4\.[0-9]+\.[0-9]+'
 sops --version --disable-version-check | grep -Fx "sops ${SOPS_VERSION}"
+flate --version | grep -Fx "flate version ${FLATE_VERSION}"
 
 flux create source git smoke --url=https://example.com/smoke.git --branch=main --export > flux.yaml
 grep -Fx 'kind: GitRepository' flux.yaml
@@ -316,6 +339,76 @@ kubectl create configmap smoke --from-literal=key=value --dry-run=client --outpu
 printf 'resources:\n- configmap.yaml\nnamePrefix: app-\n' > kustomization.yaml
 printf 'apiVersion: v1\ndata:\n  key: value\nkind: ConfigMap\nmetadata:\n  name: app-smoke\n' > expected.yaml
 kustomize build . | cmp - expected.yaml
+
+# A Flux repository: flate reads a GitRepository whose URL is the
+# checkout's remote from its committed files, not from the network.
+git init -q -b main flate
+git -C flate remote add origin https://example.com/smoke.git
+mkdir -p flate/cluster flate/apps flate/chart/templates
+cat > flate/cluster/flux.yaml <<EOF
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: flux-system
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: https://example.com/smoke.git
+  ref:
+    branch: main
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: apps
+  namespace: flux-system
+spec:
+  interval: 1h
+  path: ./apps
+  prune: true
+  sourceRef:
+    kind: GitRepository
+    name: flux-system
+  postBuild:
+    substitute:
+      VALUE: substituted
+EOF
+# Quoted: ${VALUE} is for flate to substitute.
+cat > flate/apps/configmap.yaml <<'EOF'
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: smoke
+  namespace: default
+data:
+  key: ${VALUE}
+EOF
+cat > flate/apps/helmrelease.yaml <<EOF
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: app
+  namespace: default
+spec:
+  interval: 1h
+  chart:
+    spec:
+      chart: ./chart
+      sourceRef:
+        kind: GitRepository
+        name: flux-system
+        namespace: flux-system
+  values:
+    key: value
+EOF
+cp chart/Chart.yaml flate/chart/
+cp chart/templates/configmap.yaml flate/chart/templates/
+git -C flate add .
+git -C flate -c user.name=smoke -c user.email=smoke@example.invalid commit -q -m smoke
+flate test -p flate/cluster --no-progress
+flate build -p flate/cluster > flate.yaml
+grep -Fx '  key: substituted' flate.yaml
+grep -Fx '  key: value' flate.yaml
 
 git init -q -b main repo
 touch repo/file

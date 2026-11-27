@@ -16,6 +16,12 @@
   release `v<FLUX_OPERATOR_VERSION>`:
   `flux-operator_<version>_checksums.txt`,
   `flux-operator_<version>_linux_<arch>.tar.gz` (with `LICENSE`)
+- flate: `github.com/home-operations/flate`, tag `v<FLATE_VERSION>`
+  (commit `FLATE_CHECKSUM`), with its `LICENSE`; `.goreleaser.yaml`
+  (`CGO_ENABLED=0`, `-trimpath`, `-X main.version`; `checksum.split`:
+  one `.sha256` per archive), `cmd/flate/main.go` (`version`),
+  `go.mod` (`go` directive); `README.md` (local GitRepository source,
+  `--cache-dir`/`FLATE_CACHE_DIR`, in memory without)
 - kustomize: `github.com/kubernetes-sigs/kustomize`, release
   `kustomize/v<KUSTOMIZE_VERSION>`: `checksums.txt`,
   `kustomize_v<version>_linux_<arch>.tar.gz`, `LICENSE` (at the tag)
@@ -60,6 +66,17 @@
   the same `golang` image (tag and digest), so that Renovate updates
   both at once. Renovate's `github-tags` datasource pins the tag's
   commit, `ADD --checksum` checks it.
+- **flate built, not its release binary:** its release splits its
+  checksums, one `.sha256` per archive (`checksum.split`), so there is
+  no one file whose sha256 Bake could pin for every platform, and
+  Renovate keeps one digest per dependency. Built from the tag as sops
+  is, in the same stage: one commit pins every platform, and it gets the
+  current Go. `go -C` builds each module from its own folder.
+- **flate's smoke test, offline:** a GitRepository whose URL is the
+  checkout's remote, with a branch ref, is read from the committed
+  files (`README.md`, "What flate renders"); its Kustomization
+  substitutes a variable and its HelmRelease renders a chart from that
+  source. Nothing is fetched: `example.com` serves no repository.
 - **kubectl from `containers/kubectl`:** Kubernetes publishes it on
   `dl.k8s.io`, not as a GitHub release; the image is already a static
   build, with its vendored code's licenses.
@@ -111,11 +128,14 @@
 - **Tag: flux's version:** the image is Flux's toolbox; another tool's
   update rebuilds it.
 - **UID 65532, `HOME` `/tmp`:** the git image's user; kubectl, helm and
-  nushell write their caches and configuration under `HOME`.
+  nushell write their caches and configuration under `HOME`. flate
+  keeps its cache in memory unless given one (`--cache-dir`,
+  `FLATE_CACHE_DIR`).
 - **Automerge:** the smoke test runs each program at its version and
   does real, offline work with each.
 - **Licenses:** flux `Apache-2.0`, flux-schema `Apache-2.0`,
-  flux-operator `AGPL-3.0-only`, kustomize `Apache-2.0`, helm
+  flux-operator `AGPL-3.0-only`, flate `AGPL-3.0-only` (its `LICENSE`,
+  version 3, with no "or later" notice), kustomize `Apache-2.0`, helm
   `Apache-2.0`, sops `MPL-2.0`, nushell `MIT`, kubectl `Apache-2.0` (its
   vendored code's in `/usr/share/doc/kubectl/`), all in
   `/usr/share/doc/<name>/`; git `GPL-2.0-only`, OpenSSH `SSH-OpenSSH`
