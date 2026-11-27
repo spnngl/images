@@ -15,11 +15,11 @@ target "prowlarr" {
     debian = ["13"]
     base = [
       # renovate: datasource=custom.servarr depName=Prowlarr/Prowlarr registryUrl=https://prowlarr.servarr.com/v1/update/master/changes?os=linux&runtime=netcore&arch=x64 versioning=loose depType=automerge
-      { version = "2.7.0.5723", checksum = "d65cb9fb442a8a3ded055d7027db9a08f519acb7908c7afe72175aa7c337783c" },
+      { version = "3.1.0.5799", checksum = "e9c66fd3d2c5e94ca51e2495eb9e99ee16004dc396cac4e74905d1408fe31767" },
     ]
     base_arm64 = [
       # renovate: datasource=custom.servarr depName=Prowlarr/Prowlarr registryUrl=https://prowlarr.servarr.com/v1/update/master/changes?os=linux&runtime=netcore&arch=arm64 versioning=loose depType=automerge
-      { version = "2.7.0.5723", checksum = "bd2dcc1d42f3ea37a247224bb4293e00ebd31e76f12abfca389c4260f7e0a71e" },
+      { version = "3.1.0.5799", checksum = "1e74262cf955ee60b8091d100a109d66402e5786ede5f3b68fa77347d562174a" },
     ]
   }
   args = merge(apt_args(debian), {
