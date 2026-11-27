@@ -17,7 +17,7 @@ target "haproxy" {
       # renovate: datasource=custom.haproxy depName=haproxy-3.0 registryUrl=https://www.haproxy.org/download/3.0/src/releases.json versioning=semver extractVersion=^(?<version>3\.0\.\d+)$ depType=automerge
       { version = "3.0.32", checksum = "e9e93866280b8c8ef115eefe519ea17b1d7a2d893cc80c159251009dba5fd2a1" },
       # renovate: datasource=custom.haproxy depName=haproxy-3.2 registryUrl=https://www.haproxy.org/download/3.2/src/releases.json versioning=semver extractVersion=^(?<version>3\.2\.\d+)$ depType=automerge
-      { version = "3.2.27", checksum = "3363a337dcde55a871b0f63ac483a4476db647418b85dee069b35f39291ee177" },
+      { version = "3.2.28", checksum = "56d08f65cfa756e95e8b64b76e28bdd5163c52d8a633dfa6a553f641e575698e" },
       # renovate: datasource=custom.haproxy depName=haproxy-3.4 registryUrl=https://www.haproxy.org/download/3.4/src/releases.json versioning=semver extractVersion=^(?<version>3\.4\.\d+)$ depType=automerge
       { version = "3.4.8", checksum = "024bd521a6cbbe32b426853147e6bbd6a89b107c5a34144846193fee5b7c6ed1" },
     ]
