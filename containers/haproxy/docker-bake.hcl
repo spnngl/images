@@ -13,7 +13,7 @@ target "haproxy" {
     debian = ["13"]
     base = [
       # renovate: datasource=custom.haproxy depName=haproxy-2.8 registryUrl=https://www.haproxy.org/download/2.8/src/releases.json versioning=semver extractVersion=^(?<version>2\.8\.\d+)$ depType=automerge
-      { version = "2.8.32", checksum = "a2bfd7dcdaeb75aa55ff15d3b9f698c4469c76a5f4a8a43a1e70df4d07acc66b" },
+      { version = "2.8.33", checksum = "bb968c3b241692c448672d4c90bddb1e759cdeaf0d4eab1178c734b162fd5f48" },
       # renovate: datasource=custom.haproxy depName=haproxy-3.0 registryUrl=https://www.haproxy.org/download/3.0/src/releases.json versioning=semver extractVersion=^(?<version>3\.0\.\d+)$ depType=automerge
       { version = "3.0.31", checksum = "5c423b6db7e99b0e61dcb1e310648274b00976ef24049ebbbebf28b3c183083c" },
       # renovate: datasource=custom.haproxy depName=haproxy-3.2 registryUrl=https://www.haproxy.org/download/3.2/src/releases.json versioning=semver extractVersion=^(?<version>3\.2\.\d+)$ depType=automerge
