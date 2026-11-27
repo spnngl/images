@@ -19,7 +19,7 @@ target "haproxy" {
       # renovate: datasource=custom.haproxy depName=haproxy-3.2 registryUrl=https://www.haproxy.org/download/3.2/src/releases.json versioning=semver extractVersion=^(?<version>3\.2\.\d+)$ depType=automerge
       { version = "3.2.28", checksum = "56d08f65cfa756e95e8b64b76e28bdd5163c52d8a633dfa6a553f641e575698e" },
       # renovate: datasource=custom.haproxy depName=haproxy-3.4 registryUrl=https://www.haproxy.org/download/3.4/src/releases.json versioning=semver extractVersion=^(?<version>3\.4\.\d+)$ depType=automerge
-      { version = "3.4.8", checksum = "024bd521a6cbbe32b426853147e6bbd6a89b107c5a34144846193fee5b7c6ed1" },
+      { version = "3.4.9", checksum = "896c55b6029ec2a841617e92a327a335f36a8968e7d51a47eada159673c2f320" },
     ]
   }
   args = merge(apt_args(debian), {
