@@ -200,6 +200,12 @@ Dalec, and one way to build, attest and sign is simpler.
   `codeberg.org/lola_2lannoy/apps`, `sig-spnngl-images.yaml`) trusts
   only this one, by the workflow file's identity. Renaming
   `build-apps.yml` breaks deployments until the policy follows.
+- **An image's own check, last in `bake-push`:** `verify.sh
+  <repository>@<digest>` beside its Containerfile or spec, when it has
+  one, reads what the steps before pushed (`containers/speculaire`:
+  `speculaire verify` on itself). Found by its file, as
+  `structure-test.yaml`: the workflow stays a list of `uses:`. After
+  the push, so a failure fails the run but leaves the tags.
 - **Pushed by digest per platform**, merged with attestations by one
   `docker buildx imagetools create` for all the item's tags, each
   ghcr.io tag signed with `cosign sign` and checked with `cosign

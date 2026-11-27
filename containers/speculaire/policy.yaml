@@ -1,0 +1,23 @@
+# The policy speculaire's image passes (upstream D28, D199): signed by
+# this repository's build-apps workflow on main, with its SLSA build
+# provenance (bake-push's attest-build-provenance) and an SBOM
+# (BuildKit's, in the signed list: upstream D49). verify.sh checks each
+# list bake-push pushes with it; a node that pulls the image can use it
+# as is (upstream docs/operations.md, D142).
+apiVersion: policy.sigstore.dev/v1beta1
+kind: ClusterImagePolicy
+metadata:
+  name: spnngl-images-speculaire
+spec:
+  images:
+    - glob: ghcr.io/spnngl/images/speculaire
+  authorities:
+    - name: build-apps
+      keyless:
+        identities:
+          - issuer: https://token.actions.githubusercontent.com
+            subject: https://github.com/spnngl/images/.github/workflows/build-apps.yml@refs/heads/main
+      attestations:
+        - name: provenance
+          predicateType: https://slsa.dev/provenance/v1
+  sbom: required

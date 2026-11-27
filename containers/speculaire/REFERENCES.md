@@ -11,7 +11,9 @@
   `packaging/config.toml` (paths and ports), `packaging/speculaire.service`
 - Decisions, in `docs/decisions/`: D13 (musl static-PIE), D46 (mimalloc
   secure), D53 (root without capabilities), D57 (reproducible build),
-  D112 (system trust roots), D157 (release image)
+  D112 (system trust roots), D157 (release image), D199 (`speculaire
+  verify` on this image), D49, D142, D149, D150 (what the policy
+  checks)
 - Docs: `docs/operations.md`
 
 ## Decisions
@@ -59,3 +61,17 @@
   `/readyz` on 7482).
 - **No upstream tests in the build:** upstream's CI runs them on the
   commit; the binary being upstream's, they hold for it.
+- **`speculaire verify` on the pushed list (D199), from that list:**
+  the project passes its own gate (D28), as upstream's dropped
+  `verify` job did (D157): anonymously, over the public-good TUF root,
+  with `--runtime containerd` and a containerd config without registry
+  config (`version = 3`), so ghcr.io's requests go to ghcr.io.
+- **`policy.yaml`:** keyless, `build-apps.yml@refs/heads/main` by
+  GitHub's issuer, exact: the identity of bake-push's
+  `attest-build-provenance` bundle. It requires that bundle
+  (`https://slsa.dev/provenance/v1`): an authority requiring
+  attestations passes on them alone (D149). `sbom: required` passes on
+  BuildKit's SPDX SBOM in the list, bound by that signature on the
+  list's digest (D49, D150): no second attestation to push. The cosign
+  key's `.sig` has no Rekor entry, which every authority needs (D142):
+  not an authority.

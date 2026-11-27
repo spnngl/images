@@ -122,6 +122,9 @@ By what the app needs at runtime; name that need in the image's
   one, and those it is built `FROM`). Such a `RUN` with `--mount`
   stays: it reads a build stage's file or needs a tmpfs, which
   container-structure-test can't give.
+  A check of the pushed list (its signatures, attestations) is a
+  `verify.sh <repository>@<digest>` beside the Containerfile or spec,
+  which `bake-push` runs last (`containers/speculaire`).
   A **big** image's `structure-test.yaml` also checks its runtime
   contract: user, ports, volumes, entrypoint, command, working folder,
   the variables it sets; the program it runs root's and not writable
