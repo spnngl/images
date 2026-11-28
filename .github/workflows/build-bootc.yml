@@ -173,7 +173,7 @@ jobs:
           failure-threshold: warning
 
       - name: Upload Hadolint results
-        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4
         with:
           sarif_file: hadolint-results.sarif
           # Code scanning tracks alerts per category: keep it stable per
@@ -198,7 +198,7 @@ jobs:
       - run: policy/conftest.sh --sarif conftest-results bootc
 
       - name: Upload conftest results
-        uses: github/codeql-action/upload-sarif@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4
+        uses: github/codeql-action/upload-sarif@915412ff23e8b7659517e607487dbeae018f2934 # v4
         with:
           # One file per namespace, each with its category
           # (runs[].automationDetails.id): conftest-<namespace>.
