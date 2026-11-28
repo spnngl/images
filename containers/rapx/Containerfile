@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker.io/docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 #
 # RAPx (https://github.com/safer-rust/RAPx), a static analyzer for Rust
 # programs: `cargo rapx check|analyze|opt|verify` on a crate. RAPx is a
@@ -39,11 +39,11 @@ ADD --link \
 
 # The final image's base, by digest, which Renovate moves. Read by the
 # closure stage too: the packages it holds are the ones not to copy again.
-FROM gcr.io/distroless/cc-debian13:nonroot@sha256:cb87acc574abe719b6e5c547384defa2f7b1f24af9605d3f618cf852495d8be2 AS runtime
+FROM gcr.io/distroless/cc-debian13:nonroot@sha256:29ee70762214fe8190cea04ef1c0a84a8365879e047ce8f911ae5a5ab2355fa2 AS runtime
 
 # Debian trixie, with Rust's own image: the packages below come from its
 # snapshot.
-FROM docker.io/library/rust:1.100-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS build
+FROM docker.io/library/rust:1.100-trixie@sha256:e84068000361bf3d4a5ba2b7647f62893528b1eb9f847d7a23b493f5ce8ea254 AS build
 
 ARG BASE_VERSION
 ARG DEBIAN_CODENAME
@@ -126,7 +126,7 @@ EORUN
 
 # Debian trixie, the release distroless' cc-debian13 is built from: the
 # libraries copied here are the ones the final image's base has.
-FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS closure
+FROM docker.io/library/debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS closure
 
 ARG DEBIAN_CODENAME
 ARG DEBIAN_SNAPSHOT_VERSION
@@ -235,8 +235,8 @@ CMD ["--help"]
 FROM image AS smoke
 ARG BASE_VERSION
 ENV CARGO_HOME=/tmp/cargo
-COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:ba922320081ffa63d5e1a407d93d1436c69a7a1a947d82ea414f17a713b80348 /bin/busybox /bin/ash
-COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:ba922320081ffa63d5e1a407d93d1436c69a7a1a947d82ea414f17a713b80348 /bin/busybox /bin/grep
+COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:4df1095c7d6e218e14804aacf39a30a89ae3510bad4cd5f493b25e25ce61954a /bin/busybox /bin/ash
+COPY --link --from=ghcr.io/spnngl/images/busybox:1.38.0@sha256:4df1095c7d6e218e14804aacf39a30a89ae3510bad4cd5f493b25e25ce61954a /bin/busybox /bin/grep
 COPY --link --chown=65532:65532 smoke-test/ /tmp/smoke/
 SHELL ["/bin/ash", "-xeuo", "pipefail", "-c"]
 

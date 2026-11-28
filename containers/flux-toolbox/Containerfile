@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker.io/docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 
 # A Flux toolbox: flux (with its schema plugin), flux-operator, flate,
 # kustomize, kubectl, helm, sops, kyverno, cog (cocogitto) and nushell
@@ -42,9 +42,9 @@
 # Helm, its HELM_VERSION). Go's too: the golang tag and digest of
 # containers/kustomize, so that Renovate moves both together; Rust's, the
 # rust tag and digest of the other Rust images (containers/garage).
-FROM ghcr.io/spnngl/images/git:2.56.1@sha256:2ae09cc91b8f61e7ea36c372b84927ce5416e52c522b62d4243df747c0892da8 AS base
-FROM ghcr.io/spnngl/images/kubectl:1.37.2@sha256:1658d36cdb5db1621b91ec32175d4d84b71759ff461bd9b777352ca3b03951f8 AS kubectl
-FROM ghcr.io/spnngl/images/kustomize:5.8.3@sha256:8ceb710ec9636feeabea7987adfb16ff4bc8750d7088b1545e6e86e43929249a AS helm
+FROM ghcr.io/spnngl/images/git:2.56.1@sha256:c757936acda56ac980d3af6aeeaa85fd0e4abee7c785bc652562bfd4f62df3e3 AS base
+FROM ghcr.io/spnngl/images/kubectl:1.37.2@sha256:956e5dc40a4ac74bc24009a55bfd617ea2ab256b414dc8c496fa4dcdc821b48b AS kubectl
+FROM ghcr.io/spnngl/images/kustomize:5.8.3@sha256:06d10070c11d5cde66e5bad5765959169a5a4858e460768cbb38d4f90c055adc AS helm
 
 # sops, as tagged (its Go modules too, no update), built with this Go
 # rather than taken from its release, whose binary ships the Go it was
@@ -57,7 +57,7 @@ FROM ghcr.io/spnngl/images/kustomize:5.8.3@sha256:8ceb710ec9636feeabea7987adfb16
 # (.goreleaser.yaml): its release has a checksum file per archive, not
 # one for every platform that Bake could pin. All tested in the build
 # stage below, with the others.
-FROM docker.io/library/golang:1.27-trixie@sha256:c47c3fda018d13d43a6bf5ebac3e5bba8a23a35782aa4faf531afaf47c64c39f AS go
+FROM docker.io/library/golang:1.27-trixie@sha256:430985542100b871e108ccc00e8dcc5eef08ca14ee5825e98ebf563d8ffec4ee AS go
 
 ARG FLATE_VERSION
 ARG FLATE_CHECKSUM
@@ -113,7 +113,7 @@ EORUN
 # build --release --locked, the workspace's release profile, on musl, as
 # its x86_64 release, static: rustup's musl targets link statically by
 # default. Tested in the build stage below, with the others.
-FROM docker.io/library/rust:1.100-trixie@sha256:e19840879045c951c905d0eaa9887f3439c62000e429963371b376bac8d38c31 AS rust
+FROM docker.io/library/rust:1.100-trixie@sha256:e84068000361bf3d4a5ba2b7647f62893528b1eb9f847d7a23b493f5ce8ea254 AS rust
 
 ARG COCOGITTO_VERSION
 ARG COCOGITTO_CHECKSUM

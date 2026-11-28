@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker.io/docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 #
 # Bazarr (https://www.bazarr.media), a subtitle manager for Sonarr and
 # Radarr, on distroless' python3-debian13: Debian trixie's Python 3.13,
@@ -45,11 +45,11 @@ ADD --link \
 
 # The final image's base, by digest, which Renovate moves. Read by the
 # build stage too: the packages it holds are the ones not to copy again.
-FROM gcr.io/distroless/python3-debian13:nonroot@sha256:6c4cb3bfa4b555429dd19541796a6ba6b30c84675b460bd0bd5072f7d5bdae71 AS runtime
+FROM gcr.io/distroless/python3-debian13:nonroot@sha256:72de1dda9d4c52c370e2ef2d93c28e3e1a8193c92058b7dfa42bace38a83d114 AS runtime
 
 # The web app, built as upstream's release workflow builds it: npm
 # install, npm run build. Node: upstream's major (frontend/.nvmrc).
-FROM docker.io/library/node:24.22-trixie-slim@sha256:af02d57b57719b9657a45199a79264a9437940cd55b3c7b3fc99615654f124a0 AS frontend
+FROM docker.io/library/node:24.22-trixie-slim@sha256:4d00acb4bcc42c454c4eb801526f7ad7f772ea3bd4fd168c5cc2e384abcbb9d4 AS frontend
 
 # HOME for the build user below: npm keeps its cache in ~/.npm. Before
 # SHELL: hadolint (2.15.1) checks the RUNs after an ENV or ARG as /bin/sh,
@@ -83,7 +83,7 @@ FROM ghcr.io/astral-sh/uv:${UV_VERSION}@${UV_DIGEST} AS uv
 # Debian trixie, the release distroless' python3-debian13 is built from:
 # the libraries copied here are the ones the final image's Python and its
 # base have.
-FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS build
+FROM docker.io/library/debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS build
 
 ARG BASE_VERSION
 ARG DEBIAN_CODENAME
