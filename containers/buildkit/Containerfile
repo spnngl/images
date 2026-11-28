@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker.io/docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 
 # BuildKit (https://github.com/moby/buildkit), rootless: buildkitd under
 # RootlessKit (a user namespace) with runc, the build client buildctl, and
@@ -29,7 +29,7 @@
 # `docker buildx bake --allow security.insecure` (containers/AGENTS.md).
 # Alpine: the golang image's, for the *-static libseccomp that runc links
 # (containers/buildkit/REFERENCES.md).
-FROM docker.io/library/golang:1.27-alpine3.24@sha256:eb61c3873c97416fff0116553fff65d67a3549f72e11d9758849a689cdd8b523 AS build
+FROM docker.io/library/golang:1.27-alpine3.24@sha256:70bd7ddea8b6cbe5d6943cde279d6b67feb10cc924fb9100d1d8757c1575b280 AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
@@ -186,7 +186,7 @@ find /out /setuid -type f -perm -u+x | while read -r f; do
 done
 EORUN
 
-FROM ghcr.io/spnngl/images/git:2.56.1@sha256:2ae09cc91b8f61e7ea36c372b84927ce5416e52c522b62d4243df747c0892da8
+FROM ghcr.io/spnngl/images/git:2.56.1@sha256:c757936acda56ac980d3af6aeeaa85fd0e4abee7c785bc652562bfd4f62df3e3
 ARG BASE_VERSION
 
 # Licenses: BuildKit's, runc's and RootlessKit's (Apache-2.0), shadow's

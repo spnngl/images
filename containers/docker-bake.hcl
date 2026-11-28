@@ -15,7 +15,7 @@ variable "DEBIAN" {
 # every Debian release.
 variable "DEBIAN_SNAPSHOT" {
   # renovate: datasource=custom.debian-snapshot depName=debian-snapshot
-  default = "20261113T203523Z"
+  default = "20261127T203736Z"
 }
 
 # Tags name the upstream version alone (haproxy:3.2.25): Debian only

@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker.io/docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 #
 # Lists of IP ranges and GeoIP databases, for images to copy
 # (containers/haproxy, containers/cs-haproxy-spoa-bouncer) or for a
@@ -49,7 +49,7 @@ ADD --chmod=u=rwX,go=rX \
 # The lists' check, which also unpacks ipverse's: the final image copies
 # them from here, so this stage runs. Debian trixie for its shell and
 # grep; no package installed.
-FROM docker.io/library/debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 AS check
+FROM docker.io/library/debian:trixie-slim@sha256:8aa5a7bf5a1955bddbe7d74fcdd0b91ab30e74362a8b73af672b0481b35b44a0 AS check
 SHELL ["/bin/bash", "-xeuo", "pipefail", "-c"]
 
 # ipverse's prefixes: a release tagged `latest`, replaced daily, not

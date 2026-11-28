@@ -1,4 +1,4 @@
-# syntax=docker.io/docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
+# syntax=docker.io/docker/dockerfile:1@sha256:572cebbc2b15e6f84c077742952674889cb63cd5e9b80abdffcbe587b6f19183
 #
 # Mjolnir (https://github.com/matrix-org/mjolnir), a moderation bot for
 # Matrix, built as upstream's Dockerfile builds it, run by Node.js on
@@ -71,7 +71,7 @@ FROM natives-${TARGETARCH} AS natives
 # Node: upstream's major (package.json engines, its Dockerfile). The full
 # image, not slim: node-gyp needs python3, make and g++. Debian trixie,
 # as the final image's libc. Its yarn 1 reads upstream's yarn.lock.
-FROM docker.io/library/node:22.23-trixie@sha256:c103d7b5aa3bf627c8b98db941d52556f04e0b5d9352b3d7b6391245d26620f8 AS build
+FROM docker.io/library/node:22.23-trixie@sha256:f92a4668ece057eff6b83ed531b5f6277892b5c8fa8c1df4ea4ef470bf92b91e AS build
 
 ARG BASE_VERSION
 ARG BASE_CHECKSUM
@@ -204,7 +204,7 @@ COPY --link --from=build --chown=0:0 /app/ /mjolnir/
 COPY --link --from=source /LICENSE /usr/share/doc/mjolnir/
 COPY --link --from=build --chown=65532:65532 /tmp/data/ /data/
 
-FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:39c66687298417dbf3ff2fb8b6012c20554494e16414ef7afd07b9abbb45b501
+FROM gcr.io/distroless/nodejs22-debian13:nonroot@sha256:c73ddeb03e1dc2d579aa111c83d6699c6b8b487e35c0c631d4a3a20229fc25ee
 
 ARG BASE_VERSION
 # source: links the ghcr.io package to this repository.
